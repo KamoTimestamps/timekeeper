@@ -7,16 +7,30 @@
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Vat5aL
 // @match        https://www.youtube.com/*
-// @grant        none
+// @grant        GM.getValue
+// @grant        GM.setValue
 // @run-at       document-end
 // @license MIT
 // ==/UserScript==
 
-(function () {
+(async function () {
   'use strict';
 
   if (window.top !== window.self) {
     return; // Don't run in iframes
+  }
+
+  // Configuration for timestamp offset
+  const OFFSET_KEY = "timestampOffsetSeconds";
+  const DEFAULT_OFFSET = -5;
+
+  // The user can configure 'timestampOffsetSeconds' in ViolentMonkey's script values.
+  // Default is -5 seconds (5 seconds before current time).
+  // A positive value will make it after current time, negative before.
+  let configuredOffset = await GM.getValue(OFFSET_KEY);
+  if (typeof configuredOffset === 'undefined') {
+    await GM.setValue(OFFSET_KEY, DEFAULT_OFFSET);
+    configuredOffset = DEFAULT_OFFSET;
   }
 
   let isMouseOverTimestamps = false; // Default to false
@@ -699,8 +713,11 @@
       saveTimestamps();
     };
     addBtn.onclick = () => {
-      var timeStampBuffer = 5;
-      var input = addTimestamp(Math.max(0, Math.floor(document.querySelector("video").currentTime - timeStampBuffer)));
+      // Use the configured offset.
+      // The value from GM_getValue is directly used here.
+      // For example, if configuredOffset is -2, it adds a timestamp 2 seconds before the current time.
+      // If configuredOffset is 5, it adds a timestamp 5 seconds after the current time.
+      var input = addTimestamp(Math.max(0, Math.floor(document.querySelector("video").currentTime + configuredOffset)));
       input.focus();
       saveTimestamps();
     };
