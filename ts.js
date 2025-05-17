@@ -84,8 +84,8 @@
             commentInput = document.createElement("input"), del = document.createElement("button");
 
         timeRow.className = "time-row";
-        minus.textContent = "➖"; minus.dataset.increment = 1; minus.style.cursor = "pointer";
-        plus.textContent = "➕"; plus.dataset.increment = -1; plus.style.cursor = "pointer";
+        minus.textContent = "➖"; minus.dataset.increment = -1; minus.style.cursor = "pointer";
+        plus.textContent = "➕"; plus.dataset.increment = 1; plus.style.cursor = "pointer";
         formatTime(a, e);
         endBtn.textContent = "End"; endBtn.dataset.action = "end"; endBtn.style = "background:#555;color:white;border:none;padding:2px 5px;border-radius:3px;cursor:pointer;";
         commentInput.value = t || ""; commentInput.style = "width:200px;margin-top:5px;display:block;";
