@@ -404,6 +404,39 @@
     addBtn.textContent = " 🆕 Add TS";
     addBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
 
+    // Add a configuration button to the header
+    var configBtn = document.createElement("button");
+    configBtn.textContent = "⚙️";
+    configBtn.style = "background:transparent;border:none;color:white;cursor:pointer;font-size:16px;margin-left:10px;";
+    configBtn.title = "Settings";
+
+    configBtn.onclick = () => {
+        // Create a styled modal for the settings pane
+        const settingsModal = document.createElement("div");
+        settingsModal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:#333;padding:20px;border-radius:10px;z-index:10000;color:white;text-align:center;width:300px;box-shadow:0 0 10px rgba(0,0,0,0.5);";
+
+        const closeButton = document.createElement("button");
+        closeButton.textContent = "Close";
+        closeButton.style = "background:#444;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;margin-top:15px;display:block;width:100%;";
+        closeButton.onclick = () => {
+            document.body.removeChild(settingsModal);
+        };
+
+        // Move save, load, export, and import buttons to the settings pane
+        const settingsContent = document.createElement("div");
+        settingsContent.style = "display:flex;flex-direction:column;gap:10px;";
+        settingsContent.appendChild(saveBtn);
+        settingsContent.appendChild(loadBtn);
+        settingsContent.appendChild(exportBtn);
+        settingsContent.appendChild(importBtn);
+
+        settingsModal.appendChild(settingsContent);
+        settingsModal.appendChild(closeButton);
+        document.body.appendChild(settingsModal);
+    };
+
+    header.appendChild(configBtn);
+
     // Add a save button to the buttons section
     var saveBtn = document.createElement("button");
     saveBtn.textContent = "💾 Save";
