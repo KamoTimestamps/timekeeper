@@ -24,6 +24,10 @@
   const OFFSET_KEY = "timestampOffsetSeconds";
   const DEFAULT_OFFSET = -5;
 
+  // Configuration for shift-click time skip interval
+  const SHIFT_SKIP_KEY = "shiftClickTimeSkipSeconds";
+  const DEFAULT_SHIFT_SKIP = 10;
+
   // The user can configure 'timestampOffsetSeconds' in ViolentMonkey's script values.
   // Default is -5 seconds (5 seconds before current time).
   // A positive value will make it after current time, negative before.
@@ -31,6 +35,12 @@
   if (typeof configuredOffset === 'undefined') {
     await GM.setValue(OFFSET_KEY, DEFAULT_OFFSET);
     configuredOffset = DEFAULT_OFFSET;
+  }
+
+  let configuredShiftSkip = await GM.getValue(SHIFT_SKIP_KEY);
+  if (typeof configuredShiftSkip === 'undefined') {
+    await GM.setValue(SHIFT_SKIP_KEY, DEFAULT_SHIFT_SKIP);
+    configuredShiftSkip = DEFAULT_SHIFT_SKIP;
   }
 
   let isMouseOverTimestamps = false; // Default to false
@@ -68,7 +78,7 @@
 
         // Check if Shift key is pressed
         if (e.shiftKey) {
-            increment *= 10; // Multiply increment by 10 if Shift is pressed
+            increment *= configuredShiftSkip; // Use configured shift skip interval
         }
 
         var newTime = Math.max(0, currTime + increment);
