@@ -56,19 +56,6 @@
       var t = e.target.parentElement.querySelector('a[data-time]');
       var currTime = parseInt(t.dataset.time);
       formatTime(t, Math.max(0, currTime + parseInt(e.target.dataset.increment)));
-    } else if (e.target.dataset.action === "end") {
-      e.preventDefault();
-      var li = e.target.parentElement, startLink = li.querySelector('a[data-time]');
-      if (!li.querySelector('.end-time')) {
-        var endLink = document.createElement("a");
-        formatTime(endLink, Math.floor(document.querySelector("video").currentTime));
-        endLink.className = 'end-time';
-        startLink.textContent += " - " + endLink.textContent;
-        var timeRow = li.querySelector('.time-row');
-        timeRow.insertBefore(endLink, e.target.nextSibling);
-        e.target.remove();
-        updateSeekbarMarkers();
-      }
     } else if (e.target.dataset.action === "clear") {
       e.preventDefault();
       list.textContent = "";
@@ -80,21 +67,20 @@
 
   function addTimestamp(e, t) {
     var li = document.createElement("li"), timeRow = document.createElement("div"), minus = document.createElement("span"),
-      plus = document.createElement("span"), a = document.createElement("a"), endBtn = document.createElement("button"),
+      plus = document.createElement("span"), a = document.createElement("a"),
       commentInput = document.createElement("input"), del = document.createElement("button");
 
     timeRow.className = "time-row";
     minus.textContent = "➖"; minus.dataset.increment = -1; minus.style.cursor = "pointer";
     plus.textContent = "➕"; plus.dataset.increment = 1; plus.style.cursor = "pointer";
     formatTime(a, e);
-    endBtn.textContent = "End"; endBtn.dataset.action = "end"; endBtn.style = "background:#555;color:white;border:none;padding:2px 5px;border-radius:3px;cursor:pointer;";
     commentInput.value = t || "";
     commentInput.style = "width:200px;margin-top:5px;display:block;";
     commentInput.addEventListener("input", saveTimestamps); // Save timestamps on comment edit
     del.textContent = "🗑️"; del.style = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
     del.onclick = () => { li.remove(); updateSeekbarMarkers(); updateScroll(); saveTimestamps(); };
 
-    timeRow.append(minus, plus, a, endBtn, del);
+    timeRow.append(minus, plus, a, del);
     li.append(timeRow, commentInput);
     li.style = "display:flex;flex-direction:column;gap:5px;padding:5px;background:rgba(255,255,255,0.05);border-radius:3px;";
     list.appendChild(li);
@@ -120,60 +106,30 @@
     var progressBar = document.querySelector(".ytp-progress-bar");
     if (!video || !progressBar || !isFinite(video.duration)) return;
 
-    var existingMarkers = document.querySelectorAll(".ytls-marker, .ytls-ts-bar");
+    var existingMarkers = document.querySelectorAll(".ytls-marker");
     existingMarkers.forEach(marker => marker.remove());
 
     var timestamps = Array.from(list.children).map(li => {
-      var startLink = li.querySelector('a[data-time]');
-      var endLink = li.querySelector('.end-time');
-      var comment = li.querySelector('input').value;
-      var startTime = parseInt(startLink.dataset.time);
-      var endTime = endLink ? parseInt(endLink.dataset.time) : null;
-      return { start: startTime, end: endTime, comment: comment };
+        var startLink = li.querySelector('a[data-time]');
+        var comment = li.querySelector('input').value;
+        var startTime = parseInt(startLink.dataset.time);
+        return { start: startTime, comment: comment };
     });
 
     timestamps.forEach(ts => {
-      if (ts.start) {
-        var marker = document.createElement("div");
-        marker.className = "ytls-marker";
-        marker.style.position = "absolute";
-        marker.style.height = "100%";
-        marker.style.width = "2px";
-        marker.style.backgroundColor = "#ff0000";
-        marker.style.cursor = "pointer";
-        marker.style.left = (ts.start / video.duration * 100) + "%";
-        marker.dataset.time = ts.start;
-        marker.addEventListener("click", () => video.currentTime = ts.start);
-        progressBar.appendChild(marker);
-
-        if (ts.end) {
-          var endMarker = document.createElement("div");
-          endMarker.className = "ytls-marker end";
-          endMarker.style.position = "absolute";
-          endMarker.style.height = "100%";
-          endMarker.style.width = "2px";
-          endMarker.style.backgroundColor = "#00ff00";
-          endMarker.style.cursor = "pointer";
-          endMarker.style.left = (ts.end / video.duration * 100) + "%";
-          endMarker.dataset.time = ts.end;
-          endMarker.addEventListener("click", () => video.currentTime = ts.end);
-          progressBar.appendChild(endMarker);
-
-          // Add TS bar between start and end
-          var tsBar = document.createElement("div");
-          tsBar.className = "ytls-ts-bar";
-          tsBar.style.position = "absolute";
-          tsBar.style.height = "100%";
-          tsBar.style.backgroundColor = "rgba(255, 255, 0, 0.3)"; // Yellow with transparency
-          tsBar.style.cursor = "pointer";
-          var startPos = ts.start / video.duration * 100;
-          var endPos = ts.end / video.duration * 100;
-          tsBar.style.left = startPos + "%";
-          tsBar.style.width = (endPos - startPos) + "%";
-          tsBar.title = ts.comment; // Tooltip with comment on hover
-          progressBar.appendChild(tsBar);
+        if (ts.start) {
+            var marker = document.createElement("div");
+            marker.className = "ytls-marker";
+            marker.style.position = "absolute";
+            marker.style.height = "100%";
+            marker.style.width = "2px";
+            marker.style.backgroundColor = "#ff0000";
+            marker.style.cursor = "pointer";
+            marker.style.left = (ts.start / video.duration * 100) + "%";
+            marker.dataset.time = ts.start;
+            marker.addEventListener("click", () => video.currentTime = ts.start);
+            progressBar.appendChild(marker);
         }
-      }
     });
   }
 
@@ -185,25 +141,14 @@
     while (i < lines.length) {
       var copiedMatch = parseCopiedFormat(lines[i]);
       if (copiedMatch) {
-        var start = copiedMatch.start, end = copiedMatch.end, comment = copiedMatch.comment;
+        var start = copiedMatch.start, comment = copiedMatch.comment;
         addTimestamp(start, comment);
-        if (end) {
-          var li = list.lastChild;
-          var startLink = li.querySelector('a[data-time]');
-          var endLink = document.createElement("a");
-          formatTime(endLink, end);
-          endLink.className = 'end-time';
-          startLink.textContent += " - " + endLink.textContent;
-          var timeRow = li.querySelector('.time-row');
-          timeRow.insertBefore(endLink, timeRow.lastChild);
-        }
         i++;
       } else {
         var timeMatch = lines[i].match(/(\d*:*\d+:\d+)(?:\s*[-–]\s*)(\d*:*\d+:\d+)?/);
         if (timeMatch) {
           var timeRange = parseTimeRange(lines[i]);
           var start = timeRange ? timeRange.start : parseTime(lines[i]);
-          var end = timeRange ? timeRange.end : null;
           var comment = "";
           i++;
           while (i < lines.length && !lines[i].match(/(\d*:*\d+:\d+)(?:\s*[-–]\s*)(\d*:*\d+:\d+)/) && !parseCopiedFormat(lines[i])) {
@@ -211,16 +156,6 @@
             i++;
           }
           addTimestamp(start, comment);
-          if (end) {
-            var li = list.lastChild;
-            var startLink = li.querySelector('a[data-time]');
-            var endLink = document.createElement("a");
-            formatTime(endLink, end);
-            endLink.className = 'end-time';
-            startLink.textContent += " - " + endLink.textContent;
-            var timeRow = li.querySelector('.time-row');
-            timeRow.insertBefore(endLink, timeRow.lastChild);
-          }
         } else {
           i++;
         }
@@ -235,12 +170,10 @@
     if (!videoId) return;
 
     const timestamps = Array.from(list.children).map(li => {
-      const startLink = li.querySelector('a[data-time]');
-      const endLink = li.querySelector('.end-time');
-      const comment = li.querySelector('input').value;
-      const startTime = parseInt(startLink.dataset.time);
-      const endTime = endLink ? parseInt(endLink.dataset.time) : null;
-      return { start: startTime, end: endTime, comment: comment };
+        const startLink = li.querySelector('a[data-time]');
+        const comment = li.querySelector('input').value;
+        const startTime = parseInt(startLink.dataset.time);
+        return { start: startTime, comment: comment };
     });
 
     localStorage.setItem(`ytls-${videoId}`, JSON.stringify(timestamps));
@@ -255,17 +188,7 @@
 
     const timestamps = JSON.parse(savedTimestamps);
     timestamps.forEach(ts => {
-      const input = addTimestamp(ts.start, ts.comment);
-      if (ts.end) {
-        const li = list.lastChild;
-        const startLink = li.querySelector('a[data-time]');
-        const endLink = document.createElement("a");
-        formatTime(endLink, ts.end);
-        endLink.className = 'end-time';
-        startLink.textContent += " - " + endLink.textContent;
-        const timeRow = li.querySelector('.time-row');
-        timeRow.insertBefore(endLink, timeRow.lastChild);
-      }
+        addTimestamp(ts.start, ts.comment);
     });
 
     // Automatically open the tool if timestamps are loaded
@@ -336,9 +259,8 @@
         setTimeout(resetCopy, 500);
         for (var i = 0; i < list.children.length; i++) {
           var start = list.children[i].querySelector('a[data-time]').textContent,
-            comment = list.children[i].querySelector('input').value,
-            end = list.children[i].querySelector('.end-time') ? list.children[i].querySelector('.end-time').textContent : "";
-          text += (i ? "\n" : "") + `${start}${end ? " - " + end : ""} "${comment}"`;
+            comment = list.children[i].querySelector('input').value;
+          text += (i ? "\n" : "") + `${start} "${comment}"`;
         }
       } else {
         resetCopy();
