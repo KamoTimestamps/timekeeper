@@ -176,7 +176,7 @@
       a.click();
       URL.revokeObjectURL(url);
     } else if (format === "text") {
-      const plainText = timestamps.map(ts => `${formatTimeString(ts.start)} "${ts.comment}"`).join("\n");
+      const plainText = timestamps.map(ts => `${formatTimeString(ts.start)} ${ts.comment}`).join("\n");
       const blob = new Blob([plainText], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -342,7 +342,7 @@
               clearTimestampsDisplay();
               updateSeekbarMarkers();
               lines.forEach(line => {
-                const match = line.match(/^(\d{2}:\d{2}:\d{2})\s+"(.*)"$/);
+                const match = line.match(/^(\d{2}:\d{2}:\d{2})\s+(.*)$/);
                 if (match) {
                   const timeParts = match[1].split(":").map(Number);
                   const start = timeParts[0] * 3600 + timeParts[1] * 60 + timeParts[2];
