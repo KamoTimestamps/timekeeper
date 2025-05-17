@@ -267,6 +267,9 @@
         timeRow.insertBefore(endLink, timeRow.lastChild);
       }
     });
+
+    // Automatically open the tool if timestamps are loaded
+    pane.classList.remove("minimized");
   }
 
   function getVideoId() {
