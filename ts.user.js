@@ -15,6 +15,12 @@
 (function () {
   'use strict';
 
+  function clearTimestampsDisplay() {
+    while (list.firstChild) { // Clear the existing timestamps
+      list.removeChild(list.firstChild);
+    }
+  }
+
   // Helper function to format time in HH:MM:SS
   function formatTimeString(seconds) {
     const h = Math.floor(seconds / 3600);
@@ -182,8 +188,10 @@
   }
 
   function loadTimestamps() {
+    console.log(`loadTimestamps start`);
     const videoId = getVideoId();
     if (!videoId) return;
+    console.log(`loadTimestamps for ${videoId}`);
 
     const savedTimestamps = localStorage.getItem(`ytls-${videoId}`);
     if (!savedTimestamps) return;
@@ -195,6 +203,7 @@
 
     // Automatically open the tool if timestamps are loaded
     pane.classList.remove("minimized");
+    updateSeekbarMarkers();
   }
 
   function getVideoId() {
@@ -313,7 +322,8 @@
             try {
               const timestamps = JSON.parse(content);
               if (Array.isArray(timestamps)) {
-                list.innerHTML = ""; // Clear existing timestamps
+                clearTimestampsDisplay();
+                updateSeekbarMarkers();
                 timestamps.forEach(ts => addTimestamp(ts.start, ts.comment));
                 saveTimestamps();
                 updateSeekbarMarkers();
@@ -329,7 +339,8 @@
             // Handle plain text input
             const lines = content.split("\n").map(line => line.trim()).filter(line => line);
             if (lines.length > 0) {
-              list.innerHTML = ""; // Clear existing timestamps
+              clearTimestampsDisplay();
+              updateSeekbarMarkers();
               lines.forEach(line => {
                 const match = line.match(/^(\d{2}:\d{2}:\d{2})\s+"(.*)"$/);
                 if (match) {
@@ -397,23 +408,28 @@
     const pageTitle = document.title; // Get the current page title
     console.log("Page Title:", pageTitle); // Log the page title
     console.log("Video ID:", currentVideoId); // Log the video ID
+    console.log(window.location.href);
+
+    clearTimestampsDisplay();
+    updateSeekbarMarkers();
 
     if (currentVideoId) {
       const savedTimestamps = localStorage.getItem(`ytls-${currentVideoId}`);
       if (savedTimestamps) {
+        console.log(`Found saved timestamps for ${currentVideoId}`);
         // If timestamps exist for the new video, load them
         if (!document.body.contains(pane)) {
           document.body.appendChild(pane); // Re-add the pane if it was removed
         }
-        list.innerHTML = ""; // Clear the existing timestamps
         loadTimestamps(); // Load timestamps for the new video
-        updateSeekbarMarkers();
         pane.classList.remove("minimized"); // Ensure the pane is not minimized
       } else {
+        console.log(`No saved timestamps for ${currentVideoId}`);
         // If no timestamps exist, minimize the timestamper
         pane.classList.add("minimized");
       }
     } else {
+      console.log(`No video id found`);
       // If no valid video ID is found, minimize the timestamper
       pane.classList.add("minimized");
     }
@@ -435,6 +451,8 @@
 
   // Listen for the `popstate` event (triggered by browser navigation)
   window.addEventListener("popstate", handleUrlChange);
+  window.addEventListener("yt-navigate-finish", handleUrlChange);
+  window.addEventListener("yt-navigate-start", handleUrlChange);
 
   // Use a MutationObserver to detect changes in the <title> element
   const titleObserver = new MutationObserver(() => {
