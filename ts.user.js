@@ -412,58 +412,42 @@
     configBtn.style = "background:#555;color:white;font-size:14px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
     configBtn.title = "Settings";
 
-    configBtn.onclick = () => {
-      // Create a styled modal for the settings pane
-      const settingsModal = document.createElement("div");
-      settingsModal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:#333;padding:20px;border-radius:10px;z-index:10000;color:white;text-align:center;width:300px;box-shadow:0 0 10px rgba(0,0,0,0.5);";
-
-      // Move save, load, export, and import buttons to the settings pane
-      const settingsContent = document.createElement("div");
-      settingsContent.style = "display:flex;flex-direction:column;gap:10px;align-items:center;";
-
-      // Update button styles to match the main pane
-      const buttonIcons = [
-        { label: "💾 Save", title: "Save" },
-        { label: "📂 Load", title: "Load" },
-        { label: "📤 Export", title: "Export" },
-        { label: "📥 Import", title: "Import" },
-      ];
-
-      // Link settings modal buttons to their respective actions
-      buttonIcons.forEach(({ label, title }) => {
+    // Helper function to create a button with common styles and actions
+    function createButton(label, title, onClick) {
         const button = document.createElement("button");
         button.textContent = label;
         button.title = title;
-        button.style = "width:100%;background:#555;color:white;font-size:14px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;margin-right:10px;";
+        button.style = "width:100%;height:50px;background:#555;color:white;border:none;border-radius:5px;cursor:pointer;font-size:16px;display:flex;justify-content:center;align-items:center;";
+        button.onclick = onClick;
+        return button;
+    }
 
-        // Assign actions based on the title
-        if (title === "Save") {
-          button.onclick = saveBtn.onclick;
-        } else if (title === "Load") {
-          button.onclick = loadBtn.onclick;
-        } else if (title === "Export") {
-          button.onclick = exportBtn.onclick;
-        } else if (title === "Import") {
-          button.onclick = importBtn.onclick;
-        }
+    // Function to create the settings modal
+    function createSettingsModal() {
+        const settingsModal = document.createElement("div");
+        settingsModal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:#333;padding:20px;border-radius:10px;z-index:10000;color:white;text-align:center;width:300px;box-shadow:0 0 10px rgba(0,0,0,0.5);";
 
-        settingsContent.appendChild(button);
-      });
+        const settingsContent = document.createElement("div");
+        settingsContent.style = "display:flex;flex-direction:column;gap:10px;align-items:center;";
 
-      // Update the close button to properly close the settings modal
-      const closeButton = document.createElement("button");
-      closeButton.textContent = "Close";
-      closeButton.title = "Close";
-      closeButton.style = "width:100%;background:darkred;color:white;font-size:14px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;margin-right:10px;";
-      closeButton.onclick = () => {
-          document.body.removeChild(settingsModal);
-      };
+        const buttonConfigs = [
+            { label: "💾 Save", title: "Save", action: saveBtn.onclick },
+            { label: "📂 Load", title: "Load", action: loadBtn.onclick },
+            { label: "📤 Export", title: "Export", action: exportBtn.onclick },
+            { label: "📥 Import", title: "Import", action: importBtn.onclick },
+            { label: "Close", title: "Close", action: () => document.body.removeChild(settingsModal) }
+        ];
 
-      settingsContent.appendChild(closeButton);
+        buttonConfigs.forEach(({ label, title, action }) => {
+            const button = createButton(label, title, action);
+            settingsContent.appendChild(button);
+        });
 
-      settingsModal.appendChild(settingsContent);
-      document.body.appendChild(settingsModal);
-    };
+        settingsModal.appendChild(settingsContent);
+        document.body.appendChild(settingsModal);
+    }
+
+    configBtn.onclick = createSettingsModal;
 
     // Move the "Settings" button to the right of the "Add timestamp" button.
     btns.append(addBtn, configBtn);
