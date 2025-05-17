@@ -74,6 +74,7 @@
             list.textContent = "";
             updateSeekbarMarkers();
             updateScroll();
+            saveTimestamps();
         }
     }
 
@@ -89,7 +90,7 @@
         endBtn.textContent = "End"; endBtn.dataset.action = "end"; endBtn.style = "background:#555;color:white;border:none;padding:2px 5px;border-radius:3px;cursor:pointer;";
         commentInput.value = t || ""; commentInput.style = "width:200px;margin-top:5px;display:block;";
         del.textContent = "🗑️"; del.style = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
-        del.onclick = () => { li.remove(); updateSeekbarMarkers(); updateScroll(); };
+        del.onclick = () => { li.remove(); updateSeekbarMarkers(); updateScroll(); saveTimestamps(); };
 
         timeRow.append(minus, plus, a, endBtn, del);
         li.append(timeRow, commentInput);
@@ -97,6 +98,7 @@
         list.appendChild(li);
         updateScroll();
         updateSeekbarMarkers();
+        saveTimestamps();
         return commentInput;
     }
 
@@ -225,6 +227,50 @@
         updateSeekbarMarkers();
     }
 
+    function saveTimestamps() {
+        const videoId = getVideoId();
+        if (!videoId) return;
+
+        const timestamps = Array.from(list.children).map(li => {
+            const startLink = li.querySelector('a[data-time]');
+            const endLink = li.querySelector('.end-time');
+            const comment = li.querySelector('input').value;
+            const startTime = parseInt(startLink.dataset.time);
+            const endTime = endLink ? parseInt(endLink.dataset.time) : null;
+            return { start: startTime, end: endTime, comment: comment };
+        });
+
+        localStorage.setItem(`ytls-${videoId}`, JSON.stringify(timestamps));
+    }
+
+    function loadTimestamps() {
+        const videoId = getVideoId();
+        if (!videoId) return;
+
+        const savedTimestamps = localStorage.getItem(`ytls-${videoId}`);
+        if (!savedTimestamps) return;
+
+        const timestamps = JSON.parse(savedTimestamps);
+        timestamps.forEach(ts => {
+            const input = addTimestamp(ts.start, ts.comment);
+            if (ts.end) {
+                const li = list.lastChild;
+                const startLink = li.querySelector('a[data-time]');
+                const endLink = document.createElement("a");
+                formatTime(endLink, ts.end);
+                endLink.className = 'end-time';
+                startLink.textContent += " - " + endLink.textContent;
+                const timeRow = li.querySelector('.time-row');
+                timeRow.insertBefore(endLink, timeRow.lastChild);
+            }
+        });
+    }
+
+    function getVideoId() {
+        const match = location.search.match(/[?&]v=([^&]+)/) || location.href.match(/\/(?:live|shorts)\/([^/?&]+)/);
+        return match ? match[1] : null;
+    }
+
     if (!document.querySelector("#ytls-pane")) {
         var pane = document.createElement("div"), header = document.createElement("div"), close = document.createElement("span"),
             list = document.createElement("ul"), textarea = document.createElement("textarea"), btns = document.createElement("div"),
@@ -259,8 +305,14 @@
 
         close.onclick = () => { if (confirm("Close timestamp tool?")) pane.remove(); };
         minimizeBtn.onclick = () => pane.classList.toggle("minimized");
-        list.onclick = handleClick;
-        list.ontouchstart = handleClick;
+        list.onclick = (e) => {
+            handleClick(e);
+            saveTimestamps();
+        };
+        list.ontouchstart = (e) => {
+            handleClick(e);
+            saveTimestamps();
+        };
         importBtn.onclick = () => {
             var text = textarea.value;
             importTimestamps(text);
@@ -269,6 +321,7 @@
             var timeStampBuffer = 2;
             var input = addTimestamp(Math.max(0, Math.floor(document.querySelector("video").currentTime - timeStampBuffer)));
             input.focus();
+            saveTimestamps();
         };
         copyBtn.onclick = () => {
             var url = location.href;
@@ -299,6 +352,7 @@
         pane.append(minimizeBtn, content, style);
         btns.append(importBtn, addBtn, copyBtn, clearBtn);
         document.body.appendChild(pane);
+        loadTimestamps();
         updateSeekbarMarkers();
     }
 })();
