@@ -83,7 +83,25 @@
     commentInput.style = "width:200px;margin-top:5px;display:block;";
     commentInput.addEventListener("input", saveTimestamps); // Save timestamps on comment edit
     del.textContent = "🗑️"; del.style = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
-    del.onclick = () => { li.remove(); updateSeekbarMarkers(); updateScroll(); saveTimestamps(); };
+    del.onclick = () => {
+      if (li.dataset.deleteConfirmed === "true") {
+        li.remove(); // Remove the timestamp
+        updateSeekbarMarkers();
+        updateScroll();
+        saveTimestamps();
+      } else {
+        li.dataset.deleteConfirmed = "true"; // Mark as ready for deletion
+        li.style.background = "darkred"; // Change background to dark red
+
+        // Reset deletion state after 5 seconds
+        setTimeout(() => {
+          if (li.dataset.deleteConfirmed === "true") {
+            li.dataset.deleteConfirmed = "false"; // Reset the flag
+            li.style.background = "rgba(255, 255, 255, 0.05)"; // Reset background
+          }
+        }, 5000);
+      }
+    };
 
     timeRow.append(minus, record, plus, a, del);
     li.append(timeRow, commentInput);
@@ -261,10 +279,13 @@
 
       // Highlight the nearest timestamp
       Array.from(list.children).forEach(li => {
-        li.style.background = "rgba(255, 255, 255, 0.05)"; // Reset background
+        // Skip resetting the background if it's marked for deletion (dark red)
+        if (li.style.background !== "darkred") {
+          li.style.background = "rgba(255, 255, 255, 0.05)"; // Reset background
+        }
       });
 
-      if (nearestTimestamp) {
+      if (nearestTimestamp && nearestTimestamp.style.background !== "darkred") {
         nearestTimestamp.style.background = "rgba(0, 128, 255, 0.2)"; // Highlight nearest timestamp
         nearestTimestamp.scrollIntoView({ behavior: "smooth", block: "center" }); // Scroll to it
       }
