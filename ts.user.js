@@ -30,31 +30,6 @@
     e.href = "https://youtu.be/" + vid + "?t=" + t;
   }
 
-  function parseTimeRange(str) {
-    var matches = str.match(/(\d*:*\d+):(\d+)(?:\s*[-–]\s*)(\d*:*\d+):(\d+)/);
-    if (!matches) return null;
-    var startParts = matches[1].split(':').map(Number),
-      startSec = parseInt(matches[2]),
-      endParts = matches[3].split(':').map(Number),
-      endSec = parseInt(matches[4]);
-    var startMin = startParts.length === 1 ? startParts[0] : startParts[0] * 60 + startParts[1],
-      endMin = endParts.length === 1 ? endParts[0] : endParts[0] * 60 + endParts[1];
-    return { start: startMin * 60 + startSec, end: endMin * 60 + endSec };
-  }
-
-  function parseCopiedFormat(str) {
-    var matches = str.match(/^(?:.*?\?v=[^&\s]+&.*?\s)?(\d*:*\d+:\d+)\s*-\s*(\d*:*\d+:\d+)\s*"(.+)"$/);
-    if (!matches) return null;
-    var startParts = matches[1].split(':').map(Number),
-      endParts = matches[2].split(':').map(Number),
-      comment = matches[3];
-    var startMin = startParts.length === 2 ? startParts[0] : startParts[0] * 60 + startParts[1],
-      startSec = startParts.length === 2 ? startParts[1] : startParts[2],
-      endMin = endParts.length === 2 ? endParts[0] : endParts[0] * 60 + endParts[1],
-      endSec = endParts.length === 2 ? endParts[1] : endParts[2];
-    return { start: startMin * 60 + startSec, end: endMin * 60 + endSec, comment: comment };
-  }
-
   function handleClick(e) {
     if (e.target.dataset.time) {
       e.preventDefault();
@@ -155,38 +130,6 @@
     });
   }
 
-  function resetCopy() { isCopyList = true; copyBtn.textContent = "Copy List"; }
-
-  function importTimestamps(text) {
-    var lines = text.split("\n").map(line => line.trim()).filter(line => line);
-    var i = 0;
-    while (i < lines.length) {
-      var copiedMatch = parseCopiedFormat(lines[i]);
-      if (copiedMatch) {
-        var start = copiedMatch.start, comment = copiedMatch.comment;
-        addTimestamp(start, comment);
-        i++;
-      } else {
-        var timeMatch = lines[i].match(/(\d*:*\d+:\d+)(?:\s*[-–]\s*)(\d*:*\d+:\d+)?/);
-        if (timeMatch) {
-          var timeRange = parseTimeRange(lines[i]);
-          var start = timeRange ? timeRange.start : parseTime(lines[i]);
-          var comment = "";
-          i++;
-          while (i < lines.length && !lines[i].match(/(\d*:*\d+:\d+)(?:\s*[-–]\s*)(\d*:*\d+:\d+)/) && !parseCopiedFormat(lines[i])) {
-            comment += (comment ? " " : "") + lines[i];
-            i++;
-          }
-          addTimestamp(start, comment);
-        } else {
-          i++;
-        }
-      }
-    }
-    updateScroll();
-    updateSeekbarMarkers();
-  }
-
   function saveTimestamps() {
     const videoId = getVideoId();
     if (!videoId) return;
@@ -275,8 +218,8 @@
   if (!document.querySelector("#ytls-pane")) {
     var pane = document.createElement("div"), header = document.createElement("div"), close = document.createElement("span"),
       list = document.createElement("ul"), textarea = document.createElement("textarea"), btns = document.createElement("div"),
-      importBtn = document.createElement("button"), addBtn = document.createElement("button"), isCopyList = true,
-      copyBtn = document.createElement("button"), clearBtn = document.createElement("button"), timeDisplay = document.createElement("span"),
+      addBtn = document.createElement("button"),
+      timeDisplay = document.createElement("span"),
       credit = document.createElement("span"), style = document.createElement("style"), minimizeBtn = document.createElement("button");
 
     pane.id = "ytls-pane";
@@ -298,10 +241,7 @@
     updateTime();
     textarea.id = "ytls-box";
     btns.id = "ytls-buttons";
-    importBtn.textContent = "Import List";
     addBtn.textContent = "Add TS";
-    copyBtn.textContent = "Copy List";
-    clearBtn.textContent = "Clear"; clearBtn.dataset.action = "clear"; clearBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
 
     // Add a save button to the buttons section
     var saveBtn = document.createElement("button");
@@ -433,43 +373,19 @@
       handleClick(e);
       saveTimestamps();
     };
-    importBtn.onclick = () => {
-      var text = textarea.value;
-      importTimestamps(text);
-    };
     addBtn.onclick = () => {
       var timeStampBuffer = 2;
       var input = addTimestamp(Math.max(0, Math.floor(document.querySelector("video").currentTime - timeStampBuffer)));
       input.focus();
       saveTimestamps();
     };
-    copyBtn.onclick = () => {
-      var url = location.href;
-      var text = url + "\n";
-      if (isCopyList) {
-        isCopyList = false; copyBtn.textContent = "Copy Links";
-        setTimeout(resetCopy, 500);
-        for (var i = 0; i < list.children.length; i++) {
-          var start = list.children[i].querySelector('a[data-time]').textContent,
-            comment = list.children[i].querySelector('input').value;
-          text += (i ? "\n" : "") + `${start} "${comment}"`;
-        }
-      } else {
-        resetCopy();
-        for (var j = 0; j < list.children.length; j++) {
-          var commentText = list.children[j].querySelector('input').value,
-            tsUrl = list.children[j].querySelector('a[data-time]').href;
-          text += (j ? "\n" : "") + `${commentText} ${tsUrl}`;
-        }
-      }
-      textarea.value = text; textarea.select(); document.execCommand("copy");
-    };
+
 
     header.append(timeDisplay, credit, close);
     var content = document.createElement("div"); content.id = "ytls-content";
     content.append(header, list, textarea, btns);
     pane.append(minimizeBtn, content, style);
-    btns.append(importBtn, addBtn, copyBtn, clearBtn);
+    btns.append(addBtn);
     document.body.appendChild(pane);
     loadTimestamps();
     updateSeekbarMarkers();
