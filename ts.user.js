@@ -505,9 +505,6 @@
       document.body.appendChild(modal);
     };
 
-    // Append the save button to the buttons section
-    btns.appendChild(saveBtn);
-
     // Add a load button to the buttons section
     var loadBtn = document.createElement("button");
     loadBtn.textContent = "📂 Load";
@@ -579,9 +576,6 @@
       fileInput.click();
     };
 
-    // Append the load button to the buttons section
-    btns.appendChild(loadBtn);
-
     // Add export button to the buttons section
     var exportBtn = document.createElement("button");
     exportBtn.textContent = "📤 Export";
@@ -613,9 +607,6 @@
       a.click();
       URL.revokeObjectURL(url);
     };
-
-    // Append the export button to the buttons section
-    btns.appendChild(exportBtn);
 
     // Add import button to the buttons section
     var importBtn = document.createElement("button");
@@ -653,8 +644,6 @@
       fileInput.click();
     };
 
-    // Append the import button to the buttons section
-    btns.appendChild(importBtn);
 
     style.textContent = `
       #ytls-pane {
