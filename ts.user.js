@@ -68,29 +68,29 @@
 
   function handleClick(e) {
     if (e.target.dataset.time) {
-        e.preventDefault();
-        document.querySelector("video").currentTime = e.target.dataset.time;
+      e.preventDefault();
+      document.querySelector("video").currentTime = e.target.dataset.time;
     } else if (e.target.dataset.increment) {
-        e.preventDefault();
-        var t = e.target.parentElement.querySelector('a[data-time]');
-        var currTime = parseInt(t.dataset.time);
-        var increment = parseInt(e.target.dataset.increment);
+      e.preventDefault();
+      var t = e.target.parentElement.querySelector('a[data-time]');
+      var currTime = parseInt(t.dataset.time);
+      var increment = parseInt(e.target.dataset.increment);
 
-        // Check if Shift key is pressed
-        if (e.shiftKey) {
-            increment *= configuredShiftSkip; // Use configured shift skip interval
-        }
+      // Check if Shift key is pressed
+      if (e.shiftKey) {
+        increment *= configuredShiftSkip; // Use configured shift skip interval
+      }
 
-        var newTime = Math.max(0, currTime + increment);
-        formatTime(t, newTime);
-        document.querySelector("video").currentTime = newTime; // Seek to the new timestamp
-        saveTimestamps();
+      var newTime = Math.max(0, currTime + increment);
+      formatTime(t, newTime);
+      document.querySelector("video").currentTime = newTime; // Seek to the new timestamp
+      saveTimestamps();
     } else if (e.target.dataset.action === "clear") {
-        e.preventDefault();
-        list.textContent = "";
-        updateSeekbarMarkers();
-        updateScroll();
-        saveTimestamps();
+      e.preventDefault();
+      list.textContent = "";
+      updateSeekbarMarkers();
+      updateScroll();
+      saveTimestamps();
     }
   }
 
@@ -358,13 +358,13 @@
     document.querySelectorAll("#ytls-pane").forEach(el => el.remove());
 
     var pane = document.createElement("div"),
-        header = document.createElement("div"),
-        list = document.createElement("ul"), // Ensure `list` is initialized here
-        btns = document.createElement("div"),
-        addBtn = document.createElement("button"),
-        timeDisplay = document.createElement("span"),
-        style = document.createElement("style"),
-        minimizeBtn = document.createElement("button");
+      header = document.createElement("div"),
+      list = document.createElement("ul"), // Ensure `list` is initialized here
+      btns = document.createElement("div"),
+      addBtn = document.createElement("button"),
+      timeDisplay = document.createElement("span"),
+      style = document.createElement("style"),
+      minimizeBtn = document.createElement("button");
 
     // Add event listeners to `list` after it is initialized
     list.addEventListener("mouseenter", () => {
@@ -401,66 +401,72 @@
     }
     updateTime();
     btns.id = "ytls-buttons";
-    addBtn.textContent = " 🆕 Add TS";
-    addBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
 
-    // Add a configuration button to the header
+    // Update the "Add TS" button to "Add timestamp" and style it similarly to the "Settings" button.
+    addBtn.textContent = "🐣 Add timestamp";
+    addBtn.style = "background:#555;color:white;font-size:14px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;margin-right:10px;";
+
+    // Update the "Settings" button to include the text "Settings" and style it similarly to the "Add timestamp" button.
     var configBtn = document.createElement("button");
-    configBtn.textContent = "⚙️";
-    configBtn.style = "background:transparent;border:none;color:white;cursor:pointer;font-size:16px;margin-left:10px;";
+    configBtn.textContent = "⚙️ Settings";
+    configBtn.style = "background:#555;color:white;font-size:14px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
     configBtn.title = "Settings";
 
     configBtn.onclick = () => {
-        // Create a styled modal for the settings pane
-        const settingsModal = document.createElement("div");
-        settingsModal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:#333;padding:20px;border-radius:10px;z-index:10000;color:white;text-align:center;width:300px;box-shadow:0 0 10px rgba(0,0,0,0.5);";
+      // Create a styled modal for the settings pane
+      const settingsModal = document.createElement("div");
+      settingsModal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:#333;padding:20px;border-radius:10px;z-index:10000;color:white;text-align:center;width:300px;box-shadow:0 0 10px rgba(0,0,0,0.5);";
 
-        const closeButton = document.createElement("button");
-        closeButton.textContent = "Close";
-        closeButton.style = "background:#444;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;margin-top:15px;display:block;width:100%;";
-        closeButton.onclick = () => {
-            document.body.removeChild(settingsModal);
-        };
+      // Move save, load, export, and import buttons to the settings pane
+      const settingsContent = document.createElement("div");
+      settingsContent.style = "display:flex;flex-direction:column;gap:10px;align-items:center;";
 
-        // Move save, load, export, and import buttons to the settings pane
-        const settingsContent = document.createElement("div");
-        settingsContent.style = "display:grid;grid-template-columns:repeat(auto-fit, minmax(50px, 1fr));gap:10px;justify-items:center;align-items:center;";
+      // Update button styles to match the main pane
+      const buttonIcons = [
+        { label: "💾 Save", title: "Save" },
+        { label: "📂 Load", title: "Load" },
+        { label: "📤 Export", title: "Export" },
+        { label: "📥 Import", title: "Import" },
+      ];
 
-        // Update settings modal buttons to use icons and styles similar to the main pane
-        const buttonIcons = [
-            { label: "💾", title: "Save" },
-            { label: "📂", title: "Load" },
-            { label: "📤", title: "Export" },
-            { label: "📥", title: "Import" }
-        ];
+      // Link settings modal buttons to their respective actions
+      buttonIcons.forEach(({ label, title }) => {
+        const button = document.createElement("button");
+        button.textContent = label;
+        button.title = title;
+        button.style = "width:100%;background:#555;color:white;font-size:14px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;margin-right:10px;";
 
-        // Link settings modal buttons to their respective actions
-        buttonIcons.forEach(({ label, title }) => {
-            const button = document.createElement("button");
-            button.textContent = label;
-            button.title = title;
-            button.style = "width:50px;height:50px;background:#555;color:white;border:none;border-radius:5px;cursor:pointer;font-size:20px;display:flex;justify-content:center;align-items:center;";
+        // Assign actions based on the title
+        if (title === "Save") {
+          button.onclick = saveBtn.onclick;
+        } else if (title === "Load") {
+          button.onclick = loadBtn.onclick;
+        } else if (title === "Export") {
+          button.onclick = exportBtn.onclick;
+        } else if (title === "Import") {
+          button.onclick = importBtn.onclick;
+        }
 
-            // Assign actions based on the title
-            if (title === "Save") {
-                button.onclick = saveBtn.onclick;
-            } else if (title === "Load") {
-                button.onclick = loadBtn.onclick;
-            } else if (title === "Export") {
-                button.onclick = exportBtn.onclick;
-            } else if (title === "Import") {
-                button.onclick = importBtn.onclick;
-            }
+        settingsContent.appendChild(button);
+      });
 
-            settingsContent.appendChild(button);
-        });
+      // Update the close button to properly close the settings modal
+      const closeButton = document.createElement("button");
+      closeButton.textContent = "Close";
+      closeButton.title = "Close";
+      closeButton.style = "width:100%;background:darkred;color:white;font-size:14px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;margin-right:10px;";
+      closeButton.onclick = () => {
+          document.body.removeChild(settingsModal);
+      };
 
-        settingsModal.appendChild(settingsContent);
-        settingsModal.appendChild(closeButton);
-        document.body.appendChild(settingsModal);
+      settingsContent.appendChild(closeButton);
+
+      settingsModal.appendChild(settingsContent);
+      document.body.appendChild(settingsModal);
     };
 
-    header.appendChild(configBtn);
+    // Move the "Settings" button to the right of the "Add timestamp" button.
+    btns.append(addBtn, configBtn);
 
     // Add a save button to the buttons section
     var saveBtn = document.createElement("button");
@@ -792,7 +798,7 @@
             pane.style.right = right;
             pane.style.bottom = bottom;
           }
-        } catch {}
+        } catch { }
       }
     }
     function savePanePosition() {
@@ -909,7 +915,6 @@
     var content = document.createElement("div"); content.id = "ytls-content";
     content.append(header, list, btns);
     pane.append(minimizeBtn, content, style);
-    btns.append(addBtn);
     document.body.appendChild(pane);
     loadTimestamps();
     highlightNearestTimestamp();
@@ -920,7 +925,7 @@
   const handleUrlChange = () => {
     // Remove any stray minimized icons or duplicate panes before proceeding
     document.querySelectorAll("#ytls-pane").forEach((el, idx) => {
-        if (idx > 0) el.remove();
+      if (idx > 0) el.remove();
     });
 
     const currentVideoId = getVideoId();
