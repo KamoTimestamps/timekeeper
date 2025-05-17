@@ -391,6 +391,67 @@
       saveTimestamps();
     };
 
+    // Enable dragging and edge snapping for the pane
+    pane.style.position = "fixed";
+    pane.style.bottom = "0";
+    pane.style.right = "0";
+    pane.style.transition = "all 0.2s ease";
+
+    let isDragging = false;
+    let offsetX, offsetY;
+
+    pane.addEventListener("mousedown", (e) => {
+      if (e.target !== pane && e.target !== minimizeBtn && e.target !== header) return;
+
+      isDragging = true;
+      offsetX = e.clientX - pane.getBoundingClientRect().left;
+      offsetY = e.clientY - pane.getBoundingClientRect().top;
+
+      pane.style.transition = "none"; // Disable transition during drag
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (!isDragging) return;
+
+      const x = e.clientX - offsetX;
+      const y = e.clientY - offsetY;
+
+      pane.style.left = `${x}px`;
+      pane.style.top = `${y}px`;
+      pane.style.right = "auto";
+      pane.style.bottom = "auto";
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (!isDragging) return;
+
+      isDragging = false;
+      pane.style.transition = "all 0.2s ease"; // Re-enable transition
+
+      // Snap to edges
+      const rect = pane.getBoundingClientRect();
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+
+      if (rect.left < windowWidth / 2) {
+        pane.style.left = "0";
+        pane.style.right = "auto";
+      } else {
+        pane.style.left = "auto";
+        pane.style.right = "0";
+      }
+
+      if (rect.top < windowHeight / 2) {
+        pane.style.top = "0";
+        pane.style.bottom = "auto";
+      } else {
+        pane.style.top = "auto";
+        pane.style.bottom = "0";
+      }
+    });
+
+    // Prevent text selection during drag
+    pane.addEventListener("dragstart", (e) => e.preventDefault());
 
     header.append(timeDisplay, credit, close);
     var content = document.createElement("div"); content.id = "ytls-content";
