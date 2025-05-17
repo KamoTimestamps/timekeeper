@@ -297,6 +297,9 @@
   }
 
   if (!document.querySelector("#ytls-pane")) {
+    // Remove any stray minimized icons before creating a new pane
+    document.querySelectorAll("#ytls-pane").forEach(el => el.remove());
+
     var pane = document.createElement("div"),
         header = document.createElement("div"),
         close = document.createElement("span"),
@@ -320,7 +323,16 @@
     pane.id = "ytls-pane";
     pane.classList.add("minimized");
     header.style = "display:flex;justify-content:space-between;align-items:center;padding-bottom:5px;padding-left:20px;";
-    timeDisplay.id = "ytls-current-time"; timeDisplay.textContent = "CT: "; timeDisplay.style = "color:white;font-size:14px;";
+    timeDisplay.id = "ytls-current-time";
+    timeDisplay.textContent = "CT: ";
+    timeDisplay.style = "color:white;font-size:14px;cursor:pointer;"; // Add pointer cursor
+
+    // Enable clicking on the current timestamp to jump to the latest point in the live stream
+    timeDisplay.onclick = () => {
+      const video = document.querySelector("video");
+      video.currentTime = video.seekable.end(video.seekable.length - 1);
+    };
+
     close.textContent = "×"; close.style = "cursor:pointer;font-size:18px;margin-left:5px;";
     credit.textContent = "Made By Vat5aL"; credit.style = "color:white;font-size:12px;margin-left:5px;";
     minimizeBtn.textContent = "▶️";
@@ -727,6 +739,11 @@
 
   // Add a function to handle URL changes
   const handleUrlChange = () => {
+    // Remove any stray minimized icons or duplicate panes before proceeding
+    document.querySelectorAll("#ytls-pane").forEach((el, idx) => {
+        if (idx > 0) el.remove();
+    });
+
     const currentVideoId = getVideoId();
     const pageTitle = document.title; // Get the current page title
     console.log("Page Title:", pageTitle); // Log the page title
