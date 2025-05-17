@@ -695,7 +695,7 @@
       saveTimestamps();
     };
     addBtn.onclick = () => {
-      var timeStampBuffer = 2;
+      var timeStampBuffer = 5;
       var input = addTimestamp(Math.max(0, Math.floor(document.querySelector("video").currentTime - timeStampBuffer)));
       input.focus();
       saveTimestamps();
