@@ -270,8 +270,7 @@
   }
 
   function getVideoId() {
-    const match = location.search.match(/[?&]v=([^&]+)/) || location.href.match(/\/(?:live|shorts)\/([^/?&]+)/);
-    return match ? match[1] : null;
+    return document.querySelector('meta[itemprop="identifier"]').content;
   }
 
   if (!document.querySelector("#ytls-pane")) {
