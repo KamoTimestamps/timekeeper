@@ -40,22 +40,29 @@
 
   function handleClick(e) {
     if (e.target.dataset.time) {
-      e.preventDefault();
-      document.querySelector("video").currentTime = e.target.dataset.time;
+        e.preventDefault();
+        document.querySelector("video").currentTime = e.target.dataset.time;
     } else if (e.target.dataset.increment) {
-      e.preventDefault();
-      var t = e.target.parentElement.querySelector('a[data-time]');
-      var currTime = parseInt(t.dataset.time);
-      var newTime = Math.max(0, currTime + parseInt(e.target.dataset.increment));
-      formatTime(t, newTime);
-      document.querySelector("video").currentTime = newTime; // Seek to the new timestamp
-      saveTimestamps();
+        e.preventDefault();
+        var t = e.target.parentElement.querySelector('a[data-time]');
+        var currTime = parseInt(t.dataset.time);
+        var increment = parseInt(e.target.dataset.increment);
+
+        // Check if Shift key is pressed
+        if (e.shiftKey) {
+            increment *= 10; // Multiply increment by 10 if Shift is pressed
+        }
+
+        var newTime = Math.max(0, currTime + increment);
+        formatTime(t, newTime);
+        document.querySelector("video").currentTime = newTime; // Seek to the new timestamp
+        saveTimestamps();
     } else if (e.target.dataset.action === "clear") {
-      e.preventDefault();
-      list.textContent = "";
-      updateSeekbarMarkers();
-      updateScroll();
-      saveTimestamps();
+        e.preventDefault();
+        list.textContent = "";
+        updateSeekbarMarkers();
+        updateScroll();
+        saveTimestamps();
     }
   }
 
