@@ -15,6 +15,10 @@
 (function () {
   'use strict';
 
+  if (window.top !== window.self) {
+    return; // Don't run in iframes
+  }
+
   let isMouseOverTimestamps = false; // Default to false
 
   function clearTimestampsDisplay() {
