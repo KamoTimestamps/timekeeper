@@ -328,6 +328,78 @@
     // Append the save button to the buttons section
     btns.appendChild(saveBtn);
 
+    // Add a load button to the buttons section
+    var loadBtn = document.createElement("button");
+    loadBtn.textContent = "📂 Load";
+    loadBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
+    loadBtn.onclick = () => {
+        // Create a hidden file input element
+        const fileInput = document.createElement("input");
+        fileInput.type = "file";
+        fileInput.accept = ".json,.txt"; // Accept JSON and plain text files
+        fileInput.style = "display:none;";
+
+        fileInput.onchange = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                const content = reader.result.trim();
+
+                if (file.name.endsWith(".json")) {
+                    // Handle JSON input
+                    try {
+                        const timestamps = JSON.parse(content);
+                        if (Array.isArray(timestamps)) {
+                            list.innerHTML = ""; // Clear existing timestamps
+                            timestamps.forEach(ts => addTimestamp(ts.start, ts.comment));
+                            saveTimestamps();
+                            updateSeekbarMarkers();
+                            updateScroll();
+                            alert("Timestamps loaded successfully!");
+                        } else {
+                            throw new Error("Invalid JSON format");
+                        }
+                    } catch (e) {
+                        alert("Failed to parse JSON file. Please ensure it is in the correct format.");
+                    }
+                } else if (file.name.endsWith(".txt")) {
+                    // Handle plain text input
+                    const lines = content.split("\n").map(line => line.trim()).filter(line => line);
+                    if (lines.length > 0) {
+                        list.innerHTML = ""; // Clear existing timestamps
+                        lines.forEach(line => {
+                            const match = line.match(/^(\d{2}:\d{2}:\d{2})\s+"(.*)"$/);
+                            if (match) {
+                                const timeParts = match[1].split(":").map(Number);
+                                const start = timeParts[0] * 3600 + timeParts[1] * 60 + timeParts[2];
+                                const comment = match[2];
+                                addTimestamp(start, comment);
+                            }
+                        });
+                        saveTimestamps();
+                        updateSeekbarMarkers();
+                        updateScroll();
+                        alert("Timestamps loaded successfully!");
+                    } else {
+                        alert("The text file is empty or not in the correct format.");
+                    }
+                } else {
+                    alert("Unsupported file type. Please upload a .json or .txt file.");
+                }
+            };
+
+            reader.readAsText(file);
+        };
+
+        // Trigger the file input dialog
+        fileInput.click();
+    };
+
+    // Append the load button to the buttons section
+    btns.appendChild(loadBtn);
+
     style.textContent = "#ytls-pane{background:rgba(0,0,0,0.8);text-align:right;position:fixed;bottom:0;right:0;padding:10px;border-radius:10px 0 0 0;opacity:0.9;z-index:5000;font-family:Arial,sans-serif;width:300px;}#ytls-pane.minimized{width:30px;height:30px;overflow:hidden;background:rgba(0,0,0,0.8);padding:0;}#ytls-pane.minimized #ytls-content{display:none;}#ytls-pane.minimized #ytls-minimize{display:block;}#ytls-pane:hover{opacity:1;}#ytls-pane ul{list-style:none;padding:0;margin:0;}#ytls-pane li{display:flex;flex-direction:column;gap:5px;margin:5px 0;background:rgba(255,255,255,0.05);padding:5px;border-radius:3px;}#ytls-pane .time-row{display:flex;gap:5px;align-items:center;}#ytls-pane .ytls-marker{position:absolute;height:100%;width:2px;background-color:#ff0000;cursor:pointer;}#ytls-pane .ytls-marker.end{background-color:#00ff00;}#ytls-pane .ytls-ts-bar{position:absolute;height:100%;background-color:rgba(255,255,0,0.3);cursor:pointer;}#ytls-pane span,#ytls-pane a,#ytls-pane input{background:none;color:white;font-family:inherit;font-size:14px;text-decoration:none;border:none;outline:none;}#ytls-box{font-family:monospace;width:100%;display:block;padding:5px;border:none;outline:none;resize:none;background:rgba(255,255,255,0.1);color:white;border-radius:5px;}#ytls-buttons{display:flex;gap:5px;justify-content:space-between;margin-top:10px;}#ytls-buttons button{background:rgba(255,255,255,0.1);color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;}#ytls-buttons button:hover{background:rgba(255,255,255,0.2);}";
 
     close.onclick = () => { if (confirm("Close timestamp tool?")) pane.remove(); };
