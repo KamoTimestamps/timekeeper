@@ -324,12 +324,10 @@
 
     var pane = document.createElement("div"),
         header = document.createElement("div"),
-        close = document.createElement("span"),
         list = document.createElement("ul"), // Ensure `list` is initialized here
         btns = document.createElement("div"),
         addBtn = document.createElement("button"),
         timeDisplay = document.createElement("span"),
-        credit = document.createElement("span"),
         style = document.createElement("style"),
         minimizeBtn = document.createElement("button");
 
@@ -355,8 +353,6 @@
       video.currentTime = video.seekable.end(video.seekable.length - 1);
     };
 
-    close.textContent = "×"; close.style = "cursor:pointer;font-size:18px;margin-left:5px;";
-    credit.textContent = "Made By Vat5aL"; credit.style = "color:white;font-size:12px;margin-left:5px;";
     minimizeBtn.textContent = "▶️";
     minimizeBtn.style = "background:transparent;border:none;color:white;cursor:pointer;font-size:16px;";
     minimizeBtn.id = "ytls-minimize";
@@ -682,7 +678,6 @@
       }
     `;
 
-    close.onclick = () => { if (confirm("Close timestamp tool?")) pane.remove(); };
     minimizeBtn.onclick = () => pane.classList.toggle("minimized");
     list.onclick = (e) => {
       handleClick(e);
@@ -822,7 +817,7 @@
       savePanePosition();
     });
 
-    header.append(timeDisplay, credit, close);
+    header.append(timeDisplay);
     var content = document.createElement("div"); content.id = "ytls-content";
     content.append(header, list, btns);
     pane.append(minimizeBtn, content, style);
@@ -872,32 +867,7 @@
     }
   };
 
-  // Override `pushState` and `replaceState` to detect URL changes
-  const originalPushState = history.pushState;
-  const originalReplaceState = history.replaceState;
-
-  history.pushState = function (...args) {
-    originalPushState.apply(this, args);
-    handleUrlChange(); // Handle URL change
-  };
-
-  history.replaceState = function (...args) {
-    originalReplaceState.apply(this, args);
-    handleUrlChange(); // Handle URL change
-  };
-
-  // Listen for the `popstate` event (triggered by browser navigation)
-  window.addEventListener("popstate", handleUrlChange);
   window.addEventListener("yt-navigate-finish", handleUrlChange);
-  window.addEventListener("yt-navigate-start", handleUrlChange);
-
-  // Use a MutationObserver to detect changes in the <title> element
-  const titleObserver = new MutationObserver(() => {
-    handleUrlChange(); // Handle URL change when the title changes
-  });
-
-  // Start observing the <title> element for changes
-  titleObserver.observe(document.querySelector('title'), { childList: true });
 
   // Initial call to handle the current URL
   handleUrlChange();
