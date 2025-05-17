@@ -591,11 +591,38 @@
       saveTimestamps();
     };
 
+    // Load pane position from localStorage
+    const panePositionKey = "ytls-pane-position";
+    function loadPanePosition() {
+      const pos = localStorage.getItem(panePositionKey);
+      if (pos) {
+        try {
+          const { left, top, right, bottom } = JSON.parse(pos);
+          if (left !== undefined && top !== undefined) {
+            pane.style.left = left;
+            pane.style.top = top;
+            pane.style.right = right;
+            pane.style.bottom = bottom;
+          }
+        } catch {}
+      }
+    }
+    function savePanePosition() {
+      const style = pane.style;
+      localStorage.setItem(panePositionKey, JSON.stringify({
+        left: style.left,
+        top: style.top,
+        right: style.right,
+        bottom: style.bottom
+      }));
+    }
+
     // Enable dragging and edge snapping for the pane
     pane.style.position = "fixed";
     pane.style.bottom = "0";
     pane.style.right = "0";
     pane.style.transition = "all 0.2s ease";
+    loadPanePosition();
 
     let isDragging = false;
     let offsetX, offsetY;
@@ -655,6 +682,7 @@
         pane.style.top = "auto";
         pane.style.bottom = "0";
       }
+      savePanePosition();
     });
 
     // Prevent text selection during drag
@@ -683,6 +711,7 @@
         pane.style.top = "0";
         pane.style.bottom = "auto";
       }
+      savePanePosition();
     });
 
     header.append(timeDisplay, credit, close);
