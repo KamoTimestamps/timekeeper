@@ -44,7 +44,10 @@
       e.preventDefault();
       var t = e.target.parentElement.querySelector('a[data-time]');
       var currTime = parseInt(t.dataset.time);
-      formatTime(t, Math.max(0, currTime + parseInt(e.target.dataset.increment)));
+      var newTime = Math.max(0, currTime + parseInt(e.target.dataset.increment));
+      formatTime(t, newTime);
+      document.querySelector("video").currentTime = newTime; // Seek to the new timestamp
+      saveTimestamps();
     } else if (e.target.dataset.action === "clear") {
       e.preventDefault();
       list.textContent = "";
@@ -56,12 +59,25 @@
 
   function addTimestamp(e, t) {
     var li = document.createElement("li"), timeRow = document.createElement("div"), minus = document.createElement("span"),
-      plus = document.createElement("span"), a = document.createElement("a"),
+      record = document.createElement("span"), plus = document.createElement("span"), a = document.createElement("a"),
       commentInput = document.createElement("input"), del = document.createElement("button");
 
     timeRow.className = "time-row";
     minus.textContent = "➖"; minus.dataset.increment = -1; minus.style.cursor = "pointer";
     plus.textContent = "➕"; plus.dataset.increment = 1; plus.style.cursor = "pointer";
+    record.textContent = "⏺️"; record.style.cursor = "pointer"; record.style.margin = "0 5px;";
+    record.title = "Set to current playback time";
+
+    // Add click event to the record button
+    record.onclick = () => {
+      const video = document.querySelector("video");
+      if (video) {
+        const currentTime = Math.floor(video.currentTime);
+        formatTime(a, currentTime);
+        saveTimestamps();
+      }
+    };
+
     formatTime(a, e);
     commentInput.value = t || "";
     commentInput.style = "width:200px;margin-top:5px;display:block;";
@@ -69,7 +85,7 @@
     del.textContent = "🗑️"; del.style = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
     del.onclick = () => { li.remove(); updateSeekbarMarkers(); updateScroll(); saveTimestamps(); };
 
-    timeRow.append(minus, plus, a, del);
+    timeRow.append(minus, record, plus, a, del);
     li.append(timeRow, commentInput);
     li.style = "display:flex;flex-direction:column;gap:5px;padding:5px;background:rgba(255,255,255,0.05);border-radius:3px;";
 
@@ -222,6 +238,37 @@
 
     // Return null if no video ID or clip identifier is found
     return null;
+  }
+
+  function highlightNearestTimestamp() {
+    const video = document.querySelector("video");
+    if (!video) return;
+
+    video.addEventListener("timeupdate", () => {
+      const currentTime = Math.floor(video.currentTime);
+      let nearestTimestamp = null;
+      let smallestDifference = Infinity;
+
+      // Find the nearest timestamp
+      Array.from(list.children).forEach(li => {
+        const timestamp = parseInt(li.querySelector('a[data-time]').dataset.time);
+        const difference = Math.abs(currentTime - timestamp);
+        if (difference < smallestDifference) {
+          smallestDifference = difference;
+          nearestTimestamp = li;
+        }
+      });
+
+      // Highlight the nearest timestamp
+      Array.from(list.children).forEach(li => {
+        li.style.background = "rgba(255, 255, 255, 0.05)"; // Reset background
+      });
+
+      if (nearestTimestamp) {
+        nearestTimestamp.style.background = "rgba(0, 128, 255, 0.2)"; // Highlight nearest timestamp
+        nearestTimestamp.scrollIntoView({ behavior: "smooth", block: "center" }); // Scroll to it
+      }
+    });
   }
 
   if (!document.querySelector("#ytls-pane")) {
@@ -428,23 +475,30 @@
       isDragging = false;
       pane.style.transition = "all 0.2s ease"; // Re-enable transition
 
-      // Snap to edges
+      // Snap to the nearest edge
       const rect = pane.getBoundingClientRect();
       const windowWidth = window.innerWidth;
       const windowHeight = window.innerHeight;
 
-      if (rect.left < windowWidth / 2) {
+      // Calculate distances to edges
+      const distanceToLeft = rect.left;
+      const distanceToRight = windowWidth - rect.right;
+      const distanceToTop = rect.top;
+      const distanceToBottom = windowHeight - rect.bottom;
+
+      // Find the closest edge
+      const minDistance = Math.min(distanceToLeft, distanceToRight, distanceToTop, distanceToBottom);
+
+      if (minDistance === distanceToLeft) {
         pane.style.left = "0";
         pane.style.right = "auto";
-      } else {
+      } else if (minDistance === distanceToRight) {
         pane.style.left = "auto";
         pane.style.right = "0";
-      }
-
-      if (rect.top < windowHeight / 2) {
+      } else if (minDistance === distanceToTop) {
         pane.style.top = "0";
         pane.style.bottom = "auto";
-      } else {
+      } else if (minDistance === distanceToBottom) {
         pane.style.top = "auto";
         pane.style.bottom = "0";
       }
@@ -460,6 +514,7 @@
     btns.append(addBtn);
     document.body.appendChild(pane);
     loadTimestamps();
+    highlightNearestTimestamp();
     updateSeekbarMarkers();
   }
 
@@ -483,6 +538,7 @@
           document.body.appendChild(pane); // Re-add the pane if it was removed
         }
         loadTimestamps(); // Load timestamps for the new video
+        highlightNearestTimestamp();
         pane.classList.remove("minimized"); // Ensure the pane is not minimized
       } else {
         console.log(`No saved timestamps for ${currentVideoId}`);
