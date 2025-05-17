@@ -424,11 +424,36 @@
 
         // Move save, load, export, and import buttons to the settings pane
         const settingsContent = document.createElement("div");
-        settingsContent.style = "display:flex;flex-direction:column;gap:10px;";
-        settingsContent.appendChild(saveBtn);
-        settingsContent.appendChild(loadBtn);
-        settingsContent.appendChild(exportBtn);
-        settingsContent.appendChild(importBtn);
+        settingsContent.style = "display:grid;grid-template-columns:repeat(auto-fit, minmax(50px, 1fr));gap:10px;justify-items:center;align-items:center;";
+
+        // Update settings modal buttons to use icons and styles similar to the main pane
+        const buttonIcons = [
+            { label: "💾", title: "Save" },
+            { label: "📂", title: "Load" },
+            { label: "📤", title: "Export" },
+            { label: "📥", title: "Import" }
+        ];
+
+        // Link settings modal buttons to their respective actions
+        buttonIcons.forEach(({ label, title }) => {
+            const button = document.createElement("button");
+            button.textContent = label;
+            button.title = title;
+            button.style = "width:50px;height:50px;background:#555;color:white;border:none;border-radius:5px;cursor:pointer;font-size:20px;display:flex;justify-content:center;align-items:center;";
+
+            // Assign actions based on the title
+            if (title === "Save") {
+                button.onclick = saveBtn.onclick;
+            } else if (title === "Load") {
+                button.onclick = loadBtn.onclick;
+            } else if (title === "Export") {
+                button.onclick = exportBtn.onclick;
+            } else if (title === "Import") {
+                button.onclick = importBtn.onclick;
+            }
+
+            settingsContent.appendChild(button);
+        });
 
         settingsModal.appendChild(settingsContent);
         settingsModal.appendChild(closeButton);
