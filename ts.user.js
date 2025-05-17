@@ -198,7 +198,13 @@
       return { start: startTime, comment: comment };
     });
 
-    localStorage.setItem(`ytls-${videoId}`, JSON.stringify(timestamps));
+    if (timestamps.length === 0) {
+      // If there are no timestamps, remove the local storage entry
+      localStorage.removeItem(`ytls-${videoId}`);
+    } else {
+      // Otherwise, save the timestamps to local storage
+      localStorage.setItem(`ytls-${videoId}`, JSON.stringify(timestamps));
+    }
   }
 
   function saveTimestampsAs(format) {
