@@ -14,11 +14,18 @@
 (function () {
   'use strict';
 
+  // Helper function to format time in HH:MM:SS
+  function formatTimeString(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
   function formatTime(e, t) {
-    var n, a = Math.floor(t / 3600), o = Math.floor(t / 60) % 60, i = Math.floor(t) % 60;
-    e.textContent = (a ? a + ":" + String(o).padStart(2, "0") : o) + ":" + String(i).padStart(2, "0");
+    e.textContent = formatTimeString(t);
     e.dataset.time = t;
-    var vid = location.search.split(/.+v=|&/)[1] || location.href.split(/\/live\/|\/shorts\/|\?|&/)[1];
+    const vid = location.search.split(/.+v=|&/)[1] || location.href.split(/\/live\/|\/shorts\/|\?|&/)[1];
     e.href = "https://youtu.be/" + vid + "?t=" + t;
   }
 
@@ -83,7 +90,21 @@
     timeRow.append(minus, plus, a, del);
     li.append(timeRow, commentInput);
     li.style = "display:flex;flex-direction:column;gap:5px;padding:5px;background:rgba(255,255,255,0.05);border-radius:3px;";
-    list.appendChild(li);
+
+    // Insert the new timestamp in the correct order
+    let inserted = false;
+    for (let i = 0; i < list.children.length; i++) {
+        const existingTime = parseInt(list.children[i].querySelector('a[data-time]').dataset.time);
+        if (e < existingTime) {
+            list.insertBefore(li, list.children[i]);
+            inserted = true;
+            break;
+        }
+    }
+    if (!inserted) {
+        list.appendChild(li); // Append to the end if no earlier timestamp is found
+    }
+
     updateScroll();
     updateSeekbarMarkers();
     saveTimestamps();
@@ -179,6 +200,37 @@
     localStorage.setItem(`ytls-${videoId}`, JSON.stringify(timestamps));
   }
 
+  function saveTimestampsAs(format) {
+    const videoId = getVideoId();
+    if (!videoId) return;
+
+    const timestamps = Array.from(list.children).map(li => {
+        const startLink = li.querySelector('a[data-time]');
+        const comment = li.querySelector('input').value;
+        const startTime = parseInt(startLink.dataset.time);
+        return { start: startTime, comment: comment };
+    });
+
+    if (format === "json") {
+        const blob = new Blob([JSON.stringify(timestamps, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `timestamps-${videoId}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    } else if (format === "text") {
+        const plainText = timestamps.map(ts => `${formatTimeString(ts.start)} "${ts.comment}"`).join("\n");
+        const blob = new Blob([plainText], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `timestamps-${videoId}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+  }
+
   function loadTimestamps() {
     const videoId = getVideoId();
     if (!videoId) return;
@@ -229,6 +281,53 @@
     addBtn.textContent = "Add TS";
     copyBtn.textContent = "Copy List";
     clearBtn.textContent = "Clear"; clearBtn.dataset.action = "clear"; clearBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
+
+    // Add a save button to the buttons section
+    var saveBtn = document.createElement("button");
+    saveBtn.textContent = "💾 Save";
+    saveBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
+    saveBtn.onclick = () => {
+        // Create a styled modal for the save format choice
+        const modal = document.createElement("div");
+        modal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:#333;padding:20px;border-radius:10px;z-index:10000;color:white;text-align:center;width:300px;box-shadow:0 0 10px rgba(0,0,0,0.5);";
+
+        const message = document.createElement("p");
+        message.textContent = "Save as:";
+        message.style = "margin-bottom:15px;font-size:16px;";
+
+        const jsonButton = document.createElement("button");
+        jsonButton.textContent = "JSON";
+        jsonButton.style = "background:#555;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;margin-right:10px;";
+        jsonButton.onclick = () => {
+            saveTimestampsAs("json");
+            document.body.removeChild(modal);
+        };
+
+        const textButton = document.createElement("button");
+        textButton.textContent = "Plain Text";
+        textButton.style = "background:#555;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;";
+        textButton.onclick = () => {
+            saveTimestampsAs("text");
+            document.body.removeChild(modal);
+        };
+
+        const cancelButton = document.createElement("button");
+        cancelButton.textContent = "Cancel";
+        cancelButton.style = "background:#444;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;margin-top:15px;display:block;width:100%;";
+        cancelButton.onclick = () => {
+            document.body.removeChild(modal);
+        };
+
+        modal.appendChild(message);
+        modal.appendChild(jsonButton);
+        modal.appendChild(textButton);
+        modal.appendChild(cancelButton);
+        document.body.appendChild(modal);
+    };
+
+    // Append the save button to the buttons section
+    btns.appendChild(saveBtn);
+
     style.textContent = "#ytls-pane{background:rgba(0,0,0,0.8);text-align:right;position:fixed;bottom:0;right:0;padding:10px;border-radius:10px 0 0 0;opacity:0.9;z-index:5000;font-family:Arial,sans-serif;width:300px;}#ytls-pane.minimized{width:30px;height:30px;overflow:hidden;background:rgba(0,0,0,0.8);padding:0;}#ytls-pane.minimized #ytls-content{display:none;}#ytls-pane.minimized #ytls-minimize{display:block;}#ytls-pane:hover{opacity:1;}#ytls-pane ul{list-style:none;padding:0;margin:0;}#ytls-pane li{display:flex;flex-direction:column;gap:5px;margin:5px 0;background:rgba(255,255,255,0.05);padding:5px;border-radius:3px;}#ytls-pane .time-row{display:flex;gap:5px;align-items:center;}#ytls-pane .ytls-marker{position:absolute;height:100%;width:2px;background-color:#ff0000;cursor:pointer;}#ytls-pane .ytls-marker.end{background-color:#00ff00;}#ytls-pane .ytls-ts-bar{position:absolute;height:100%;background-color:rgba(255,255,0,0.3);cursor:pointer;}#ytls-pane span,#ytls-pane a,#ytls-pane input{background:none;color:white;font-family:inherit;font-size:14px;text-decoration:none;border:none;outline:none;}#ytls-box{font-family:monospace;width:100%;display:block;padding:5px;border:none;outline:none;resize:none;background:rgba(255,255,255,0.1);color:white;border-radius:5px;}#ytls-buttons{display:flex;gap:5px;justify-content:space-between;margin-top:10px;}#ytls-buttons button{background:rgba(255,255,255,0.1);color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;}#ytls-buttons button:hover{background:rgba(255,255,255,0.2);}";
 
     close.onclick = () => { if (confirm("Close timestamp tool?")) pane.remove(); };
