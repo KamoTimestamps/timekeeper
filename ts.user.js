@@ -15,6 +15,8 @@
 (function () {
   'use strict';
 
+  let isMouseOverTimestamps = false; // Default to false
+
   function clearTimestampsDisplay() {
     while (list.firstChild) { // Clear the existing timestamps
       list.removeChild(list.firstChild);
@@ -263,6 +265,8 @@
     if (!video) return;
 
     video.addEventListener("timeupdate", () => {
+      if (isMouseOverTimestamps) return; // Skip auto-scrolling if the mouse is over the timestamps window
+
       const currentTime = Math.floor(video.currentTime);
       let nearestTimestamp = null;
       let smallestDifference = Infinity;
@@ -293,11 +297,25 @@
   }
 
   if (!document.querySelector("#ytls-pane")) {
-    var pane = document.createElement("div"), header = document.createElement("div"), close = document.createElement("span"),
-      list = document.createElement("ul"), btns = document.createElement("div"),
-      addBtn = document.createElement("button"),
-      timeDisplay = document.createElement("span"),
-      credit = document.createElement("span"), style = document.createElement("style"), minimizeBtn = document.createElement("button");
+    var pane = document.createElement("div"),
+        header = document.createElement("div"),
+        close = document.createElement("span"),
+        list = document.createElement("ul"), // Ensure `list` is initialized here
+        btns = document.createElement("div"),
+        addBtn = document.createElement("button"),
+        timeDisplay = document.createElement("span"),
+        credit = document.createElement("span"),
+        style = document.createElement("style"),
+        minimizeBtn = document.createElement("button");
+
+    // Add event listeners to `list` after it is initialized
+    list.addEventListener("mouseenter", () => {
+      isMouseOverTimestamps = true;
+    });
+
+    list.addEventListener("mouseleave", () => {
+      isMouseOverTimestamps = false;
+    });
 
     pane.id = "ytls-pane";
     pane.classList.add("minimized");
@@ -633,6 +651,31 @@
 
     // Prevent text selection during drag
     pane.addEventListener("dragstart", (e) => e.preventDefault());
+
+    // Ensure the timestamps window is fully onscreen after resizing
+    window.addEventListener("resize", () => {
+      const rect = pane.getBoundingClientRect();
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+
+      // Adjust the pane's position if it goes offscreen
+      if (rect.right > windowWidth) {
+        pane.style.left = `${windowWidth - rect.width}px`;
+        pane.style.right = "auto";
+      }
+      if (rect.bottom > windowHeight) {
+        pane.style.top = `${windowHeight - rect.height}px`;
+        pane.style.bottom = "auto";
+      }
+      if (rect.left < 0) {
+        pane.style.left = "0";
+        pane.style.right = "auto";
+      }
+      if (rect.top < 0) {
+        pane.style.top = "0";
+        pane.style.bottom = "auto";
+      }
+    });
 
     header.append(timeDisplay, credit, close);
     var content = document.createElement("div"); content.id = "ytls-content";
