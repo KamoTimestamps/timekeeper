@@ -519,6 +519,14 @@
         gap: 5px;
         align-items: center;
       }
+      #ytls-pane .time-row a {
+        flex-grow: 1; /* Allow the timestamp text to take up available space */
+        max-width: 100%; /* Constrain the width to the parent container */
+        text-align: left; /* Align the text to the left */
+        overflow: hidden; /* Prevent overflow */
+        text-overflow: ellipsis; /* Add ellipsis for long text */
+        white-space: nowrap; /* Prevent wrapping */
+      }
       #ytls-pane .ytls-marker {
         position: absolute;
         height: 100%;
