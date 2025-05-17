@@ -305,7 +305,8 @@
     timeDisplay.id = "ytls-current-time"; timeDisplay.textContent = "CT: "; timeDisplay.style = "color:white;font-size:14px;";
     close.textContent = "×"; close.style = "cursor:pointer;font-size:18px;margin-left:5px;";
     credit.textContent = "Made By Vat5aL"; credit.style = "color:white;font-size:12px;margin-left:5px;";
-    minimizeBtn.textContent = "▶️"; minimizeBtn.style = "background:transparent;border:none;color:white;cursor:pointer;font-size:16px;position:absolute;top:5px;left:5px;";
+    minimizeBtn.textContent = "▶️";
+    minimizeBtn.style = "background:transparent;border:none;color:white;cursor:pointer;font-size:16px;";
     minimizeBtn.id = "ytls-minimize";
     function updateTime() {
       var v = document.querySelector("video");
@@ -440,7 +441,112 @@
     // Append the load button to the buttons section
     btns.appendChild(loadBtn);
 
-    style.textContent = "#ytls-pane{background:rgba(0,0,0,0.8);text-align:right;position:fixed;bottom:0;right:0;padding:10px;border-radius:10px 0 0 0;opacity:0.9;z-index:5000;font-family:Arial,sans-serif;width:300px;}#ytls-pane.minimized{width:30px;height:30px;overflow:hidden;background:rgba(0,0,0,0.8);padding:0;}#ytls-pane.minimized #ytls-content{display:none;}#ytls-pane.minimized #ytls-minimize{display:block;}#ytls-pane:hover{opacity:1;}#ytls-pane ul{list-style:none;padding:0;margin:0;}#ytls-pane li{display:flex;flex-direction:column;gap:5px;margin:5px 0;background:rgba(255,255,255,0.05);padding:5px;border-radius:3px;}#ytls-pane .time-row{display:flex;gap:5px;align-items:center;}#ytls-pane .ytls-marker{position:absolute;height:100%;width:2px;background-color:#ff0000;cursor:pointer;}#ytls-pane .ytls-marker.end{background-color:#00ff00;}#ytls-pane .ytls-ts-bar{position:absolute;height:100%;background-color:rgba(255,255,0,0.3);cursor:pointer;}#ytls-pane span,#ytls-pane a,#ytls-pane input{background:none;color:white;font-family:inherit;font-size:14px;text-decoration:none;border:none;outline:none;}#ytls-buttons{display:flex;gap:5px;justify-content:space-between;margin-top:10px;}#ytls-buttons button{background:rgba(255,255,255,0.1);color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;}#ytls-buttons button:hover{background:rgba(255,255,255,0.2);}";
+    style.textContent = `
+      #ytls-pane {
+        background: rgba(0, 0, 0, 0.8);
+        text-align: right;
+        position: fixed;
+        bottom: 0;
+        right: 0;
+        padding: 10px;
+        border-radius: 12px; /* Add rounded corners */
+        border: 1px solid rgba(85, 85, 85, 0.8); /* Add a thin grey border */
+        opacity: 0.9;
+        z-index: 5000;
+        font-family: Arial, sans-serif;
+        width: 300px;
+      }
+      #ytls-pane.minimized {
+        width: 3em; /* Size relative to the icon */
+        height: 3em; /* Size relative to the icon */
+        overflow: hidden;
+        background: rgba(0, 0, 0, 0.8);
+        padding: 0;
+        border-radius: 1em; /* Fully rounded corners */
+        border: 1px solid grey; /* Add a thin grey border */
+        display: flex;
+        justify-content: center; /* Center the content horizontally */
+        align-items: center; /* Center the content vertically */
+      }
+      #ytls-pane.minimized #ytls-content {
+        display: none;
+      }
+      #ytls-pane.minimized #ytls-minimize {
+        display: block;
+        font-size: 1.5em; /* Adjust font size for better visibility */
+        background: transparent;
+        border: none;
+        color: white;
+        cursor: pointer;
+      }
+      #ytls-pane:hover {
+        opacity: 1;
+      }
+      #ytls-pane ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      #ytls-pane li {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        margin: 5px 0;
+        background: rgba(255, 255, 255, 0.05);
+        padding: 5px;
+        border-radius: 3px;
+      }
+      #ytls-pane .time-row {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+      }
+      #ytls-pane .ytls-marker {
+        position: absolute;
+        height: 100%;
+        width: 2px;
+        background-color: #ff0000;
+        cursor: pointer;
+      }
+      #ytls-pane .ytls-marker.end {
+        background-color: #00ff00;
+      }
+      #ytls-pane .ytls-ts-bar {
+        position: absolute;
+        height: 100%;
+        background-color: rgba(255, 255, 0, 0.3);
+        cursor: pointer;
+      }
+      #ytls-pane span,
+      #ytls-pane a,
+      #ytls-pane input {
+        background: none;
+        color: white;
+        font-family: inherit;
+        font-size: 14px;
+        text-decoration: none;
+        border: none;
+        outline: none;
+      }
+      #ytls-buttons {
+        display: flex;
+        gap: 5px;
+        justify-content: space-between;
+        margin-top: 10px;
+      }
+      #ytls-buttons button {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        font-size: 12px;
+        padding: 5px 10px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      #ytls-buttons button:hover {
+        background: rgba(255, 255, 255, 0.2);
+      }
+    `;
 
     close.onclick = () => { if (confirm("Close timestamp tool?")) pane.remove(); };
     minimizeBtn.onclick = () => pane.classList.toggle("minimized");
