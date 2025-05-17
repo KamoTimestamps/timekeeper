@@ -342,7 +342,7 @@
 
     pane.id = "ytls-pane";
     pane.classList.add("minimized");
-    header.style = "display:flex;justify-content:space-between;align-items:center;padding-bottom:5px;padding-left:20px;";
+    header.style = "display:flex;justify-content:flex-start;align-items:center;padding:5px;"; // Align items to the top-left
     timeDisplay.id = "ytls-current-time";
     timeDisplay.textContent = "CT: ";
     timeDisplay.style = "color:white;font-size:14px;cursor:pointer;"; // Add pointer cursor
@@ -354,7 +354,7 @@
     };
 
     minimizeBtn.textContent = "▶️";
-    minimizeBtn.style = "background:transparent;border:none;color:white;cursor:pointer;font-size:16px;";
+    minimizeBtn.style = "background:transparent;border:none;color:white;cursor:pointer;font-size:16px;margin-right:10px;"; // Adjust margin for spacing
     minimizeBtn.id = "ytls-minimize";
     function updateTime() {
       var v = document.querySelector("video");
@@ -817,7 +817,10 @@
       savePanePosition();
     });
 
-    header.append(timeDisplay);
+    header.appendChild(timeDisplay); // Ensure timeDisplay is part of the header
+    header.appendChild(minimizeBtn); // Add minimize button to the header
+    pane.appendChild(header); // Add header to the pane
+
     var content = document.createElement("div"); content.id = "ytls-content";
     content.append(header, list, btns);
     pane.append(minimizeBtn, content, style);
