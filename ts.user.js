@@ -187,8 +187,9 @@
       // If there are no timestamps, remove the local storage entry
       localStorage.removeItem(`ytls-${videoId}`);
     } else {
-      // Otherwise, save the timestamps to local storage
-      localStorage.setItem(`ytls-${videoId}`, JSON.stringify(timestamps));
+      // Save timestamps in the new format
+      const data = { video_id: videoId, timestamps: timestamps };
+      localStorage.setItem(`ytls-${videoId}`, JSON.stringify(data));
     }
   }
 
@@ -229,17 +230,38 @@
     if (!videoId) return;
     console.log(`loadTimestamps for ${videoId}`);
 
-    const savedTimestamps = localStorage.getItem(`ytls-${videoId}`);
-    if (!savedTimestamps) return;
+    const savedData = localStorage.getItem(`ytls-${videoId}`);
+    if (!savedData) return;
 
-    const timestamps = JSON.parse(savedTimestamps);
-    timestamps.forEach(ts => {
-      addTimestamp(ts.start, ts.comment);
-    });
+    let data;
+    try {
+      data = JSON.parse(savedData);
+    } catch (e) {
+      console.error("Failed to parse saved data:", e);
+      return;
+    }
 
-    // Automatically open the tool if timestamps are loaded
-    pane.classList.remove("minimized");
-    updateSeekbarMarkers();
+    // Check if the data is in the old format (array of timestamps)
+    if (Array.isArray(data)) {
+      console.log("Converting old timestamp format to new format...");
+      const newData = { video_id: videoId, timestamps: data };
+      localStorage.setItem(`ytls-${videoId}`, JSON.stringify(newData));
+      data = newData;
+    }
+
+    // Load timestamps from the new format
+    if (data.video_id === videoId && Array.isArray(data.timestamps)) {
+      clearTimestampsDisplay();
+      data.timestamps.forEach(ts => {
+        addTimestamp(ts.start, ts.comment);
+      });
+
+      // Automatically open the tool if timestamps are loaded
+      pane.classList.remove("minimized");
+      updateSeekbarMarkers();
+    } else {
+      console.error("Invalid timestamp data format.");
+    }
   }
 
   function getVideoId() {
@@ -470,6 +492,80 @@
 
     // Append the load button to the buttons section
     btns.appendChild(loadBtn);
+
+    // Add export button to the buttons section
+    var exportBtn = document.createElement("button");
+    exportBtn.textContent = "📤 Export";
+    exportBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
+    exportBtn.onclick = () => {
+      const exportData = {};
+
+      // Iterate through localStorage and collect all timestamp data
+      for (let key in localStorage) {
+        if (key.startsWith("ytls-")) {
+          let data = JSON.parse(localStorage.getItem(key));
+
+          // Convert old format (array of timestamps) to new format if necessary
+          if (Array.isArray(data)) {
+            const videoId = key.replace("ytls-", "");
+            data = { video_id: videoId, timestamps: data };
+          }
+
+          exportData[key] = data;
+        }
+      }
+
+      // Create a JSON file for export
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ytls-data.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    // Append the export button to the buttons section
+    btns.appendChild(exportBtn);
+
+    // Add import button to the buttons section
+    var importBtn = document.createElement("button");
+    importBtn.textContent = "📥 Import";
+    importBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
+    importBtn.onclick = () => {
+      const fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.accept = ".json";
+      fileInput.style = "display:none;";
+
+      fileInput.onchange = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const importedData = JSON.parse(reader.result);
+            for (let key in importedData) {
+              if (key.startsWith("ytls-")) {
+                localStorage.setItem(key, JSON.stringify(importedData[key]));
+              }
+            }
+            alert("Data imported successfully!");
+            handleUrlChange(); // Refresh the tool to reflect imported data
+          } catch (e) {
+            alert("Failed to import data. Please ensure the file is in the correct format.");
+          }
+        };
+
+        reader.readAsText(file);
+      };
+
+      fileInput.click();
+    };
+
+    // Append the import button to the buttons section
+    btns.appendChild(importBtn);
 
     style.textContent = `
       #ytls-pane {
