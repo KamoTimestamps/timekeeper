@@ -84,6 +84,24 @@
       var newTime = Math.max(0, currTime + increment);
       formatTime(t, newTime);
       document.querySelector("video").currentTime = newTime; // Seek to the new timestamp
+
+      // Reorder the timestamp in the list if necessary
+      const li = t.closest('li');
+      li.remove(); // Remove the current list item
+
+      let inserted = false;
+      for (let i = 0; i < list.children.length; i++) {
+        const existingTime = parseInt(list.children[i].querySelector('a[data-time]').dataset.time);
+        if (newTime < existingTime) {
+          list.insertBefore(li, list.children[i]);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) {
+        list.appendChild(li); // Append to the end if no earlier timestamp is found
+      }
+
       updateSeekbarMarkers();
       saveTimestamps();
     } else if (e.target.dataset.action === "clear") {
