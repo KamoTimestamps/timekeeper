@@ -22,7 +22,7 @@
 
   // Configuration for timestamp offset
   const OFFSET_KEY = "timestampOffsetSeconds";
-  const DEFAULT_OFFSET = -5;
+  const DEFAULT_OFFSET = -3;
 
   // Configuration for shift-click time skip interval
   const SHIFT_SKIP_KEY = "shiftClickTimeSkipSeconds";
@@ -84,6 +84,7 @@
       var newTime = Math.max(0, currTime + increment);
       formatTime(t, newTime);
       document.querySelector("video").currentTime = newTime; // Seek to the new timestamp
+      updateSeekbarMarkers();
       saveTimestamps();
     } else if (e.target.dataset.action === "clear") {
       e.preventDefault();
