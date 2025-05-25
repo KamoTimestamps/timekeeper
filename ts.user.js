@@ -1,11 +1,11 @@
 // ==UserScript==
-// @name         YouTube Timestamp Tool by Vat5aL
+// @name         YouTube Timestamp Tool
 // @namespace    http://tampermonkey.net/
 // @updateURL https://openuserjs.org/meta/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.meta.js
 // @downloadURL https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js
-// @version      1.1
+// @version      2.0
 // @description  Enhanced timestamp tool for YouTube videos
-// @author       Vat5aL
+// @author       Vat5aL, Silent Shout
 // @match        https://www.youtube.com/*
 // @grant        GM.getValue
 // @grant        GM.setValue
