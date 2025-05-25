@@ -51,16 +51,26 @@
     }
   }
 
-  // Helper function to format time in HH:MM:SS
-  function formatTimeString(seconds) {
+  // Helper function to format time based on video length
+  function formatTimeString(seconds, videoDuration) {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = seconds % 60;
+
+    // If video duration is less than 1 hour, format as MM:SS
+    if (videoDuration < 3600) {
+      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+
+    // Otherwise, format as HH:MM:SS
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
+  // Update existing calls to formatTimeString to pass video duration
   function formatTime(e, t) {
-    e.textContent = formatTimeString(t);
+    const video = document.querySelector("video");
+    const videoDuration = video ? Math.floor(video.duration) : 0;
+    e.textContent = formatTimeString(t, videoDuration);
     e.dataset.time = t;
     const vid = location.search.split(/.+v=|&/)[1] || location.href.split(/\/live\/|\/shorts\/|\?|&/)[1];
     e.href = "https://youtu.be/" + vid + "?t=" + t;
