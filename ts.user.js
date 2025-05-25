@@ -261,6 +261,9 @@
     const videoId = getVideoId();
     if (!videoId) return;
 
+    const video = document.querySelector("video");
+    const videoDuration = video ? Math.floor(video.duration) : 0;
+
     const timestamps = Array.from(list.children).map(li => {
       const startLink = li.querySelector('a[data-time]');
       const comment = li.querySelector('input').value;
@@ -277,7 +280,11 @@
       a.click();
       URL.revokeObjectURL(url);
     } else if (format === "text") {
-      const plainText = timestamps.map(ts => `${formatTimeString(ts.start)} ${ts.comment}`).join("\n");
+      const plainText = timestamps.map(ts => {
+        const timeString = formatTimeString(ts.start, videoDuration);
+        return `${timeString} ${ts.comment}`;
+      }).join("\n");
+
       const blob = new Blob([plainText], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -663,6 +670,43 @@
       fileInput.click();
     };
 
+    // Add a copy-to-clipboard button to the main window
+    const copyBtn = document.createElement("button");
+    copyBtn.textContent = "📋";
+    copyBtn.title = "Copy timestamps to clipboard";
+    copyBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;margin-left:10px;";
+
+    copyBtn.onclick = () => {
+        const video = document.querySelector("video");
+        const videoDuration = video ? Math.floor(video.duration) : 0;
+
+        const timestamps = Array.from(list.children).map(li => {
+            const startLink = li.querySelector('a[data-time]');
+            const comment = li.querySelector('input').value;
+            const startTime = parseInt(startLink.dataset.time);
+            return { start: startTime, comment: comment };
+        });
+
+        const plainText = timestamps.map(ts => {
+            const timeString = formatTimeString(ts.start, videoDuration);
+            return `${timeString} ${ts.comment}`;
+        }).join("\n");
+
+        navigator.clipboard.writeText(plainText).then(() => {
+            copyBtn.textContent = "✅";
+            setTimeout(() => {
+                copyBtn.textContent = "📋";
+            }, 2000);
+        }).catch(err => {
+            console.error("Failed to copy timestamps: ", err);
+            copyBtn.textContent = "❌";
+            setTimeout(() => {
+                copyBtn.textContent = "📋";
+            }, 2000);
+        });
+    };
+
+    btns.appendChild(copyBtn);
 
     style.textContent = `
       #ytls-pane {
