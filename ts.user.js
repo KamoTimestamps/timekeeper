@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.1.1
+// @version      2.1.2
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Vat5aL, Silent Shout
 // @match        https://www.youtube.com/*
@@ -807,6 +807,9 @@
         color: white;
         cursor: pointer;
       }
+      #ytls-pane.minimized #ytls-current-time {
+        display: none;
+      }
       #ytls-pane:hover {
         opacity: 1;
       }
@@ -1068,11 +1071,11 @@
 
     header.appendChild(minimizeBtn); // Add minimize button to the header first
     header.appendChild(timeDisplay); // Then add timeDisplay
-    pane.appendChild(header); // Add header to the pane
 
     var content = document.createElement("div"); content.id = "ytls-content";
-    content.append(header, list, btns);
-    pane.append(minimizeBtn, content, style);
+    content.append(list, btns); // list and btns are now directly in content; header is separate
+
+    pane.append(header, content, style); // Append header, then content, then style to the pane
     document.body.appendChild(pane);
     loadTimestamps();
     highlightNearestTimestamp();
