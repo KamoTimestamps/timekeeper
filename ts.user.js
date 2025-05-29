@@ -331,18 +331,6 @@
       try {
         let parsedData = JSON.parse(savedDataRaw);
 
-        // Convert old format (direct array) if necessary
-        if (Array.isArray(parsedData)) {
-          console.log("Converting old timestamp format (direct array) to new format during load...");
-          // Filter old format for validity before wrapping
-          const validOldTimestamps = parsedData.filter(ts =>
-            ts && typeof ts.start === 'number' && typeof ts.comment === 'string'
-          );
-          parsedData = { video_id: videoId, timestamps: validOldTimestamps };
-          // Optionally, re-save in new format immediately if you want to migrate stored data proactively
-          // localStorage.setItem(`ytls-${videoId}`, JSON.stringify(parsedData));
-        }
-
         // Expect new format {video_id: string, timestamps: []}
         if (parsedData && parsedData.video_id === videoId && Array.isArray(parsedData.timestamps)) {
           // Filter timestamps from localStorage for validity
@@ -353,6 +341,10 @@
           console.warn(`Loaded data for wrong video ID: ${parsedData.video_id}, expected ${videoId}. Ignoring.`);
         } else if (parsedData && !Array.isArray(parsedData.timestamps)) {
           console.warn(`Loaded data for ${videoId} has malformed timestamps array. Ignoring.`);
+        } else {
+          // This case handles scenarios where parsedData is not in the expected object structure
+          // (e.g., it's an array, a primitive, or an object without the required keys)
+          console.warn(`Data for ${videoId} is not in the expected format. Found:`, parsedData);
         }
       } catch (e) {
         console.error("Failed to parse saved data during load:", e);
@@ -654,15 +646,18 @@
       // Iterate through localStorage and collect all timestamp data
       for (let key in localStorage) {
         if (key.startsWith("ytls-")) {
-          let data = JSON.parse(localStorage.getItem(key));
-
-          // Convert old format (array of timestamps) to new format if necessary
-          if (Array.isArray(data)) {
-            const videoId = key.replace("ytls-", "");
-            data = { video_id: videoId, timestamps: data };
+          try {
+            let data = JSON.parse(localStorage.getItem(key));
+            // Assume data is in the new format {video_id: string, timestamps: []}
+            // Add a check to ensure it's the expected format before adding to exportData
+            if (data && typeof data.video_id === 'string' && Array.isArray(data.timestamps)) {
+              exportData[key] = data;
+            } else {
+              console.warn(`Skipping localStorage key ${key} during export due to unexpected format.`);
+            }
+          } catch (e) {
+            console.error(`Failed to parse localStorage key ${key} during export:`, e);
           }
-
-          exportData[key] = data;
         }
       }
 
