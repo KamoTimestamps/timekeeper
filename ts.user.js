@@ -34,10 +34,13 @@
   // Listen for messages from other tabs
   channel.onmessage = (event) => {
     console.log('Received message from another tab:', event.data);
-    // Optionally, reload timestamps or update UI based on the message
     if (event.data && event.data.type === 'timestamps_updated' && event.data.videoId === getVideoId()) {
-      console.log('Reloading timestamps due to external update for video:', event.data.videoId);
-      loadTimestamps();
+      console.log('Debouncing timestamp load due to external update for video:', event.data.videoId);
+      clearTimeout(loadTimeoutId); // Clear existing load timeout
+      loadTimeoutId = setTimeout(() => {
+        console.log('Reloading timestamps due to external update for video:', event.data.videoId);
+        loadTimestamps();
+      }, 250); // Set new timeout to load after 250ms
     }
   };
 
@@ -56,6 +59,8 @@
     configuredShiftSkip = DEFAULT_SHIFT_SKIP;
   }
 
+  let saveTimeoutId = null; // Variable to hold the timeout ID for debouncing
+  let loadTimeoutId = null; // Variable to hold the timeout ID for debouncing loads from broadcast
   let isMouseOverTimestamps = false; // Default to false
 
   function clearTimestampsDisplay() {
@@ -159,8 +164,11 @@
 
     formatTime(a, e);
     commentInput.value = t || "";
-    commentInput.style = "width:200px;margin-top:5px;display:block;";
-    commentInput.addEventListener("input", saveTimestamps); // Save timestamps on comment edit
+    commentInput.style = "width:100%;margin-top:5px;display:block;";
+    commentInput.addEventListener("input", () => {
+      clearTimeout(saveTimeoutId); // Clear existing timeout
+      saveTimeoutId = setTimeout(saveTimestamps, 250); // Set new timeout
+    });
     del.textContent = "🗑️"; del.style = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
     del.onclick = () => {
       if (li.dataset.deleteConfirmed === "true") {
@@ -472,9 +480,22 @@
     updateTime();
     btns.id = "ytls-buttons";
 
-    // Update the "Add TS" button to "Add timestamp" and style it similarly to the "Settings" button.
     addBtn.textContent = "🐣 Add timestamp";
     addBtn.style = "background:#555;color:white;font-size:14px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;margin-right:10px;";
+
+    addBtn.onclick = () => {
+      const video = document.querySelector("video");
+      if (video) {
+        // Use configuredOffset when creating a new timestamp
+        const currentTime = Math.floor(video.currentTime + configuredOffset);
+        // Call addTimestamp with doNotSave = true to prevent immediate save
+        const newCommentInput = addTimestamp(currentTime, "", true);
+        if (newCommentInput) { // addTimestamp returns the input element
+          newCommentInput.focus();
+        }
+        // No direct saveTimestamps() call here; debounced save on input will handle it.
+      }
+    };
 
     // Update the "Settings" button to include the text "Settings" and style it similarly to the "Add timestamp" button.
     var configBtn = document.createElement("button");
@@ -867,15 +888,6 @@
     };
     list.ontouchstart = (e) => {
       handleClick(e);
-      saveTimestamps();
-    };
-    addBtn.onclick = () => {
-      // Use the configured offset.
-      // The value from GM_getValue is directly used here.
-      // For example, if configuredOffset is -2, it adds a timestamp 2 seconds before the current time.
-      // If configuredOffset is 5, it adds a timestamp 5 seconds after the current time.
-      var input = addTimestamp(Math.max(0, Math.floor(document.querySelector("video").currentTime + configuredOffset)));
-      input.focus();
       saveTimestamps();
     };
 
