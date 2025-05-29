@@ -262,55 +262,17 @@
       return { start: startTime, comment: comment };
     });
 
-    let finalTimestampsToSave = [...currentTimestampsFromUI]; // Default to current UI timestamps
+    // Sort timestamps from UI just in case, though they should generally be in order.
+    currentTimestampsFromUI.sort((a, b) => a.start - b.start);
 
-    const savedDataRaw = localStorage.getItem(`ytls-${videoId}`);
-    if (savedDataRaw) {
-      try {
-        const savedData = JSON.parse(savedDataRaw);
-        let storedTimestamps = [];
-
-        // Check new format {video_id: string, timestamps: []}
-        if (savedData && savedData.video_id === videoId && Array.isArray(savedData.timestamps)) {
-          storedTimestamps = savedData.timestamps;
-        }
-        // Fallback for old format (direct array of timestamps)
-        else if (Array.isArray(savedData)) {
-          // Basic validation for old format items
-          storedTimestamps = savedData.filter(ts => ts && typeof ts.start === 'number' && typeof ts.comment === 'string');
-        }
-
-        if (storedTimestamps.length > 0 || currentTimestampsFromUI.length > 0) {
-          const mergedMap = new Map();
-          // Add stored timestamps to the map first
-          for (const ts of storedTimestamps) {
-            if (ts && typeof ts.start === 'number') { // Ensure basic validity
-              mergedMap.set(ts.start, ts);
-            }
-          }
-          // Add/overwrite with current UI timestamps
-          for (const ts of currentTimestampsFromUI) {
-            if (ts && typeof ts.start === 'number') { // Ensure basic validity
-              mergedMap.set(ts.start, ts);
-            }
-          }
-          finalTimestampsToSave = Array.from(mergedMap.values());
-          finalTimestampsToSave.sort((a, b) => a.start - b.start); // Sort by start time
-        }
-      } catch (e) {
-        console.error("Failed to parse or merge stored timestamps for saving:", e);
-        // If merging fails, finalTimestampsToSave remains as currentTimestampsFromUI
-      }
-    }
-
-    if (finalTimestampsToSave.length === 0) {
-      // If there are no timestamps after merging, remove the local storage entry
+    if (currentTimestampsFromUI.length === 0) {
+      // If there are no timestamps in the UI, remove the local storage entry
       localStorage.removeItem(`ytls-${videoId}`);
       // Notify other tabs about the update
       channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'removed' });
     } else {
-      // Save merged and sorted timestamps in the new format
-      const dataToStore = { video_id: videoId, timestamps: finalTimestampsToSave };
+      // Save UI timestamps directly to local storage
+      const dataToStore = { video_id: videoId, timestamps: currentTimestampsFromUI };
       localStorage.setItem(`ytls-${videoId}`, JSON.stringify(dataToStore));
       // Notify other tabs about the update
       channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
@@ -361,52 +323,43 @@
     if (!videoId) return;
     console.log(`loadTimestamps for ${videoId}`);
 
-    // Get current timestamps from the UI
-    const currentTimestampsFromUI = Array.from(list.children).map(li => {
-      const startLink = li.querySelector('a[data-time]');
-      const comment = li.querySelector('input').value;
-      const startTime = parseInt(startLink.dataset.time);
-      return { start: startTime, comment: comment };
-    });
-
+    // Timestamps will be loaded directly from localStorage, ignoring current UI state.
     const savedDataRaw = localStorage.getItem(`ytls-${videoId}`);
-    let loadedTimestamps = [];
+    let finalTimestampsToDisplay = [];
 
     if (savedDataRaw) {
       try {
         let parsedData = JSON.parse(savedDataRaw);
-        // Convert old format if necessary
+
+        // Convert old format (direct array) if necessary
         if (Array.isArray(parsedData)) {
-          console.log("Converting old timestamp format to new format during load...");
-          parsedData = { video_id: videoId, timestamps: parsedData };
-          // Optionally, re-save in new format immediately, though saveTimestamps will handle it later if changes are made
+          console.log("Converting old timestamp format (direct array) to new format during load...");
+          // Filter old format for validity before wrapping
+          const validOldTimestamps = parsedData.filter(ts =>
+            ts && typeof ts.start === 'number' && typeof ts.comment === 'string'
+          );
+          parsedData = { video_id: videoId, timestamps: validOldTimestamps };
+          // Optionally, re-save in new format immediately if you want to migrate stored data proactively
           // localStorage.setItem(`ytls-${videoId}`, JSON.stringify(parsedData));
         }
 
-        if (parsedData.video_id === videoId && Array.isArray(parsedData.timestamps)) {
-          loadedTimestamps = parsedData.timestamps;
+        // Expect new format {video_id: string, timestamps: []}
+        if (parsedData && parsedData.video_id === videoId && Array.isArray(parsedData.timestamps)) {
+          // Filter timestamps from localStorage for validity
+          finalTimestampsToDisplay = parsedData.timestamps.filter(ts =>
+            ts && typeof ts.start === 'number' && typeof ts.comment === 'string'
+          );
+        } else if (parsedData && parsedData.video_id !== videoId) {
+          console.warn(`Loaded data for wrong video ID: ${parsedData.video_id}, expected ${videoId}. Ignoring.`);
+        } else if (parsedData && !Array.isArray(parsedData.timestamps)) {
+          console.warn(`Loaded data for ${videoId} has malformed timestamps array. Ignoring.`);
         }
       } catch (e) {
         console.error("Failed to parse saved data during load:", e);
-        // Proceed with empty loadedTimestamps if parsing fails
+        // finalTimestampsToDisplay remains empty
       }
     }
 
-    const mergedMap = new Map();
-    // Add loaded timestamps to the map first
-    for (const ts of loadedTimestamps) {
-      if (ts && typeof ts.start === 'number') { // Ensure basic validity
-        mergedMap.set(ts.start, ts);
-      }
-    }
-    // Add/overwrite with current UI timestamps
-    for (const ts of currentTimestampsFromUI) {
-      if (ts && typeof ts.start === 'number') { // Ensure basic validity
-        mergedMap.set(ts.start, ts);
-      }
-    }
-
-    const finalTimestampsToDisplay = Array.from(mergedMap.values());
     finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
 
     clearTimestampsDisplay();
@@ -416,12 +369,12 @@
       });
       pane.classList.remove("minimized");
     } else {
-      // If no timestamps after merge, ensure pane is minimized or in a default state
+      // If no timestamps after loading, ensure pane is minimized or in a default state
       // pane.classList.add("minimized"); // Or handle as per desired UX
     }
     updateSeekbarMarkers();
-    // No explicit saveTimestamps() here, as loading shouldn't inherently trigger a save unless data was converted
-    // If old data was converted, it will be saved in the new format next time saveTimestamps() is called by user action.
+    // No explicit saveTimestamps() here, as loading shouldn't inherently trigger a save
+    // unless old data was converted and you uncommented the re-save line above.
   }
 
   function getVideoId() {
