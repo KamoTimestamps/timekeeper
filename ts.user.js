@@ -28,6 +28,19 @@
   const SHIFT_SKIP_KEY = "shiftClickTimeSkipSeconds";
   const DEFAULT_SHIFT_SKIP = 10;
 
+  // Create a BroadcastChannel for cross-tab communication
+  const channel = new BroadcastChannel('ytls_timestamp_channel');
+
+  // Listen for messages from other tabs
+  channel.onmessage = (event) => {
+    console.log('Received message from another tab:', event.data);
+    // Optionally, reload timestamps or update UI based on the message
+    if (event.data && event.data.type === 'timestamps_updated' && event.data.videoId === getVideoId()) {
+      console.log('Reloading timestamps due to external update for video:', event.data.videoId);
+      loadTimestamps();
+    }
+  };
+
   // The user can configure 'timestampOffsetSeconds' in ViolentMonkey's script values.
   // Default is -5 seconds (5 seconds before current time).
   // A positive value will make it after current time, negative before.
@@ -123,7 +136,7 @@
     }
   }
 
-  function addTimestamp(e, t) {
+  function addTimestamp(e, t, doNotSave = false) {
     var li = document.createElement("li"), timeRow = document.createElement("div"), minus = document.createElement("span"),
       record = document.createElement("span"), plus = document.createElement("span"), a = document.createElement("a"),
       commentInput = document.createElement("input"), del = document.createElement("button");
@@ -189,7 +202,9 @@
 
     updateScroll();
     updateSeekbarMarkers();
-    saveTimestamps();
+    if (!doNotSave) {
+      saveTimestamps();
+    }
     return commentInput;
   }
 
@@ -291,10 +306,14 @@
     if (finalTimestampsToSave.length === 0) {
       // If there are no timestamps after merging, remove the local storage entry
       localStorage.removeItem(`ytls-${videoId}`);
+      // Notify other tabs about the update
+      channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'removed' });
     } else {
       // Save merged and sorted timestamps in the new format
       const dataToStore = { video_id: videoId, timestamps: finalTimestampsToSave };
       localStorage.setItem(`ytls-${videoId}`, JSON.stringify(dataToStore));
+      // Notify other tabs about the update
+      channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
   }
 
@@ -342,38 +361,67 @@
     if (!videoId) return;
     console.log(`loadTimestamps for ${videoId}`);
 
-    const savedData = localStorage.getItem(`ytls-${videoId}`);
-    if (!savedData) return;
+    // Get current timestamps from the UI
+    const currentTimestampsFromUI = Array.from(list.children).map(li => {
+      const startLink = li.querySelector('a[data-time]');
+      const comment = li.querySelector('input').value;
+      const startTime = parseInt(startLink.dataset.time);
+      return { start: startTime, comment: comment };
+    });
 
-    let data;
-    try {
-      data = JSON.parse(savedData);
-    } catch (e) {
-      console.error("Failed to parse saved data:", e);
-      return;
+    const savedDataRaw = localStorage.getItem(`ytls-${videoId}`);
+    let loadedTimestamps = [];
+
+    if (savedDataRaw) {
+      try {
+        let parsedData = JSON.parse(savedDataRaw);
+        // Convert old format if necessary
+        if (Array.isArray(parsedData)) {
+          console.log("Converting old timestamp format to new format during load...");
+          parsedData = { video_id: videoId, timestamps: parsedData };
+          // Optionally, re-save in new format immediately, though saveTimestamps will handle it later if changes are made
+          // localStorage.setItem(`ytls-${videoId}`, JSON.stringify(parsedData));
+        }
+
+        if (parsedData.video_id === videoId && Array.isArray(parsedData.timestamps)) {
+          loadedTimestamps = parsedData.timestamps;
+        }
+      } catch (e) {
+        console.error("Failed to parse saved data during load:", e);
+        // Proceed with empty loadedTimestamps if parsing fails
+      }
     }
 
-    // Check if the data is in the old format (array of timestamps)
-    if (Array.isArray(data)) {
-      console.log("Converting old timestamp format to new format...");
-      const newData = { video_id: videoId, timestamps: data };
-      localStorage.setItem(`ytls-${videoId}`, JSON.stringify(newData));
-      data = newData;
+    const mergedMap = new Map();
+    // Add loaded timestamps to the map first
+    for (const ts of loadedTimestamps) {
+      if (ts && typeof ts.start === 'number') { // Ensure basic validity
+        mergedMap.set(ts.start, ts);
+      }
+    }
+    // Add/overwrite with current UI timestamps
+    for (const ts of currentTimestampsFromUI) {
+      if (ts && typeof ts.start === 'number') { // Ensure basic validity
+        mergedMap.set(ts.start, ts);
+      }
     }
 
-    // Load timestamps from the new format
-    if (data.video_id === videoId && Array.isArray(data.timestamps)) {
-      clearTimestampsDisplay();
-      data.timestamps.forEach(ts => {
-        addTimestamp(ts.start, ts.comment);
+    const finalTimestampsToDisplay = Array.from(mergedMap.values());
+    finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
+
+    clearTimestampsDisplay();
+    if (finalTimestampsToDisplay.length > 0) {
+      finalTimestampsToDisplay.forEach(ts => {
+        addTimestamp(ts.start, ts.comment, true); // Pass true to prevent re-saving during load
       });
-
-      // Automatically open the tool if timestamps are loaded
       pane.classList.remove("minimized");
-      updateSeekbarMarkers();
     } else {
-      console.error("Invalid timestamp data format.");
+      // If no timestamps after merge, ensure pane is minimized or in a default state
+      // pane.classList.add("minimized"); // Or handle as per desired UX
     }
+    updateSeekbarMarkers();
+    // No explicit saveTimestamps() here, as loading shouldn't inherently trigger a save unless data was converted
+    // If old data was converted, it will be saved in the new format next time saveTimestamps() is called by user action.
   }
 
   function getVideoId() {
