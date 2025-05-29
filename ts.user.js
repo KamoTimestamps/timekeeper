@@ -7,6 +7,7 @@
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Vat5aL, Silent Shout
 // @match        https://www.youtube.com/*
+// @icon         data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%2272px%22 font-size=%2272px%22>⏲️</text></svg>
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @run-at       document-end
@@ -45,7 +46,6 @@
   };
 
   // The user can configure 'timestampOffsetSeconds' in ViolentMonkey's script values.
-  // Default is -5 seconds (5 seconds before current time).
   // A positive value will make it after current time, negative before.
   let configuredOffset = await GM.getValue(OFFSET_KEY);
   if (typeof configuredOffset === 'undefined') {
@@ -301,12 +301,20 @@
       return { start: startTime, comment: comment };
     });
 
+    const now = new Date();
+    const timestampSuffix = now.getUTCFullYear() +
+      '-' + String(now.getUTCMonth() + 1).padStart(2, '0') +
+      '-' + String(now.getUTCDate()).padStart(2, '0') +
+      '--' + String(now.getUTCHours()).padStart(2, '0') +
+      '-' + String(now.getUTCMinutes()).padStart(2, '0') +
+      '-' + String(now.getUTCSeconds()).padStart(2, '0');
+
     if (format === "json") {
       const blob = new Blob([JSON.stringify(timestamps, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `timestamps-${videoId}.json`;
+      a.download = `timestamps-${videoId}-${timestampSuffix}.json`;
       a.click();
       URL.revokeObjectURL(url);
     } else if (format === "text") {
@@ -319,7 +327,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `timestamps-${videoId}.txt`;
+      a.download = `timestamps-${videoId}-${timestampSuffix}.txt`;
       a.click();
       URL.revokeObjectURL(url);
     }
