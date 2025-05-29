@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.1.0
+// @version      2.1.1
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Vat5aL, Silent Shout
 // @match        https://www.youtube.com/*
@@ -471,7 +471,7 @@
     };
 
     minimizeBtn.textContent = "▶️";
-    minimizeBtn.style = "background:transparent;border:none;color:white;cursor:pointer;font-size:16px;margin-right:10px;"; // Adjust margin for spacing
+    minimizeBtn.style = "background:transparent;border:none;color:white;cursor:pointer;font-size:16px;";
     minimizeBtn.id = "ytls-minimize";
     function updateTime() {
       var v = document.querySelector("video");
@@ -885,7 +885,12 @@
       }
     `;
 
-    minimizeBtn.onclick = () => pane.classList.toggle("minimized");
+    minimizeBtn.onclick = () => {
+      if (!dragOccurredSinceLastMouseDown) { // Check the flag before toggling
+        pane.classList.toggle("minimized");
+      }
+    };
+
     list.onclick = (e) => {
       handleClick(e);
       saveTimestamps();
@@ -930,11 +935,13 @@
 
     let isDragging = false;
     let offsetX, offsetY;
+    let dragOccurredSinceLastMouseDown = false; // Flag to track if a drag occurred
 
     pane.addEventListener("mousedown", (e) => {
       if (e.target !== pane && e.target !== minimizeBtn && e.target !== header) return;
 
       isDragging = true;
+      dragOccurredSinceLastMouseDown = false; // Reset flag on new mousedown
       offsetX = e.clientX - pane.getBoundingClientRect().left;
       offsetY = e.clientY - pane.getBoundingClientRect().top;
 
@@ -943,6 +950,8 @@
 
     document.addEventListener("mousemove", (e) => {
       if (!isDragging) return;
+
+      dragOccurredSinceLastMouseDown = true; // Set flag if mouse moves while dragging
 
       const x = e.clientX - offsetX;
       const y = e.clientY - offsetY;
