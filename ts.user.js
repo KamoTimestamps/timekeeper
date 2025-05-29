@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.1
+// @version      2.1.0
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Vat5aL, Silent Shout
 // @match        https://www.youtube.com/*
@@ -444,7 +444,6 @@
       header = document.createElement("div"),
       list = document.createElement("ul"), // Ensure `list` is initialized here
       btns = document.createElement("div"),
-      addBtn = document.createElement("button"),
       timeDisplay = document.createElement("span"),
       style = document.createElement("style"),
       minimizeBtn = document.createElement("button");
@@ -486,15 +485,13 @@
     btns.id = "ytls-buttons";
     const mainButtonStyle = "background:#555;color:white;font-size:24px;border:none;border-radius:5px;padding:5px;cursor:pointer;";
 
-    addBtn.textContent = "🐣";
-    addBtn.style = mainButtonStyle;
-    addBtn.title = "Add timestamp";
-
-    addBtn.onclick = () => {
+    // Define handlers for main buttons
+    const handleAddTimestamp = () => {
       const video = document.querySelector("video");
       if (video) {
-        // Use configuredOffset when creating a new timestamp
-        const currentTime = Math.floor(video.currentTime + configuredOffset);
+        // Use configuredOffset if available, otherwise default to 0
+        const offset = typeof configuredOffset !== 'undefined' ? configuredOffset : 0;
+        const currentTime = Math.floor(video.currentTime + offset);
         // Call addTimestamp with doNotSave = true to prevent immediate save
         const newCommentInput = addTimestamp(currentTime, "", true);
         if (newCommentInput) { // addTimestamp returns the input element
@@ -504,13 +501,55 @@
       }
     };
 
-    // Update the "Settings" button to include the text "Settings" and style it similarly to the "Add timestamp" button.
-    var configBtn = document.createElement("button");
-    configBtn.textContent = "⚙️";
-    configBtn.style = mainButtonStyle;
-    configBtn.title = "Settings";
+    const handleCopyTimestamps = function() { // Using function() to ensure 'this' refers to the button
+      const video = document.querySelector("video");
+      const videoDuration = video ? Math.floor(video.duration) : 0;
 
-    // Helper function to create a button with common styles and actions
+      const timestamps = Array.from(list.children).map(li => {
+        const startLink = li.querySelector('a[data-time]');
+        const commentInput = li.querySelector('input');
+        const comment = commentInput ? commentInput.value : '';
+        const startTime = parseInt(startLink.dataset.time);
+        return { start: startTime, comment: comment };
+      });
+
+      const plainText = timestamps.map(ts => {
+        // Use formatTimeString if available, otherwise provide a basic time string
+        const timeString = typeof formatTimeString === 'function'
+                           ? formatTimeString(ts.start, videoDuration)
+                           : `${Math.floor(ts.start / 3600)}:${String(Math.floor(ts.start / 60) % 60).padStart(2, '0')}:${String(ts.start % 60).padStart(2, '0')}`;
+        return `${timeString} ${ts.comment}`;
+      }).join("\n");
+
+      navigator.clipboard.writeText(plainText).then(() => {
+        this.textContent = "✅";
+        setTimeout(() => { this.textContent = "📋"; }, 2000);
+      }).catch(err => {
+        console.error("Failed to copy timestamps: ", err);
+        this.textContent = "❌";
+        setTimeout(() => { this.textContent = "📋"; }, 2000);
+      });
+    };
+
+    // Configuration for main buttons
+    const mainButtonConfigs = [
+      { label: "🐣", title: "Add timestamp", action: handleAddTimestamp },
+      { label: "⚙️", title: "Settings", action: createSettingsModal },
+      { label: "📋", title: "Copy timestamps to clipboard", action: handleCopyTimestamps },
+      { label: "📃", title: "Sort timestamps by time", action: sortTimestampsAndUpdateDisplay }
+    ];
+
+    // Create and append main buttons
+    mainButtonConfigs.forEach(config => {
+      const button = document.createElement("button");
+      button.textContent = config.label;
+      button.title = config.title;
+      button.style = mainButtonStyle;
+      button.onclick = config.action;
+      btns.appendChild(button);
+    });
+
+    // Helper function to create a button with common styles and actions (for settings modal)
     function createButton(label, title, onClick) {
       const button = document.createElement("button");
       button.textContent = label;
@@ -544,11 +583,6 @@
       settingsModal.appendChild(settingsContent);
       document.body.appendChild(settingsModal);
     }
-
-    configBtn.onclick = createSettingsModal;
-
-    // Move the "Settings" button to the right of the "Add timestamp" button.
-    btns.append(addBtn, configBtn);
 
     // Add a save button to the buttons section
     var saveBtn = document.createElement("button");
@@ -695,7 +729,7 @@
       const a = document.createElement("a");
       a.href = url;
       const timestampSuffix = getTimestampSuffix();
-      a.download = `ytls-data${timestampSuffix}.json`;
+      a.download = `ytls-data-${timestampSuffix}.json`;
       a.click();
       URL.revokeObjectURL(url);
     };
@@ -735,51 +769,6 @@
 
       fileInput.click();
     };
-
-    // Add a copy-to-clipboard button to the main window
-    const copyBtn = document.createElement("button");
-    copyBtn.textContent = "📋";
-    copyBtn.title = "Copy timestamps to clipboard";
-    copyBtn.style = mainButtonStyle;
-
-    copyBtn.onclick = () => {
-      const video = document.querySelector("video");
-      const videoDuration = video ? Math.floor(video.duration) : 0;
-
-      const timestamps = Array.from(list.children).map(li => {
-        const startLink = li.querySelector('a[data-time]');
-        const comment = li.querySelector('input').value;
-        const startTime = parseInt(startLink.dataset.time);
-        return { start: startTime, comment: comment };
-      });
-
-      const plainText = timestamps.map(ts => {
-        const timeString = formatTimeString(ts.start, videoDuration);
-        return `${timeString} ${ts.comment}`;
-      }).join("\n");
-
-      navigator.clipboard.writeText(plainText).then(() => {
-        copyBtn.textContent = "✅";
-        setTimeout(() => {
-          copyBtn.textContent = "📋";
-        }, 2000);
-      }).catch(err => {
-        console.error("Failed to copy timestamps: ", err);
-        copyBtn.textContent = "❌";
-        setTimeout(() => {
-          copyBtn.textContent = "📋";
-        }, 2000);
-      });
-    };
-
-    btns.appendChild(copyBtn);
-
-    const sortBtn = document.createElement("button");
-    sortBtn.textContent = "📃";
-    sortBtn.title = "Sort timestamps by time";
-    sortBtn.style = mainButtonStyle;
-    sortBtn.onclick = sortTimestampsAndUpdateDisplay;
-    btns.appendChild(sortBtn);
 
     style.textContent = `
       #ytls-pane {
