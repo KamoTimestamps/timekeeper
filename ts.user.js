@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.0
+// @version      2.1
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Vat5aL, Silent Shout
 // @match        https://www.youtube.com/*
@@ -122,23 +122,7 @@
       formatTime(t, newTime);
       document.querySelector("video").currentTime = newTime; // Seek to the new timestamp
 
-      // Reorder the timestamp in the list if necessary
-      const li = t.closest('li');
-      li.remove(); // Remove the current list item
-
-      let inserted = false;
-      for (let i = 0; i < list.children.length; i++) {
-        const existingTime = parseInt(list.children[i].querySelector('a[data-time]').dataset.time);
-        if (newTime < existingTime) {
-          list.insertBefore(li, list.children[i]);
-          inserted = true;
-          break;
-        }
-      }
-      if (!inserted) {
-        list.appendChild(li); // Append to the end if no earlier timestamp is found
-      }
-
+      // No automatic reordering here. User will click the sort button.
       updateSeekbarMarkers();
       saveTimestamps();
     } else if (e.target.dataset.action === "clear") {
@@ -203,19 +187,7 @@
     li.append(timeRow, commentInput);
     li.style = "display:flex;flex-direction:column;gap:5px;padding:5px;background:rgba(255,255,255,0.05);border-radius:3px;";
 
-    // Insert the new timestamp in the correct order
-    let inserted = false;
-    for (let i = 0; i < list.children.length; i++) {
-      const existingTime = parseInt(list.children[i].querySelector('a[data-time]').dataset.time);
-      if (e < existingTime) {
-        list.insertBefore(li, list.children[i]);
-        inserted = true;
-        break;
-      }
-    }
-    if (!inserted) {
-      list.appendChild(li); // Append to the end if no earlier timestamp is found
-    }
+    list.appendChild(li); // Append to the end
 
     updateScroll();
     updateSeekbarMarkers();
@@ -223,6 +195,28 @@
       saveTimestamps();
     }
     return commentInput;
+  }
+
+  function sortTimestampsAndUpdateDisplay() {
+    const items = Array.from(list.children);
+    const sortedItems = items.map(li => {
+      const timeLink = li.querySelector('a[data-time]');
+      const time = parseInt(timeLink.dataset.time);
+      return { time, element: li };
+    }).sort((a, b) => a.time - b.time);
+
+    // Clear current list
+    while (list.firstChild) {
+      list.removeChild(list.firstChild);
+    }
+
+    // Append sorted items
+    sortedItems.forEach(item => {
+      list.appendChild(item.element);
+    });
+
+    updateSeekbarMarkers();
+    saveTimestamps(); // Save after sorting
   }
 
   function updateScroll() {
@@ -490,9 +484,11 @@
     }
     updateTime();
     btns.id = "ytls-buttons";
+    const mainButtonStyle = "background:#555;color:white;font-size:24px;border:none;border-radius:5px;padding:5px;cursor:pointer;";
 
-    addBtn.textContent = "🐣 Add timestamp";
-    addBtn.style = "background:#555;color:white;font-size:14px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;margin-right:10px;";
+    addBtn.textContent = "🐣";
+    addBtn.style = mainButtonStyle;
+    addBtn.title = "Add timestamp";
 
     addBtn.onclick = () => {
       const video = document.querySelector("video");
@@ -510,43 +506,43 @@
 
     // Update the "Settings" button to include the text "Settings" and style it similarly to the "Add timestamp" button.
     var configBtn = document.createElement("button");
-    configBtn.textContent = "⚙️ Settings";
-    configBtn.style = "background:#555;color:white;font-size:14px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
+    configBtn.textContent = "⚙️";
+    configBtn.style = mainButtonStyle;
     configBtn.title = "Settings";
 
     // Helper function to create a button with common styles and actions
     function createButton(label, title, onClick) {
-        const button = document.createElement("button");
-        button.textContent = label;
-        button.title = title;
-        button.style = "width:100%;height:50px;background:#555;color:white;border:none;border-radius:5px;cursor:pointer;font-size:16px;display:flex;justify-content:center;align-items:center;";
-        button.onclick = onClick;
-        return button;
+      const button = document.createElement("button");
+      button.textContent = label;
+      button.title = title;
+      button.style = "width:100%;height:50px;background:#555;color:white;border:none;border-radius:5px;cursor:pointer;font-size:16px;display:flex;justify-content:center;align-items:center;";
+      button.onclick = onClick;
+      return button;
     }
 
     // Function to create the settings modal
     function createSettingsModal() {
-        const settingsModal = document.createElement("div");
-        settingsModal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:#333;padding:20px;border-radius:10px;z-index:10000;color:white;text-align:center;width:300px;box-shadow:0 0 10px rgba(0,0,0,0.5);";
+      const settingsModal = document.createElement("div");
+      settingsModal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:#333;padding:20px;border-radius:10px;z-index:10000;color:white;text-align:center;width:300px;box-shadow:0 0 10px rgba(0,0,0,0.5);";
 
-        const settingsContent = document.createElement("div");
-        settingsContent.style = "display:flex;flex-direction:column;gap:10px;align-items:center;";
+      const settingsContent = document.createElement("div");
+      settingsContent.style = "display:flex;flex-direction:column;gap:10px;align-items:center;";
 
-        const buttonConfigs = [
-            { label: "💾 Save", title: "Save", action: saveBtn.onclick },
-            { label: "📂 Load", title: "Load", action: loadBtn.onclick },
-            { label: "📤 Export", title: "Export", action: exportBtn.onclick },
-            { label: "📥 Import", title: "Import", action: importBtn.onclick },
-            { label: "Close", title: "Close", action: () => document.body.removeChild(settingsModal) }
-        ];
+      const buttonConfigs = [
+        { label: "💾 Save", title: "Save", action: saveBtn.onclick },
+        { label: "📂 Load", title: "Load", action: loadBtn.onclick },
+        { label: "📤 Export", title: "Export", action: exportBtn.onclick },
+        { label: "📥 Import", title: "Import", action: importBtn.onclick },
+        { label: "Close", title: "Close", action: () => document.body.removeChild(settingsModal) }
+      ];
 
-        buttonConfigs.forEach(({ label, title, action }) => {
-            const button = createButton(label, title, action);
-            settingsContent.appendChild(button);
-        });
+      buttonConfigs.forEach(({ label, title, action }) => {
+        const button = createButton(label, title, action);
+        settingsContent.appendChild(button);
+      });
 
-        settingsModal.appendChild(settingsContent);
-        document.body.appendChild(settingsModal);
+      settingsModal.appendChild(settingsContent);
+      document.body.appendChild(settingsModal);
     }
 
     configBtn.onclick = createSettingsModal;
@@ -698,7 +694,8 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "ytls-data.json";
+      const timestampSuffix = getTimestampSuffix();
+      a.download = `ytls-data${timestampSuffix}.json`;
       a.click();
       URL.revokeObjectURL(url);
     };
@@ -743,39 +740,46 @@
     const copyBtn = document.createElement("button");
     copyBtn.textContent = "📋";
     copyBtn.title = "Copy timestamps to clipboard";
-    copyBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;margin-left:10px;";
+    copyBtn.style = mainButtonStyle;
 
     copyBtn.onclick = () => {
-        const video = document.querySelector("video");
-        const videoDuration = video ? Math.floor(video.duration) : 0;
+      const video = document.querySelector("video");
+      const videoDuration = video ? Math.floor(video.duration) : 0;
 
-        const timestamps = Array.from(list.children).map(li => {
-            const startLink = li.querySelector('a[data-time]');
-            const comment = li.querySelector('input').value;
-            const startTime = parseInt(startLink.dataset.time);
-            return { start: startTime, comment: comment };
-        });
+      const timestamps = Array.from(list.children).map(li => {
+        const startLink = li.querySelector('a[data-time]');
+        const comment = li.querySelector('input').value;
+        const startTime = parseInt(startLink.dataset.time);
+        return { start: startTime, comment: comment };
+      });
 
-        const plainText = timestamps.map(ts => {
-            const timeString = formatTimeString(ts.start, videoDuration);
-            return `${timeString} ${ts.comment}`;
-        }).join("\n");
+      const plainText = timestamps.map(ts => {
+        const timeString = formatTimeString(ts.start, videoDuration);
+        return `${timeString} ${ts.comment}`;
+      }).join("\n");
 
-        navigator.clipboard.writeText(plainText).then(() => {
-            copyBtn.textContent = "✅";
-            setTimeout(() => {
-                copyBtn.textContent = "📋";
-            }, 2000);
-        }).catch(err => {
-            console.error("Failed to copy timestamps: ", err);
-            copyBtn.textContent = "❌";
-            setTimeout(() => {
-                copyBtn.textContent = "📋";
-            }, 2000);
-        });
+      navigator.clipboard.writeText(plainText).then(() => {
+        copyBtn.textContent = "✅";
+        setTimeout(() => {
+          copyBtn.textContent = "📋";
+        }, 2000);
+      }).catch(err => {
+        console.error("Failed to copy timestamps: ", err);
+        copyBtn.textContent = "❌";
+        setTimeout(() => {
+          copyBtn.textContent = "📋";
+        }, 2000);
+      });
     };
 
     btns.appendChild(copyBtn);
+
+    const sortBtn = document.createElement("button");
+    sortBtn.textContent = "📃";
+    sortBtn.title = "Sort timestamps by time";
+    sortBtn.style = mainButtonStyle;
+    sortBtn.onclick = sortTimestampsAndUpdateDisplay;
+    btns.appendChild(sortBtn);
 
     style.textContent = `
       #ytls-pane {
