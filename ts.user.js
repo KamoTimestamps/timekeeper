@@ -1,16 +1,15 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
-// @namespace    http://tampermonkey.net/
-// @updateURL https://openuserjs.org/meta/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.meta.js
-// @downloadURL https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js
+// @namespace    https://violentmonkey.github.io/
 // @version      2.0
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Vat5aL, Silent Shout
 // @match        https://www.youtube.com/*
+// @noframe
 // @icon         data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%2272px%22 font-size=%2272px%22>⏲️</text></svg>
 // @grant        GM.getValue
 // @grant        GM.setValue
-// @run-at       document-end
+// @run-at       document-idle
 // @license MIT
 // ==/UserScript==
 
@@ -62,6 +61,16 @@
   let saveTimeoutId = null; // Variable to hold the timeout ID for debouncing
   let loadTimeoutId = null; // Variable to hold the timeout ID for debouncing loads from broadcast
   let isMouseOverTimestamps = false; // Default to false
+
+  function getTimestampSuffix() {
+    const now = new Date();
+    return now.getUTCFullYear() +
+      '-' + String(now.getUTCMonth() + 1).padStart(2, '0') +
+      '-' + String(now.getUTCDate()).padStart(2, '0') +
+      '--' + String(now.getUTCHours()).padStart(2, '0') +
+      '-' + String(now.getUTCMinutes()).padStart(2, '0') +
+      '-' + String(now.getUTCSeconds()).padStart(2, '0');
+  }
 
   function clearTimestampsDisplay() {
     while (list.firstChild) { // Clear the existing timestamps
@@ -301,13 +310,7 @@
       return { start: startTime, comment: comment };
     });
 
-    const now = new Date();
-    const timestampSuffix = now.getUTCFullYear() +
-      '-' + String(now.getUTCMonth() + 1).padStart(2, '0') +
-      '-' + String(now.getUTCDate()).padStart(2, '0') +
-      '--' + String(now.getUTCHours()).padStart(2, '0') +
-      '-' + String(now.getUTCMinutes()).padStart(2, '0') +
-      '-' + String(now.getUTCSeconds()).padStart(2, '0');
+    const timestampSuffix = getTimestampSuffix();
 
     if (format === "json") {
       const blob = new Blob([JSON.stringify(timestamps, null, 2)], { type: "application/json" });
