@@ -459,7 +459,7 @@
 
     pane.id = "ytls-pane";
     pane.classList.add("minimized");
-    header.style = "display:flex;justify-content:flex-start;align-items:center;padding:5px;"; // Align items to the top-left
+    header.style = "display:flex;justify-content:flex-start;align-items:center;padding:5px;flex-wrap:nowrap;overflow:hidden;"; // Align items to the top-left, ensure no wrap, and hide overflow
     timeDisplay.id = "ytls-current-time";
     timeDisplay.textContent = "CT: ";
     timeDisplay.style = "color:white;font-size:14px;cursor:pointer;"; // Add pointer cursor
@@ -483,7 +483,6 @@
     }
     updateTime();
     btns.id = "ytls-buttons";
-    const mainButtonStyle = "background:#555;color:white;font-size:24px;border:none;border-radius:5px;padding:5px;cursor:pointer;";
 
     // Define handlers for main buttons
     const handleAddTimestamp = () => {
@@ -544,7 +543,7 @@
       const button = document.createElement("button");
       button.textContent = config.label;
       button.title = config.title;
-      button.style = mainButtonStyle;
+      button.classList.add("ytls-main-button");
       button.onclick = config.action;
       btns.appendChild(button);
     });
@@ -554,7 +553,7 @@
       const button = document.createElement("button");
       button.textContent = label;
       button.title = title;
-      button.style = "width:100%;height:50px;background:#555;color:white;border:none;border-radius:5px;cursor:pointer;font-size:16px;display:flex;justify-content:center;align-items:center;";
+      button.classList.add("ytls-settings-modal-button");
       button.onclick = onClick;
       return button;
     }
@@ -587,7 +586,7 @@
     // Add a save button to the buttons section
     var saveBtn = document.createElement("button");
     saveBtn.textContent = "💾 Save";
-    saveBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
+    saveBtn.classList.add("ytls-file-operation-button");
     saveBtn.onclick = () => {
       // Create a styled modal for the save format choice
       const modal = document.createElement("div");
@@ -630,7 +629,7 @@
     // Add a load button to the buttons section
     var loadBtn = document.createElement("button");
     loadBtn.textContent = "📂 Load";
-    loadBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
+    loadBtn.classList.add("ytls-file-operation-button");
     loadBtn.onclick = () => {
       // Create a hidden file input element
       const fileInput = document.createElement("input");
@@ -701,7 +700,7 @@
     // Add export button to the buttons section
     var exportBtn = document.createElement("button");
     exportBtn.textContent = "📤 Export";
-    exportBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
+    exportBtn.classList.add("ytls-file-operation-button");
     exportBtn.onclick = () => {
       const exportData = {};
 
@@ -737,7 +736,7 @@
     // Add import button to the buttons section
     var importBtn = document.createElement("button");
     importBtn.textContent = "📥 Import";
-    importBtn.style = "background:#555;color:white;font-size:12px;padding:5px 10px;border:none;border-radius:5px;cursor:pointer;";
+    importBtn.classList.add("ytls-file-operation-button");
     importBtn.onclick = () => {
       const fileInput = document.createElement("input");
       fileInput.type = "file";
@@ -773,7 +772,7 @@
     style.textContent = `
       #ytls-pane {
         background: rgba(0, 0, 0, 0.8);
-        text-align: right;
+        text-align: left;
         position: fixed;
         bottom: 0;
         right: 0;
@@ -871,8 +870,48 @@
         justify-content: space-between;
         margin-top: 10px;
       }
-      #ytls-buttons button {
-        background: rgba(255, 255, 255, 0.1);
+      #ytls-buttons button:hover {
+        background: rgba(255, 255, 255, 0.2);
+      }
+
+      /* Styles for main control buttons */
+      .ytls-main-button {
+        background: #555;
+        color: white;
+        font-size: 24px;
+        border: none;
+        border-radius: 5px;
+        padding: 5px;
+        cursor: pointer;
+      }
+      .ytls-main-button:hover {
+        background: #777; /* Example hover effect */
+      }
+
+      /* Styles for buttons in the settings modal */
+      .ytls-settings-modal-button {
+        width: 100%;
+        height: 50px;
+        background: #555;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 5px; /* Add some spacing if needed */
+      }
+      .ytls-settings-modal-button:hover {
+        background: #777; /* Example hover effect */
+      }
+
+      /* Styles for file operation buttons (Save, Load, Export, Import) if they were to be displayed directly */
+      /* Note: These buttons (saveBtn, loadBtn, etc.) are not directly added to the UI with these styles. */
+      /* Their onclick handlers are used by the settings modal buttons which use .ytls-settings-modal-button. */
+      .ytls-file-operation-button {
+        background: #555;
         color: white;
         font-size: 12px;
         padding: 5px 10px;
@@ -880,8 +919,8 @@
         border-radius: 5px;
         cursor: pointer;
       }
-      #ytls-buttons button:hover {
-        background: rgba(255, 255, 255, 0.2);
+      .ytls-file-operation-button:hover {
+        background: #777; /* Example hover effect */
       }
     `;
 
@@ -1027,8 +1066,8 @@
       savePanePosition();
     });
 
-    header.appendChild(timeDisplay); // Ensure timeDisplay is part of the header
-    header.appendChild(minimizeBtn); // Add minimize button to the header
+    header.appendChild(minimizeBtn); // Add minimize button to the header first
+    header.appendChild(timeDisplay); // Then add timeDisplay
     pane.appendChild(header); // Add header to the pane
 
     var content = document.createElement("div"); content.id = "ytls-content";
