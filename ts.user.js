@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.1.2
+// @version      2.1.3
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Vat5aL, Silent Shout
 // @match        https://www.youtube.com/*
@@ -471,7 +471,7 @@
     };
 
     minimizeBtn.textContent = "▶️";
-    minimizeBtn.style = "background:transparent;border:none;color:white;cursor:pointer;font-size:16px;";
+    minimizeBtn.classList.add("ytls-minimize-button"); // Added class
     minimizeBtn.id = "ytls-minimize";
     function updateTime() {
       var v = document.querySelector("video");
@@ -561,10 +561,10 @@
     // Function to create the settings modal
     function createSettingsModal() {
       const settingsModal = document.createElement("div");
-      settingsModal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:#333;padding:20px;border-radius:10px;z-index:10000;color:white;text-align:center;width:300px;box-shadow:0 0 10px rgba(0,0,0,0.5);";
+      settingsModal.id = "ytls-settings-modal"; // Added ID
 
       const settingsContent = document.createElement("div");
-      settingsContent.style = "display:flex;flex-direction:column;gap:10px;align-items:center;";
+      settingsContent.id = "ytls-settings-content"; // Added ID
 
       const buttonConfigs = [
         { label: "💾 Save", title: "Save", action: saveBtn.onclick },
@@ -590,15 +590,14 @@
     saveBtn.onclick = () => {
       // Create a styled modal for the save format choice
       const modal = document.createElement("div");
-      modal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:#333;padding:20px;border-radius:10px;z-index:10000;color:white;text-align:center;width:300px;box-shadow:0 0 10px rgba(0,0,0,0.5);";
+      modal.id = "ytls-save-modal"; // Added ID
 
       const message = document.createElement("p");
       message.textContent = "Save as:";
-      message.style = "margin-bottom:15px;font-size:16px;";
 
       const jsonButton = document.createElement("button");
       jsonButton.textContent = "JSON";
-      jsonButton.style = "background:#555;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;margin-right:10px;";
+      jsonButton.classList.add("ytls-save-modal-button"); // Added class
       jsonButton.onclick = () => {
         saveTimestampsAs("json");
         document.body.removeChild(modal);
@@ -606,7 +605,7 @@
 
       const textButton = document.createElement("button");
       textButton.textContent = "Plain Text";
-      textButton.style = "background:#555;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;";
+      textButton.classList.add("ytls-save-modal-button"); // Added class
       textButton.onclick = () => {
         saveTimestampsAs("text");
         document.body.removeChild(modal);
@@ -614,7 +613,7 @@
 
       const cancelButton = document.createElement("button");
       cancelButton.textContent = "Cancel";
-      cancelButton.style = "background:#444;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;margin-top:15px;display:block;width:100%;";
+      cancelButton.classList.add("ytls-save-modal-cancel-button"); // Added class
       cancelButton.onclick = () => {
         document.body.removeChild(modal);
       };
@@ -635,7 +634,7 @@
       const fileInput = document.createElement("input");
       fileInput.type = "file";
       fileInput.accept = ".json,.txt"; // Accept JSON and plain text files
-      fileInput.style = "display:none;";
+      fileInput.classList.add("ytls-hidden-file-input"); // Added class
 
       fileInput.onchange = (event) => {
         const file = event.target.files[0];
@@ -741,7 +740,7 @@
       const fileInput = document.createElement("input");
       fileInput.type = "file";
       fileInput.accept = ".json";
-      fileInput.style = "display:none;";
+      fileInput.classList.add("ytls-hidden-file-input"); // Added class
 
       fileInput.onchange = (event) => {
         const file = event.target.files[0];
@@ -891,6 +890,38 @@
         background: #777; /* Example hover effect */
       }
 
+      /* Style for the minimize button */
+      .ytls-minimize-button {
+        background: transparent;
+        border: none;
+        color: white;
+        cursor: pointer;
+        font-size: 16px;
+        padding: 0px;
+      }
+
+      /* Styles for settings modal */
+      #ytls-settings-modal {
+        position:fixed;
+        top:50%;
+        left:50%;
+        transform:translate(-50%, -50%);
+        background:#333;
+        padding:20px;
+        border-radius:10px;
+        z-index:10000;
+        color:white;
+        text-align:center;
+        width:300px;
+        box-shadow:0 0 10px rgba(0,0,0,0.5);
+      }
+      #ytls-settings-content {
+        display:flex;
+        flex-direction:column;
+        gap:10px;
+        align-items:center;
+      }
+
       /* Styles for buttons in the settings modal */
       .ytls-settings-modal-button {
         width: 100%;
@@ -910,6 +941,49 @@
         background: #777; /* Example hover effect */
       }
 
+      /* Styles for save format choice modal */
+      #ytls-save-modal {
+        position:fixed;
+        top:50%;
+        left:50%;
+        transform:translate(-50%, -50%);
+        background:#333;
+        padding:20px;
+        border-radius:10px;
+        z-index:10000;
+        color:white;
+        text-align:center;
+        width:300px;
+        box-shadow:0 0 10px rgba(0,0,0,0.5);
+      }
+      #ytls-save-modal p {
+        margin-bottom:15px;
+        font-size:16px;
+      }
+      .ytls-save-modal-button {
+        background:#555;
+        color:white;
+        padding:10px 20px;
+        border:none;
+        border-radius:5px;
+        cursor:pointer;
+        margin-right:10px; /* Applied to both JSON and Text buttons, last one will have extra margin if not overridden */
+      }
+      .ytls-save-modal-button:last-of-type { /* Remove margin from the last button of this type in the modal */
+        margin-right:0;
+      }
+      .ytls-save-modal-cancel-button {
+        background:#444;
+        color:white;
+        padding:10px 20px;
+        border:none;
+        border-radius:5px;
+        cursor:pointer;
+        margin-top:15px;
+        display:block;
+        width:100%;
+      }
+
       /* Styles for file operation buttons (Save, Load, Export, Import) if they were to be displayed directly */
       /* Note: These buttons (saveBtn, loadBtn, etc.) are not directly added to the UI with these styles. */
       /* Their onclick handlers are used by the settings modal buttons which use .ytls-settings-modal-button. */
@@ -924,6 +998,10 @@
       }
       .ytls-file-operation-button:hover {
         background: #777; /* Example hover effect */
+      }
+
+      .ytls-hidden-file-input {
+        display:none;
       }
     `;
 
