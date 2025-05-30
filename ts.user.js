@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.1.3
+// @version      2.1.4
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Vat5aL, Silent Shout
 // @match        https://www.youtube.com/*
@@ -103,10 +103,20 @@
     e.href = "https://youtu.be/" + vid + "?t=" + t;
   }
 
+  // Helper function to update browser URL with timestamp
+  function updateBrowserUrlWithTimestamp(timeInSeconds) {
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('t', `${timeInSeconds}s`);
+    // history.pushState(null, '', currentUrl.toString());
+    history.replaceState({}, '', currentUrl.toString()); // Use replaceState to avoid adding a new history entry
+  }
+
   function handleClick(e) {
     if (e.target.dataset.time) {
       e.preventDefault();
-      document.querySelector("video").currentTime = e.target.dataset.time;
+      const newTime = e.target.dataset.time;
+      document.querySelector("video").currentTime = newTime;
+
     } else if (e.target.dataset.increment) {
       e.preventDefault();
       var t = e.target.parentElement.querySelector('a[data-time]');
@@ -195,6 +205,15 @@
       saveTimestamps();
     }
     return commentInput;
+  }
+
+  // Add event listener for the 'seeked' event on the video element
+  const videoElementForSeek = document.querySelector("video");
+  if (videoElementForSeek) {
+    videoElementForSeek.addEventListener("seeked", () => {
+      const currentTime = Math.floor(videoElementForSeek.currentTime);
+      updateBrowserUrlWithTimestamp(currentTime);
+    });
   }
 
   function sortTimestampsAndUpdateDisplay() {
@@ -1158,6 +1177,15 @@
     loadTimestamps();
     highlightNearestTimestamp();
     updateSeekbarMarkers();
+
+    // Add event listener for video pause to update URL
+    const video = document.querySelector("video");
+    if (video) {
+      video.addEventListener("pause", () => {
+        const currentTime = Math.floor(video.currentTime);
+        updateBrowserUrlWithTimestamp(currentTime); // Use helper function
+      });
+    }
   }
 
   // Add a function to handle URL changes
