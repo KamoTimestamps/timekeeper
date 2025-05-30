@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.2
+// @version      2.2.3
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -551,6 +551,81 @@
     });
   }
 
+  function processImportedData(contentString) {
+    let processedSuccessfully = false;
+    // Try parsing as JSON first
+    try {
+      const timestamps = JSON.parse(contentString);
+      if (Array.isArray(timestamps)) {
+        // Check if all items are valid timestamp objects
+        const isValidJsonData = timestamps.every(ts => typeof ts.start === 'number' && typeof ts.comment === 'string');
+        if (isValidJsonData) {
+          timestamps.forEach(ts => {
+            const existingLi = Array.from(list.children).find(li => {
+              const timeLink = li.querySelector('a[data-time]');
+              return timeLink && parseInt(timeLink.dataset.time) === ts.start;
+            });
+            if (existingLi) {
+              const commentInput = existingLi.querySelector('input');
+              if (commentInput) commentInput.value = ts.comment;
+            } else {
+              addTimestamp(ts.start, ts.comment);
+            }
+          });
+          processedSuccessfully = true;
+        } else {
+          console.warn("Parsed JSON array, but items are not in the expected timestamp format. Trying as plain text.");
+        }
+      } else {
+        console.warn("Parsed JSON, but it's not an array. Trying as plain text.");
+      }
+    } catch (e) {
+      // JSON parsing failed or was not the correct structure, proceed to plain text parsing
+    }
+
+    if (!processedSuccessfully) {
+      // Handle plain text input
+      const lines = contentString.split("\n").map(line => line.trim()).filter(line => line);
+      if (lines.length > 0) {
+        let matchedAnyLine = false;
+        lines.forEach(line => {
+          const match = line.match(/^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*(.*)$/);
+          if (match) {
+            matchedAnyLine = true;
+            const hours = parseInt(match[1]) || 0;
+            const minutes = parseInt(match[2]);
+            const seconds = parseInt(match[3]);
+            const start = hours * 3600 + minutes * 60 + seconds;
+            const comment = match[4] ? match[4].trim() : "";
+
+            const existingLi = Array.from(list.children).find(li => {
+              const timeLink = li.querySelector('a[data-time]');
+              return timeLink && parseInt(timeLink.dataset.time) === start;
+            });
+            if (existingLi) {
+              const commentInput = existingLi.querySelector('input');
+              if (commentInput) commentInput.value = comment;
+            } else {
+              addTimestamp(start, comment);
+            }
+          }
+        });
+        if (matchedAnyLine) {
+          processedSuccessfully = true;
+        }
+      }
+    }
+
+    if (processedSuccessfully) {
+      saveTimestamps();
+      updateSeekbarMarkers();
+      updateScroll();
+      // alert("Timestamps loaded and merged successfully!");
+    } else {
+      alert("Failed to parse content. Please ensure it is in the correct JSON or plain text format.");
+    }
+  }
+
   if (!document.querySelector("#ytls-pane")) {
     // Remove any stray minimized icons before creating a new pane
     document.querySelectorAll("#ytls-pane").forEach(el => el.remove());
@@ -745,108 +820,70 @@
     loadBtn.textContent = "📂 Load";
     loadBtn.classList.add("ytls-file-operation-button");
     loadBtn.onclick = () => {
-      // Create a hidden file input element
-      const fileInput = document.createElement("input");
-      fileInput.type = "file";
-      fileInput.accept = ".json,.txt"; // Accept JSON and plain text files
-      fileInput.classList.add("ytls-hidden-file-input"); // Added class
+      // Create a modal for choosing load source
+      const loadModal = document.createElement("div");
+      loadModal.id = "ytls-load-modal"; // Added ID
+      loadModal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#333;padding:20px;border-radius:10px;z-index:10001;color:white;text-align:center;width:300px;box-shadow:0 0 10px rgba(0,0,0,0.5);";
 
-      fileInput.onchange = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
+      const loadMessage = document.createElement("p");
+      loadMessage.textContent = "Load from:";
+      loadMessage.style = "margin-bottom:15px;font-size:16px;";
 
-        const reader = new FileReader();
-        reader.onload = () => {
-          const content = reader.result.trim();
+      const fromFileButton = document.createElement("button");
+      fromFileButton.textContent = "File";
+      fromFileButton.style = "background:#555;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;margin-right:10px;";
+      fromFileButton.onclick = () => {
+        document.body.removeChild(loadModal);
+        // Create a hidden file input element
+        const fileInput = document.createElement("input");
+        fileInput.type = "file";
+        fileInput.accept = ".json,.txt"; // Accept JSON and plain text files
+        fileInput.classList.add("ytls-hidden-file-input"); // Added class
 
-          if (file.name.endsWith(".json")) {
-            // Handle JSON input
-            try {
-              const timestamps = JSON.parse(content);
-              if (Array.isArray(timestamps)) {
-                // Do not clear existing timestamps
-                timestamps.forEach(ts => {
-                  // Check if a timestamp with the same start time already exists
-                  const existingLi = Array.from(list.children).find(li => {
-                    const timeLink = li.querySelector('a[data-time]');
-                    return timeLink && parseInt(timeLink.dataset.time) === ts.start;
-                  });
+        fileInput.onchange = (event) => {
+          const file = event.target.files[0];
+          if (!file) return;
 
-                  if (existingLi) {
-                    // If it exists, update the comment
-                    const commentInput = existingLi.querySelector('input');
-                    if (commentInput) {
-                      commentInput.value = ts.comment;
-                    }
-                  } else {
-                    // Otherwise, add the new timestamp
-                    addTimestamp(ts.start, ts.comment);
-                  }
-                });
-                saveTimestamps();
-                updateSeekbarMarkers();
-                updateScroll();
-                alert("Timestamps loaded and merged successfully!");
-              } else {
-                throw new Error("Invalid JSON format");
-              }
-            } catch (e) {
-              alert("Failed to parse JSON file. Please ensure it is in the correct format.");
-            }
-          } else if (file.name.endsWith(".txt")) {
-            console.log("Handling plain text input");
-            // Handle plain text input
-            const lines = content.split("\n").map(line => line.trim()).filter(line => line);
-            console.log("Parsed lines:", lines);
-            if (lines.length > 0) {
-              // Do not clear existing timestamps
-              lines.forEach(line => {
-                console.log("Processing line:", line);
-                // Regex to match HH:MM:SS, MM:SS, or M:SS formats, with optional comment
-                const match = line.match(/^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*(.*)$/);
-                if (match) {
-                  console.log("Matched timestamp:", match);
-                  const hours = parseInt(match[1]) || 0;
-                  const minutes = parseInt(match[2]);
-                  const seconds = parseInt(match[3]);
-                  const start = hours * 3600 + minutes * 60 + seconds;
-                  const comment = match[4] ? match[4].trim() : "";
-
-                  // Check if a timestamp with the same start time already exists
-                  const existingLi = Array.from(list.children).find(li => {
-                    const timeLink = li.querySelector('a[data-time]');
-                    return timeLink && parseInt(timeLink.dataset.time) === start;
-                  });
-
-                  if (existingLi) {
-                    // If it exists, update the comment
-                    const commentInput = existingLi.querySelector('input');
-                    if (commentInput) {
-                      commentInput.value = comment;
-                    }
-                  } else {
-                    // Otherwise, add the new timestamp
-                    addTimestamp(start, comment);
-                  }
-                }
-              });
-              saveTimestamps();
-              updateSeekbarMarkers();
-              updateScroll();
-              alert("Timestamps loaded and merged successfully!");
-            } else {
-              alert("The text file is empty or not in the correct format.");
-            }
-          } else {
-            alert("Unsupported file type. Please upload a .json or .txt file.");
-          }
+          const reader = new FileReader();
+          reader.onload = () => {
+            const content = reader.result.trim();
+            processImportedData(content);
+          };
+          reader.readAsText(file);
         };
-
-        reader.readAsText(file);
+        fileInput.click();
       };
 
-      // Trigger the file input dialog
-      fileInput.click();
+      const fromClipboardButton = document.createElement("button");
+      fromClipboardButton.textContent = "Clipboard";
+      fromClipboardButton.style = "background:#555;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;";
+      fromClipboardButton.onclick = async () => {
+        document.body.removeChild(loadModal);
+        try {
+          const clipboardText = await navigator.clipboard.readText();
+          if (clipboardText) {
+            processImportedData(clipboardText.trim());
+          } else {
+            alert("Clipboard is empty.");
+          }
+        } catch (err) {
+          console.error("Failed to read from clipboard: ", err);
+          alert("Failed to read from clipboard. Ensure you have granted permission.");
+        }
+      };
+
+      const cancelLoadButton = document.createElement("button");
+      cancelLoadButton.textContent = "Cancel";
+      cancelLoadButton.style = "background:#444;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;margin-top:15px;display:block;width:100%;";
+      cancelLoadButton.onclick = () => {
+        document.body.removeChild(loadModal);
+      };
+
+      loadModal.appendChild(loadMessage);
+      loadModal.appendChild(fromFileButton);
+      loadModal.appendChild(fromClipboardButton);
+      loadModal.appendChild(cancelLoadButton);
+      document.body.appendChild(loadModal);
     };
 
     // Add export button to the buttons section
@@ -886,7 +923,7 @@
         a.download = `ytls-data-${timestampSuffix}.json`;
         a.click();
         URL.revokeObjectURL(url);
-        alert("Data exported successfully!");
+        // alert("Data exported successfully!");
       };
 
       getAllReq.onerror = (event) => {
@@ -933,7 +970,7 @@
               }
             }
             Promise.all(importPromises).then(() => {
-                alert("Data imported successfully! Refreshing tool...");
+                // alert("Data imported successfully! Refreshing tool...");
                 handleUrlChange(); // Refresh the tool to reflect imported data
             }).catch(err => {
                 alert("An error occurred during import to IndexedDB. Check console for details.");
