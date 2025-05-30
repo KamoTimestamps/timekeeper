@@ -577,7 +577,7 @@
       { label: "🐣", title: "Add timestamp", action: handleAddTimestamp },
       { label: "⚙️", title: "Settings", action: createSettingsModal },
       { label: "📋", title: "Copy timestamps to clipboard", action: handleCopyTimestamps },
-      { label: "📃", title: "Sort timestamps by time", action: sortTimestampsAndUpdateDisplay }
+      { label: "🔀", title: "Sort timestamps by time", action: sortTimestampsAndUpdateDisplay }
     ];
 
     // Create and append main buttons
