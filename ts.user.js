@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.1.5
+// @version      2.1.6
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Vat5aL, Silent Shout
 // @match        https://www.youtube.com/*
@@ -106,7 +106,9 @@
   // Helper function to update browser URL with timestamp
   function updateBrowserUrlWithTimestamp(timeInSeconds) {
     const pathname = window.location.pathname;
-    if (!pathname.startsWith('/watch/') && !pathname.startsWith('/live/')) {
+    const search = window.location.search;
+    const isValidPath = (pathname.startsWith('/watch') && search != "") || pathname.startsWith('/live/');
+    if (!isValidPath) {
       return;
     }
     const currentUrl = new URL(window.location.href);
