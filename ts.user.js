@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.0
+// @version      2.2.1
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -764,13 +764,12 @@
             try {
               const timestamps = JSON.parse(content);
               if (Array.isArray(timestamps)) {
-                clearTimestampsDisplay();
-                updateSeekbarMarkers();
+                // Do not clear existing timestamps
                 timestamps.forEach(ts => addTimestamp(ts.start, ts.comment));
                 saveTimestamps();
                 updateSeekbarMarkers();
                 updateScroll();
-                alert("Timestamps loaded successfully!");
+                alert("Timestamps loaded and merged successfully!");
               } else {
                 throw new Error("Invalid JSON format");
               }
@@ -781,8 +780,7 @@
             // Handle plain text input
             const lines = content.split("\n").map(line => line.trim()).filter(line => line);
             if (lines.length > 0) {
-              clearTimestampsDisplay();
-              updateSeekbarMarkers();
+              // Do not clear existing timestamps
               lines.forEach(line => {
                 const match = line.match(/^(\d{2}:\d{2}:\d{2})\s+(.*)$/);
                 if (match) {
@@ -795,7 +793,7 @@
               saveTimestamps();
               updateSeekbarMarkers();
               updateScroll();
-              alert("Timestamps loaded successfully!");
+              alert("Timestamps loaded and merged successfully!");
             } else {
               alert("The text file is empty or not in the correct format.");
             }
