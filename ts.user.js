@@ -3,7 +3,8 @@
 // @namespace    https://violentmonkey.github.io/
 // @version      2.2.0
 // @description  Enhanced timestamp tool for YouTube videos
-// @author       Vat5aL, Silent Shout
+// @author       Silent Shout
+// @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
 // @match        https://www.youtube.com/*
 // @noframe
 // @icon         data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%2272px%22 font-size=%2272px%22>⏲️</text></svg>
@@ -22,7 +23,7 @@
 
   // Configuration for timestamp offset
   const OFFSET_KEY = "timestampOffsetSeconds";
-  const DEFAULT_OFFSET = -3;
+  const DEFAULT_OFFSET = -5;
 
   // Configuration for shift-click time skip interval
   const SHIFT_SKIP_KEY = "shiftClickTimeSkipSeconds";
@@ -319,16 +320,17 @@
     currentTimestampsFromUI.sort((a, b) => a.start - b.start);
 
     if (currentTimestampsFromUI.length === 0) {
-      // If there are no timestamps in the UI, remove the local storage entry
-      localStorage.removeItem(`ytls-${videoId}`);
-      removeFromIndexedDB(videoId); // Remove from IndexedDB
+      // If there are no timestamps in the UI, remove the IndexedDB entry
+      removeFromIndexedDB(videoId)
+        .then(() => console.log(`Removed timestamps for ${videoId} from IndexedDB`))
+        .catch(err => console.error(`Failed to remove timestamps for ${videoId} from IndexedDB:`, err));
       // Notify other tabs about the update
       channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'removed' });
     } else {
-      // Save UI timestamps directly to local storage
-      const dataToStore = { video_id: videoId, timestamps: currentTimestampsFromUI };
-      localStorage.setItem(`ytls-${videoId}`, JSON.stringify(dataToStore));
-      saveToIndexedDB(videoId, currentTimestampsFromUI); // Save to IndexedDB
+      // Save UI timestamps directly to IndexedDB
+      saveToIndexedDB(videoId, currentTimestampsFromUI)
+        .then(() => console.log(`Saved timestamps for ${videoId} to IndexedDB`))
+        .catch(err => console.error(`Failed to save timestamps for ${videoId} to IndexedDB:`, err));
       // Notify other tabs about the update
       channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
@@ -380,64 +382,60 @@
     if (!videoId) return;
     console.log(`loadTimestamps for ${videoId}`);
 
-    // Timestamps will be loaded directly from localStorage, ignoring current UI state.
-    const savedDataRaw = localStorage.getItem(`ytls-${videoId}`);
-    let finalTimestampsToDisplay = [];
-
-    if (savedDataRaw) {
-      try {
-        let parsedData = JSON.parse(savedDataRaw);
-
-        // Expect new format {video_id: string, timestamps: []}
-        if (parsedData && parsedData.video_id === videoId && Array.isArray(parsedData.timestamps)) {
-          // Filter timestamps from localStorage for validity
-          finalTimestampsToDisplay = parsedData.timestamps.filter(ts =>
-            ts && typeof ts.start === 'number' && typeof ts.comment === 'string'
-          );
-        } else if (parsedData && parsedData.video_id !== videoId) {
-          console.warn(`Loaded data for wrong video ID: ${parsedData.video_id}, expected ${videoId}. Ignoring.`);
-        } else if (parsedData && !Array.isArray(parsedData.timestamps)) {
-          console.warn(`Loaded data for ${videoId} has malformed timestamps array. Ignoring.`);
-        } else {
-          // This case handles scenarios where parsedData is not in the expected object structure
-          // (e.g., it's an array, a primitive, or an object without the required keys)
-          console.warn(`Data for ${videoId} is not in the expected format. Found:`, parsedData);
+    loadFromIndexedDB(videoId).then(dbTimestamps => {
+      let finalTimestampsToDisplay = [];
+      if (dbTimestamps) {
+        finalTimestampsToDisplay = dbTimestamps;
+        console.log(`Loaded timestamps from IndexedDB for ${videoId}`);
+      } else {
+        console.log(`No timestamps found in IndexedDB for ${videoId}`);
+        // Attempt to load from localStorage as a fallback (for migration)
+        const savedDataRaw = localStorage.getItem(`ytls-${videoId}`);
+        if (savedDataRaw) {
+          console.log(`Found data in localStorage for ${videoId}, attempting to migrate.`);
+          try {
+            let parsedData = JSON.parse(savedDataRaw);
+            if (parsedData && parsedData.video_id === videoId && Array.isArray(parsedData.timestamps)) {
+              finalTimestampsToDisplay = parsedData.timestamps.filter(ts =>
+                ts && typeof ts.start === 'number' && typeof ts.comment === 'string'
+              );
+              // Save to IndexedDB and remove from localStorage after successful migration
+              if (finalTimestampsToDisplay.length > 0) {
+                saveToIndexedDB(videoId, finalTimestampsToDisplay)
+                  .then(() => {
+                    console.log(`Successfully migrated localStorage data to IndexedDB for ${videoId}`);
+                    localStorage.removeItem(`ytls-${videoId}`); // Remove from localStorage after migration
+                  })
+                  .catch(err => console.error(`Error migrating localStorage to IndexedDB for ${videoId}:`, err));
+              }
+            } else {
+              console.warn(`localStorage data for ${videoId} is not in the expected format. Ignoring.`);
+            }
+          } catch (e) {
+            console.error("Failed to parse localStorage data during migration:", e);
+          }
         }
-      } catch (e) {
-        console.error("Failed to parse saved data during load:", e);
-        // finalTimestampsToDisplay remains empty
       }
-    }
 
-    // Try to load from IndexedDB if localStorage is empty
-    if (finalTimestampsToDisplay.length === 0) {
-      loadFromIndexedDB(videoId).then(dbTimestamps => {
-        if (dbTimestamps) {
-          finalTimestampsToDisplay = dbTimestamps;
-          console.log(`Loaded timestamps from IndexedDB for ${videoId}`);
-          finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
-          clearTimestampsDisplay();
-          finalTimestampsToDisplay.forEach(ts => {
-            addTimestamp(ts.start, ts.comment, true); // Pass true to prevent re-saving during load
-          });
-          pane.classList.remove("minimized");
-          updateSeekbarMarkers();
-        } else {
-          console.log(`No timestamps found in IndexedDB for ${videoId}`);
-          pane.classList.add("minimized");
-        }
-      }).catch(err => {
-        console.error(`Failed to load timestamps from IndexedDB for ${videoId}:`, err);
-      });
-    } else {
-      finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
+      if (finalTimestampsToDisplay.length > 0) {
+        finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
+        clearTimestampsDisplay();
+        finalTimestampsToDisplay.forEach(ts => {
+          addTimestamp(ts.start, ts.comment, true); // Pass true to prevent re-saving during load
+        });
+        pane.classList.remove("minimized");
+        updateSeekbarMarkers();
+      } else {
+        pane.classList.add("minimized");
+        clearTimestampsDisplay(); // Ensure UI is cleared if no timestamps are found
+        updateSeekbarMarkers(); // Ensure seekbar markers are cleared
+      }
+    }).catch(err => {
+      console.error(`Failed to load timestamps from IndexedDB for ${videoId}:`, err);
+      pane.classList.add("minimized");
       clearTimestampsDisplay();
-      finalTimestampsToDisplay.forEach(ts => {
-        addTimestamp(ts.start, ts.comment, true); // Pass true to prevent re-saving during load
-      });
-      pane.classList.remove("minimized");
       updateSeekbarMarkers();
-    }
+    });
   }
 
   function getVideoId() {
@@ -817,36 +815,46 @@
     var exportBtn = document.createElement("button");
     exportBtn.textContent = "📤 Export";
     exportBtn.classList.add("ytls-file-operation-button");
-    exportBtn.onclick = () => {
+    exportBtn.onclick = async () => {
       const exportData = {};
+      const db = await openIndexedDB().catch(err => {
+        console.error("Failed to open IndexedDB for export:", err);
+        alert("Failed to export data: Could not open database.");
+        return null;
+      });
 
-      // Iterate through localStorage and collect all timestamp data
-      for (let key in localStorage) {
-        if (key.startsWith("ytls-")) {
-          try {
-            let data = JSON.parse(localStorage.getItem(key));
-            // Assume data is in the new format {video_id: string, timestamps: []}
-            // Add a check to ensure it's the expected format before adding to exportData
-            if (data && typeof data.video_id === 'string' && Array.isArray(data.timestamps)) {
-              exportData[key] = data;
-            } else {
-              console.warn(`Skipping localStorage key ${key} during export due to unexpected format.`);
-            }
-          } catch (e) {
-            console.error(`Failed to parse localStorage key ${key} during export:`, e);
+      if (!db) return;
+
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const getAllReq = store.getAll();
+
+      getAllReq.onsuccess = () => {
+        const allTimestamps = getAllReq.result;
+        allTimestamps.forEach(videoData => {
+          if (videoData && typeof videoData.video_id === 'string' && Array.isArray(videoData.timestamps)) {
+            exportData[`ytls-${videoData.video_id}`] = videoData;
+          } else {
+            console.warn(`Skipping data for video_id ${videoData.video_id} during export due to unexpected format.`);
           }
-        }
-      }
+        });
 
-      // Create a JSON file for export
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const timestampSuffix = getTimestampSuffix();
-      a.download = `ytls-data-${timestampSuffix}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+        // Create a JSON file for export
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const timestampSuffix = getTimestampSuffix();
+        a.download = `ytls-data-${timestampSuffix}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        alert("Data exported successfully!");
+      };
+
+      getAllReq.onerror = (event) => {
+        console.error("Error fetching data from IndexedDB for export:", event.target.error);
+        alert("Failed to export data: Could not read from database.");
+      };
     };
 
     // Add import button to the buttons section
@@ -867,6 +875,8 @@
         reader.onload = () => {
           try {
             const importedData = JSON.parse(reader.result);
+            let importPromises = [];
+
             for (let key in importedData) {
               if (key.startsWith("ytls-")) {
                 const videoId = key.substring(5); // Extract videoId from "ytls-videoId"
@@ -874,19 +884,23 @@
 
                 // Ensure videoData has the expected structure before saving
                 if (videoData && typeof videoData.video_id === 'string' && Array.isArray(videoData.timestamps)) {
-                  // Save to localStorage
-                  localStorage.setItem(key, JSON.stringify(videoData));
                   // Save to IndexedDB
-                  saveToIndexedDB(videoId, videoData.timestamps)
+                  const promise = saveToIndexedDB(videoId, videoData.timestamps)
                     .then(() => console.log(`Imported ${videoId} to IndexedDB`))
                     .catch(err => console.error(`Failed to import ${videoId} to IndexedDB:`, err));
+                  importPromises.push(promise);
                 } else {
                   console.warn(`Skipping key ${key} during import due to unexpected data format.`);
                 }
               }
             }
-            alert("Data imported successfully! Refreshing tool...");
-            handleUrlChange(); // Refresh the tool to reflect imported data
+            Promise.all(importPromises).then(() => {
+                alert("Data imported successfully! Refreshing tool...");
+                handleUrlChange(); // Refresh the tool to reflect imported data
+            }).catch(err => {
+                alert("An error occurred during import to IndexedDB. Check console for details.");
+                console.error("Overall import error:", err);
+            });
           } catch (e) {
             alert("Failed to import data. Please ensure the file is in the correct format.\n" + e.message);
             console.error("Import error:", e);
@@ -1307,36 +1321,22 @@
       if (idx > 0) el.remove();
     });
 
-    const currentVideoId = getVideoId();
-    const pageTitle = document.title; // Get the current page title
-    console.log("Page Title:", pageTitle); // Log the page title
-    console.log("Video ID:", currentVideoId); // Log the video ID
-    console.log(window.location.href);
+    const currentVideoId = getVideoId(); // Still useful for logging
+    const pageTitle = document.title;
+    console.log("Page Title:", pageTitle);
+    console.log("Video ID:", currentVideoId);
+    console.log("Current URL:", window.location.href);
 
     clearTimestampsDisplay();
     updateSeekbarMarkers();
 
-    if (currentVideoId) {
-      const savedTimestamps = localStorage.getItem(`ytls-${currentVideoId}`);
-      if (savedTimestamps) {
-        console.log(`Found saved timestamps for ${currentVideoId}`);
-        // If timestamps exist for the new video, load them
-        if (!document.body.contains(pane)) {
-          document.body.appendChild(pane); // Re-add the pane if it was removed
-        }
-        loadTimestamps(); // Load timestamps for the new video
-        highlightNearestTimestamp();
-        pane.classList.remove("minimized"); // Ensure the pane is not minimized
-      } else {
-        console.log(`No saved timestamps for ${currentVideoId}`);
-        // If no timestamps exist, minimize the timestamper
-        pane.classList.add("minimized");
-      }
-    } else {
-      console.log(`No video id found`);
-      // If no valid video ID is found, minimize the timestamper
-      pane.classList.add("minimized");
-    }
+    // loadTimestamps will get the videoId itself, load data from IndexedDB (migrating from localStorage if needed),
+    // and manage pane visibility (minimized or not) based on whether timestamps are found.
+    loadTimestamps();
+
+    // highlightNearestTimestamp sets up listeners on the video element if present
+    // for continuous highlighting of the nearest timestamp.
+    highlightNearestTimestamp();
   };
 
   window.addEventListener("yt-navigate-finish", handleUrlChange);
