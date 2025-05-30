@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.1.6
+// @version      2.1.7
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Vat5aL, Silent Shout
 // @match        https://www.youtube.com/*
@@ -203,7 +203,24 @@
     li.append(timeRow, commentInput);
     li.style = "display:flex;flex-direction:column;gap:5px;padding:5px;background:rgba(255,255,255,0.05);border-radius:3px;";
 
-    list.appendChild(li); // Append to the end
+    // Insert the new timestamp in the correct sorted position
+    const newTime = parseInt(a.dataset.time);
+    let inserted = false;
+    Array.from(list.children).forEach(existingLi => {
+      if (inserted) return;
+      const existingTime = parseInt(existingLi.querySelector('a[data-time]').dataset.time);
+      if (newTime < existingTime) {
+        list.insertBefore(li, existingLi);
+        inserted = true;
+      }
+    });
+
+    if (!inserted) {
+      list.appendChild(li); // Append to the end if it's the latest or list is empty
+    }
+
+    // Scroll to the newly added timestamp
+    li.scrollIntoView({ behavior: "smooth", block: "center" });
 
     updateScroll();
     updateSeekbarMarkers();
