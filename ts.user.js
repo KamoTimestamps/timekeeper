@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.1
+// @version      2.2.2
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -765,7 +765,24 @@
               const timestamps = JSON.parse(content);
               if (Array.isArray(timestamps)) {
                 // Do not clear existing timestamps
-                timestamps.forEach(ts => addTimestamp(ts.start, ts.comment));
+                timestamps.forEach(ts => {
+                  // Check if a timestamp with the same start time already exists
+                  const existingLi = Array.from(list.children).find(li => {
+                    const timeLink = li.querySelector('a[data-time]');
+                    return timeLink && parseInt(timeLink.dataset.time) === ts.start;
+                  });
+
+                  if (existingLi) {
+                    // If it exists, update the comment
+                    const commentInput = existingLi.querySelector('input');
+                    if (commentInput) {
+                      commentInput.value = ts.comment;
+                    }
+                  } else {
+                    // Otherwise, add the new timestamp
+                    addTimestamp(ts.start, ts.comment);
+                  }
+                });
                 saveTimestamps();
                 updateSeekbarMarkers();
                 updateScroll();
@@ -777,17 +794,40 @@
               alert("Failed to parse JSON file. Please ensure it is in the correct format.");
             }
           } else if (file.name.endsWith(".txt")) {
+            console.log("Handling plain text input");
             // Handle plain text input
             const lines = content.split("\n").map(line => line.trim()).filter(line => line);
+            console.log("Parsed lines:", lines);
             if (lines.length > 0) {
               // Do not clear existing timestamps
               lines.forEach(line => {
-                const match = line.match(/^(\d{2}:\d{2}:\d{2})\s+(.*)$/);
+                console.log("Processing line:", line);
+                // Regex to match HH:MM:SS, MM:SS, or M:SS formats, with optional comment
+                const match = line.match(/^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*(.*)$/);
                 if (match) {
-                  const timeParts = match[1].split(":").map(Number);
-                  const start = timeParts[0] * 3600 + timeParts[1] * 60 + timeParts[2];
-                  const comment = match[2];
-                  addTimestamp(start, comment);
+                  console.log("Matched timestamp:", match);
+                  const hours = parseInt(match[1]) || 0;
+                  const minutes = parseInt(match[2]);
+                  const seconds = parseInt(match[3]);
+                  const start = hours * 3600 + minutes * 60 + seconds;
+                  const comment = match[4] ? match[4].trim() : "";
+
+                  // Check if a timestamp with the same start time already exists
+                  const existingLi = Array.from(list.children).find(li => {
+                    const timeLink = li.querySelector('a[data-time]');
+                    return timeLink && parseInt(timeLink.dataset.time) === start;
+                  });
+
+                  if (existingLi) {
+                    // If it exists, update the comment
+                    const commentInput = existingLi.querySelector('input');
+                    if (commentInput) {
+                      commentInput.value = comment;
+                    }
+                  } else {
+                    // Otherwise, add the new timestamp
+                    addTimestamp(start, comment);
+                  }
                 }
               });
               saveTimestamps();
