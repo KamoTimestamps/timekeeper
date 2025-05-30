@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.1.7
+// @version      2.2.0
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Vat5aL, Silent Shout
 // @match        https://www.youtube.com/*
@@ -869,13 +869,27 @@
             const importedData = JSON.parse(reader.result);
             for (let key in importedData) {
               if (key.startsWith("ytls-")) {
-                localStorage.setItem(key, JSON.stringify(importedData[key]));
+                const videoId = key.substring(5); // Extract videoId from "ytls-videoId"
+                const videoData = importedData[key];
+
+                // Ensure videoData has the expected structure before saving
+                if (videoData && typeof videoData.video_id === 'string' && Array.isArray(videoData.timestamps)) {
+                  // Save to localStorage
+                  localStorage.setItem(key, JSON.stringify(videoData));
+                  // Save to IndexedDB
+                  saveToIndexedDB(videoId, videoData.timestamps)
+                    .then(() => console.log(`Imported ${videoId} to IndexedDB`))
+                    .catch(err => console.error(`Failed to import ${videoId} to IndexedDB:`, err));
+                } else {
+                  console.warn(`Skipping key ${key} during import due to unexpected data format.`);
+                }
               }
             }
-            alert("Data imported successfully!");
+            alert("Data imported successfully! Refreshing tool...");
             handleUrlChange(); // Refresh the tool to reflect imported data
           } catch (e) {
-            alert("Failed to import data. Please ensure the file is in the correct format.");
+            alert("Failed to import data. Please ensure the file is in the correct format.\n" + e.message);
+            console.error("Import error:", e);
           }
         };
 
