@@ -321,12 +321,14 @@
     if (currentTimestampsFromUI.length === 0) {
       // If there are no timestamps in the UI, remove the local storage entry
       localStorage.removeItem(`ytls-${videoId}`);
+      removeFromIndexedDB(videoId); // Remove from IndexedDB
       // Notify other tabs about the update
       channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'removed' });
     } else {
       // Save UI timestamps directly to local storage
       const dataToStore = { video_id: videoId, timestamps: currentTimestampsFromUI };
       localStorage.setItem(`ytls-${videoId}`, JSON.stringify(dataToStore));
+      saveToIndexedDB(videoId, currentTimestampsFromUI); // Save to IndexedDB
       // Notify other tabs about the update
       channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
@@ -407,21 +409,35 @@
       }
     }
 
-    finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
-
-    clearTimestampsDisplay();
-    if (finalTimestampsToDisplay.length > 0) {
+    // Try to load from IndexedDB if localStorage is empty
+    if (finalTimestampsToDisplay.length === 0) {
+      loadFromIndexedDB(videoId).then(dbTimestamps => {
+        if (dbTimestamps) {
+          finalTimestampsToDisplay = dbTimestamps;
+          console.log(`Loaded timestamps from IndexedDB for ${videoId}`);
+          finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
+          clearTimestampsDisplay();
+          finalTimestampsToDisplay.forEach(ts => {
+            addTimestamp(ts.start, ts.comment, true); // Pass true to prevent re-saving during load
+          });
+          pane.classList.remove("minimized");
+          updateSeekbarMarkers();
+        } else {
+          console.log(`No timestamps found in IndexedDB for ${videoId}`);
+          pane.classList.add("minimized");
+        }
+      }).catch(err => {
+        console.error(`Failed to load timestamps from IndexedDB for ${videoId}:`, err);
+      });
+    } else {
+      finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
+      clearTimestampsDisplay();
       finalTimestampsToDisplay.forEach(ts => {
         addTimestamp(ts.start, ts.comment, true); // Pass true to prevent re-saving during load
       });
       pane.classList.remove("minimized");
-    } else {
-      // If no timestamps after loading, ensure pane is minimized or in a default state
-      // pane.classList.add("minimized"); // Or handle as per desired UX
+      updateSeekbarMarkers();
     }
-    updateSeekbarMarkers();
-    // No explicit saveTimestamps() here, as loading shouldn't inherently trigger a save
-    // unless old data was converted and you uncommented the re-save line above.
   }
 
   function getVideoId() {
@@ -475,6 +491,65 @@
         nearestTimestamp.style.background = "rgba(0, 128, 255, 0.2)"; // Highlight nearest timestamp
         nearestTimestamp.scrollIntoView({ behavior: "smooth", block: "center" }); // Scroll to it
       }
+    });
+  }
+
+  // === IndexedDB Helper Functions ===
+  const DB_NAME = 'ytls-timestamps-db';
+  const DB_VERSION = 1;
+  const STORE_NAME = 'timestamps';
+
+  function openIndexedDB() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = function(event) {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: 'video_id' });
+        }
+      };
+      request.onsuccess = function(event) {
+        resolve(event.target.result);
+      };
+      request.onerror = function(event) {
+        reject(event.target.error);
+      };
+    });
+  }
+
+  function saveToIndexedDB(videoId, data) {
+    return openIndexedDB().then(db => {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.put({ video_id: videoId, timestamps: data });
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e);
+      });
+    });
+  }
+
+  function loadFromIndexedDB(videoId) {
+    return openIndexedDB().then(db => {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(videoId);
+        req.onsuccess = () => resolve(req.result ? req.result.timestamps : null);
+        req.onerror = (e) => reject(e);
+      });
+    });
+  }
+
+  function removeFromIndexedDB(videoId) {
+    return openIndexedDB().then(db => {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.delete(videoId);
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e);
+      });
     });
   }
 
