@@ -380,8 +380,14 @@
 
     const hashedVideoId = await calculateSHA256(videoId);
     if (export_restricted.includes(hashedVideoId)) {
-      alert("This video is marked as private and cannot be exported.");
-      return;
+      const userChoice = await showRestrictedExportConfirmationModal(1); // Show modal for 1 restricted video
+      if (!userChoice) {
+        // User chose No or closed the modal
+        alert("Export cancelled by user.");
+        return;
+      }
+      // If user chose Yes, proceed with saving (no special handling needed here as it's for a single video already confirmed)
+      console.log(`User confirmed export for restricted video ID: ${videoId} (hashed: ${hashedVideoId})`);
     } else {
       console.log(`Exporting timestamps for video ID: ${videoId} (hashed: ${hashedVideoId})`);
     }
@@ -672,6 +678,56 @@
     }
   }
 
+  // Helper function to show confirmation modal for exporting restricted videos
+  async function showRestrictedExportConfirmationModal(restrictedCount) {
+    return new Promise((resolve) => {
+      const modalId = "ytls-restricted-export-confirm-modal";
+      // Remove existing modal if any
+      const existingModal = document.getElementById(modalId);
+      if (existingModal) {
+        existingModal.remove();
+      }
+
+      const modal = document.createElement("div");
+      modal.id = modalId;
+      modal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#2c2c2c;padding:25px;border-radius:12px;z-index:10002;color:white;text-align:center;width:380px;box-shadow:0 4px 15px rgba(0,0,0,0.2);border:1px solid #444;";
+
+      const message = document.createElement("p");
+      message.textContent = `This export includes ${restrictedCount} video(s) marked as restricted. Do you want to include their data in the export?`;
+      message.style = "margin-bottom:20px;font-size:16px;line-height:1.5;";
+
+      const buttonContainer = document.createElement("div");
+      buttonContainer.style = "display:flex;justify-content:space-around;gap:15px;";
+
+      const yesButton = document.createElement("button");
+      yesButton.textContent = "Yes, Include";
+      yesButton.style = "background:#4CAF50;color:white;padding:12px 22px;border:none;border-radius:8px;cursor:pointer;font-size:15px;flex-grow:1;";
+      yesButton.onmouseover = () => yesButton.style.background = "#45a049";
+      yesButton.onmouseout = () => yesButton.style.background = "#4CAF50";
+      yesButton.onclick = () => {
+        document.body.removeChild(modal);
+        resolve(true); // User chose to include
+      };
+
+      const noButton = document.createElement("button");
+      noButton.textContent = "No, Exclude";
+      noButton.style = "background:#f44336;color:white;padding:12px 22px;border:none;border-radius:8px;cursor:pointer;font-size:15px;flex-grow:1;";
+      noButton.onmouseover = () => noButton.style.background = "#e53935";
+      noButton.onmouseout = () => noButton.style.background = "#f44336";
+      noButton.onclick = () => {
+        document.body.removeChild(modal);
+        resolve(false); // User chose to exclude
+      };
+
+      buttonContainer.appendChild(yesButton);
+      buttonContainer.appendChild(noButton);
+
+      modal.appendChild(message);
+      modal.appendChild(buttonContainer);
+      document.body.appendChild(modal);
+    });
+  }
+
   if (!document.querySelector("#ytls-pane")) {
     // Remove any stray minimized icons before creating a new pane
     document.querySelectorAll("#ytls-pane").forEach(el => el.remove());
@@ -952,13 +1008,36 @@
 
       getAllReq.onsuccess = async () => { // Make this async to await calculateSHA256
         const allTimestamps = getAllReq.result;
+        let restrictedCount = 0;
+        let includeRestricted = false; // Default to not including restricted data
+
+        for (const videoData of allTimestamps) {
+          if (videoData && typeof videoData.video_id === 'string') {
+            const videoIdHash = await calculateSHA256(videoData.video_id);
+            if (export_restricted.includes(videoIdHash)) {
+              restrictedCount++;
+            }
+          }
+        }
+
+        if (restrictedCount > 0) {
+          const userChoice = await showRestrictedExportConfirmationModal(restrictedCount);
+          if (userChoice) {
+            includeRestricted = true;
+          } else {
+            // User chose No or closed the modal, so we will exclude restricted videos
+            // (which is the default behavior if includeRestricted remains false)
+            console.log("User chose to exclude restricted videos from export.");
+          }
+        }
+
         for (const videoData of allTimestamps) { // Use for...of to allow await inside loop
           if (videoData && typeof videoData.video_id === 'string' && Array.isArray(videoData.timestamps)) {
             const videoIdHash = await calculateSHA256(videoData.video_id);
-            if (!export_restricted.includes(videoIdHash)) {
+            if (includeRestricted || !export_restricted.includes(videoIdHash)) {
               exportData[`ytls-${videoData.video_id}`] = videoData;
             } else {
-              console.log(`Skipping export for private video ID: ${videoData.video_id}`);
+              console.log(`Skipping export for restricted video ID: ${videoData.video_id}`);
             }
           } else {
             console.warn(`Skipping data for video_id ${videoData.video_id} during export due to unexpected format.`);
