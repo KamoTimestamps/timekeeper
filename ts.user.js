@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.3
+// @version      2.2.4
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -44,6 +44,44 @@
       }, 250); // Set new timeout to load after 250ms
     }
   };
+
+   // Function to calculate SHA-256 checksum for a string using Web Crypto API
+  async function calculateSHA256(str) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(str);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer)); // convert buffer to byte array
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join(''); // convert bytes to hex string
+    return hashHex;
+  }
+
+  // SHA-256 checksums of video IDs that won't be exported without additional confirmation.
+  const export_restricted = [
+    "0f56203c7e6752d8eb5841402ce4d8d92911e34bcccf659b55b00b8c4984e8e2",
+    "4d71f8bfd4e8e313a04f8dfa02e193555b996381b398d90b6b57812a634cbb38",
+    "79946442e52bb1a58c403abf0afad9b100f1138564a27f7317be7b60c9414de5",
+    "e0724969699f84ed462938ffa8ee400ca1618036ef8eba63c9144afc58db426f",
+    "ea6a60748c857f61b57f4674b17df30d8bb45ad8a4073dceb69eec5e87ab0518",
+    "74a37dc5af3e3ef371407bfe11c15d335666cf247eda2089a0bdcce087aae222",
+    "d4b2c0477a4064d3df5389751bb94a417b52acdcf9001fdecbaf8cf9600b1709",
+    "e9c2da2a44cd011c8a8f0304a54918658e04285f172313c4f4c68a0bde2dcd85",
+    "2e65c921f773133a58e8e230aca54b935e11dcf131371fcde7871787af170be6",
+    "d321d25925cda8542c75bb698d1d5024d59befde0c2c18c174c2eda4f9d0222b",
+    "336e7f9a2723fc3f24722a686fc5e15a45185bdfda7f844389fb70784e109fdb",
+    "8a56bf2876f2e16feb6009c2638f821dc4e053e0d6169eae1b0ae91161ad5b97",
+    "e121e1c02c691df273e965d9dfb82aac880f8b26fde816f722d825f1c279db39",
+    "590bd83ca5f5f6e3871f0f96136bd23721aac6e4d2be67acf69a6c269f38e7f3",
+    "c4dd9fdf15af44255e939607f373977d4b59c583690e8747b437a3443887c83b",
+    "66c0422eadb640dadb3abb1de3d07dcfa5f58e5f134ce1b7278f04fdf5be39fd",
+    "0df446f1832be948120e1d86034fba90d58b1c4c445e85e91ebbe80d65e9e702",
+    "ec3a5466558bf18f3541ddfa57e3f7a278070debdae4ba8aad757230c6dbfb93",
+    "6b65b77895ded8a274691207787ee3cd543ab0556c07f2f420783de07b1de26c",
+    "9139db27a4fade29cca1ffc53573f89aa9fa6cffe08c3487cab8db1cbd7bb1ea",
+    "a6437fd71ac65eb1fa0c4eac39433be00aec45ff7fd64976697f35e7c920094b",
+    "4bf77ad4863b4dd22cd59415cc85af3cebbdbfeb2637c8b58cfbd2015ef8bb7b",
+    "2947f746580463d08ccd57e41a35925376a4bde0f78dfcde940295f04a48c41b",
+    "9bd7e4a54cdd6fd1bce97ff2ac14f272cc5c7b44165a61320efd939247c878fd",
+  ]
 
   // The user can configure 'timestampOffsetSeconds' in ViolentMonkey's script values.
   // A positive value will make it after current time, negative before.
@@ -336,9 +374,17 @@
     }
   }
 
-  function saveTimestampsAs(format) {
+  async function saveTimestampsAs(format) {
     const videoId = getVideoId();
     if (!videoId) return;
+
+    const hashedVideoId = await calculateSHA256(videoId);
+    if (export_restricted.includes(hashedVideoId)) {
+      alert("This video is marked as private and cannot be exported.");
+      return;
+    } else {
+      console.log(`Exporting timestamps for video ID: ${videoId} (hashed: ${hashedVideoId})`);
+    }
 
     const video = document.querySelector("video");
     const videoDuration = video ? Math.floor(video.duration) : 0;
@@ -500,16 +546,16 @@
   function openIndexedDB() {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
-      request.onupgradeneeded = function(event) {
+      request.onupgradeneeded = function (event) {
         const db = event.target.result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME, { keyPath: 'video_id' });
         }
       };
-      request.onsuccess = function(event) {
+      request.onsuccess = function (event) {
         resolve(event.target.result);
       };
-      request.onerror = function(event) {
+      request.onerror = function (event) {
         reject(event.target.error);
       };
     });
@@ -690,7 +736,7 @@
       }
     };
 
-    const handleCopyTimestamps = function() { // Using function() to ensure 'this' refers to the button
+    const handleCopyTimestamps = function () { // Using function() to ensure 'this' refers to the button
       const video = document.querySelector("video");
       const videoDuration = video ? Math.floor(video.duration) : 0;
 
@@ -705,8 +751,8 @@
       const plainText = timestamps.map(ts => {
         // Use formatTimeString if available, otherwise provide a basic time string
         const timeString = typeof formatTimeString === 'function'
-                           ? formatTimeString(ts.start, videoDuration)
-                           : `${Math.floor(ts.start / 3600)}:${String(Math.floor(ts.start / 60) % 60).padStart(2, '0')}:${String(ts.start % 60).padStart(2, '0')}`;
+          ? formatTimeString(ts.start, videoDuration)
+          : `${Math.floor(ts.start / 3600)}:${String(Math.floor(ts.start / 60) % 60).padStart(2, '0')}:${String(ts.start % 60).padStart(2, '0')}`;
         return `${timeString} ${ts.comment}`;
       }).join("\n");
 
@@ -904,15 +950,20 @@
       const store = tx.objectStore(STORE_NAME);
       const getAllReq = store.getAll();
 
-      getAllReq.onsuccess = () => {
+      getAllReq.onsuccess = async () => { // Make this async to await calculateSHA256
         const allTimestamps = getAllReq.result;
-        allTimestamps.forEach(videoData => {
+        for (const videoData of allTimestamps) { // Use for...of to allow await inside loop
           if (videoData && typeof videoData.video_id === 'string' && Array.isArray(videoData.timestamps)) {
-            exportData[`ytls-${videoData.video_id}`] = videoData;
+            const videoIdHash = await calculateSHA256(videoData.video_id);
+            if (!export_restricted.includes(videoIdHash)) {
+              exportData[`ytls-${videoData.video_id}`] = videoData;
+            } else {
+              console.log(`Skipping export for private video ID: ${videoData.video_id}`);
+            }
           } else {
             console.warn(`Skipping data for video_id ${videoData.video_id} during export due to unexpected format.`);
           }
-        });
+        }
 
         // Create a JSON file for export
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
@@ -970,11 +1021,11 @@
               }
             }
             Promise.all(importPromises).then(() => {
-                // alert("Data imported successfully! Refreshing tool...");
-                handleUrlChange(); // Refresh the tool to reflect imported data
+              // alert("Data imported successfully! Refreshing tool...");
+              handleUrlChange(); // Refresh the tool to reflect imported data
             }).catch(err => {
-                alert("An error occurred during import to IndexedDB. Check console for details.");
-                console.error("Overall import error:", err);
+              alert("An error occurred during import to IndexedDB. Check console for details.");
+              console.error("Overall import error:", err);
             });
           } catch (e) {
             alert("Failed to import data. Please ensure the file is in the correct format.\n" + e.message);
