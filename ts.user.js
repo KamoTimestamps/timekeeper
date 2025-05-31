@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.4
+// @version      2.2.5
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -45,7 +45,7 @@
     }
   };
 
-   // Function to calculate SHA-256 checksum for a string using Web Crypto API
+  // Function to calculate SHA-256 checksum for a string using Web Crypto API
   async function calculateSHA256(str) {
     const encoder = new TextEncoder();
     const data = encoder.encode(str);
@@ -55,8 +55,8 @@
     return hashHex;
   }
 
-  // SHA-256 checksums of video IDs that won't be exported without additional confirmation.
-  const export_restricted = [
+  // SHA-256 checksums of unlisted video IDs
+  const unlistedVideos = [
     "0f56203c7e6752d8eb5841402ce4d8d92911e34bcccf659b55b00b8c4984e8e2",
     "4d71f8bfd4e8e313a04f8dfa02e193555b996381b398d90b6b57812a634cbb38",
     "79946442e52bb1a58c403abf0afad9b100f1138564a27f7317be7b60c9414de5",
@@ -82,6 +82,25 @@
     "2947f746580463d08ccd57e41a35925376a4bde0f78dfcde940295f04a48c41b",
     "9bd7e4a54cdd6fd1bce97ff2ac14f272cc5c7b44165a61320efd939247c878fd",
   ]
+
+  const membersOnlyVideos = [
+    '6qRwsGJXV2k',
+    '7tq1YGVdPx4',
+    '7xpy9DhEdDo',
+    'DDMh3FTUAGA',
+    'dZSuq11ChGk',
+    'eGwpa2OmQMY',
+    'GQ89hSaSff4',
+    'I6xrkDABPw4',
+    'J8Da7DgGgtM',
+    'N1dFWp2rdvo',
+    'QYlDf09X4FE',
+    'scnoaETm-Bc',
+    'teWSxSxIws0',
+    'ttayh3dZXTk',
+    'vh2Kb-DFkY0',
+    'YT0AahfOhYg'
+  ];
 
   // The user can configure 'timestampOffsetSeconds' in ViolentMonkey's script values.
   // A positive value will make it after current time, negative before.
@@ -379,17 +398,19 @@
     if (!videoId) return;
 
     const hashedVideoId = await calculateSHA256(videoId);
-    if (export_restricted.includes(hashedVideoId)) {
-      const userChoice = await showRestrictedExportConfirmationModal(1); // Show modal for 1 restricted video
+    const isUnlisted = unlistedVideos.includes(hashedVideoId);
+    const isMembersOnly = membersOnlyVideos.includes(videoId); // Direct check for members-only
+
+    if (isUnlisted || isMembersOnly) {
+      const videoType = isUnlisted && isMembersOnly ? "unlisted and members-only" : isUnlisted ? "unlisted" : "members-only";
+      const userChoice = await showRestrictedExportConfirmationModal(1, videoType);
       if (!userChoice) {
-        // User chose No or closed the modal
         alert("Export cancelled by user.");
         return;
       }
-      // If user chose Yes, proceed with saving (no special handling needed here as it's for a single video already confirmed)
-      console.log(`User confirmed export for restricted video ID: ${videoId} (hashed: ${hashedVideoId})`);
+      console.log(`User confirmed export for ${videoType} video ID: ${videoId}`);
     } else {
-      console.log(`Exporting timestamps for video ID: ${videoId} (hashed: ${hashedVideoId})`);
+      console.log(`Exporting timestamps for video ID: ${videoId}`);
     }
 
     const video = document.querySelector("video");
@@ -679,7 +700,7 @@
   }
 
   // Helper function to show confirmation modal for exporting restricted videos
-  async function showRestrictedExportConfirmationModal(restrictedCount) {
+  async function showRestrictedExportConfirmationModal(restrictedCount, videoType) {
     return new Promise((resolve) => {
       const modalId = "ytls-restricted-export-confirm-modal";
       // Remove existing modal if any
@@ -693,7 +714,7 @@
       modal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#2c2c2c;padding:25px;border-radius:12px;z-index:10002;color:white;text-align:center;width:380px;box-shadow:0 4px 15px rgba(0,0,0,0.2);border:1px solid #444;";
 
       const message = document.createElement("p");
-      message.textContent = `This export includes ${restrictedCount} video(s) marked as restricted. Do you want to include their data in the export?`;
+      message.textContent = `This export includes ${restrictedCount} video(s) marked as ${videoType}. Do you want to include their data in the export?`;
       message.style = "margin-bottom:20px;font-size:16px;line-height:1.5;";
 
       const buttonContainer = document.createElement("div");
@@ -1009,38 +1030,63 @@
       getAllReq.onsuccess = async () => { // Make this async to await calculateSHA256
         const allTimestamps = getAllReq.result;
         let restrictedCount = 0;
+        let isUnlistedRestrictedFound = false;
+        let isMembersOnlyRestrictedFound = false;
         let includeRestricted = false; // Default to not including restricted data
 
+        // First loop: Count restricted videos and determine their types
         for (const videoData of allTimestamps) {
           if (videoData && typeof videoData.video_id === 'string') {
             const videoIdHash = await calculateSHA256(videoData.video_id);
-            if (export_restricted.includes(videoIdHash)) {
+            // Assume unlistedVideos and membersOnlyVideos are defined in an accessible scope
+            const isUnlisted = typeof unlistedVideos !== 'undefined' && unlistedVideos.includes(videoIdHash);
+            const isMembers = typeof membersOnlyVideos !== 'undefined' && membersOnlyVideos.includes(videoData.video_id);
+
+            if (isUnlisted || isMembers) {
               restrictedCount++;
+              if (isUnlisted) isUnlistedRestrictedFound = true;
+              if (isMembers) isMembersOnlyRestrictedFound = true;
             }
           }
+        }
+
+        let videoType = "";
+        if (isUnlistedRestrictedFound && isMembersOnlyRestrictedFound) {
+            videoType = "unlisted and members-only";
+        } else if (isUnlistedRestrictedFound) {
+            videoType = "unlisted";
+        } else if (isMembersOnlyRestrictedFound) {
+            videoType = "members-only";
         }
 
         if (restrictedCount > 0) {
-          const userChoice = await showRestrictedExportConfirmationModal(restrictedCount);
+          const userChoice = await showRestrictedExportConfirmationModal(restrictedCount, videoType);
           if (userChoice) {
             includeRestricted = true;
           } else {
-            // User chose No or closed the modal, so we will exclude restricted videos
-            // (which is the default behavior if includeRestricted remains false)
-            console.log("User chose to exclude restricted videos from export.");
+            // User chose No or closed the modal
+            console.log(`User chose to exclude ${videoType ? videoType : 'restricted'} videos from export.`);
           }
         }
 
-        for (const videoData of allTimestamps) { // Use for...of to allow await inside loop
+        // Second loop: Populate exportData based on user's choice and restriction checks
+        for (const videoData of allTimestamps) {
           if (videoData && typeof videoData.video_id === 'string' && Array.isArray(videoData.timestamps)) {
             const videoIdHash = await calculateSHA256(videoData.video_id);
-            if (includeRestricted || !export_restricted.includes(videoIdHash)) {
+            const isUnlisted = typeof unlistedVideos !== 'undefined' && unlistedVideos.includes(videoIdHash);
+            const isMembers = typeof membersOnlyVideos !== 'undefined' && membersOnlyVideos.includes(videoData.video_id);
+            const currentVideoIsRestricted = isUnlisted || isMembers;
+
+            if (includeRestricted || !currentVideoIsRestricted) {
               exportData[`ytls-${videoData.video_id}`] = videoData;
             } else {
-              console.log(`Skipping export for restricted video ID: ${videoData.video_id}`);
+              let restrictedTypeInfo = [];
+              if (isUnlisted) restrictedTypeInfo.push("Unlisted");
+              if (isMembers) restrictedTypeInfo.push("Members-Only");
+              console.log(`Skipping export for restricted video ID: ${videoData.video_id} (Type: ${restrictedTypeInfo.join('/')})`);
             }
           } else {
-            console.warn(`Skipping data for video_id ${videoData.video_id} during export due to unexpected format.`);
+            console.warn(`Skipping data for video_id ${videoData && videoData.video_id ? videoData.video_id : 'unknown'} during export due to unexpected format.`);
           }
         }
 
@@ -1053,7 +1099,6 @@
         a.download = `ytls-data-${timestampSuffix}.json`;
         a.click();
         URL.revokeObjectURL(url);
-        // alert("Data exported successfully!");
       };
 
       getAllReq.onerror = (event) => {
