@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.13
+// @version      2.2.14
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -781,6 +781,7 @@
     const scriptVersion = GM_info.script.version; // Get script version
     versionDisplay.textContent = `v${scriptVersion}`;
     versionDisplay.style = "font-size:12px; color: #aaa; margin-left: auto; padding-right: 5px; cursor: default"; // Style for version
+    versionDisplay.classList.add("ytls-version-display"); // Add class for CSS targeting
 
     timeDisplay.id = "ytls-current-time";
     timeDisplay.textContent = "CT: ";
@@ -1264,7 +1265,8 @@
         color: white;
         cursor: pointer;
       }
-      #ytls-pane.minimized #ytls-current-time {
+      #ytls-pane.minimized #ytls-current-time,
+      #ytls-pane.minimized .ytls-version-display {
         display: none;
       }
       #ytls-pane:hover {
