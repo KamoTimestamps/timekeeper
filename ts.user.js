@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.8
+// @version      2.2.10
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -120,6 +120,8 @@
   let loadTimeoutId = null; // Variable to hold the timeout ID for debouncing loads from broadcast
   let isMouseOverTimestamps = false; // Default to false
   let lastUrlUpdateTime = -1; // Variable to track the last time URL was updated
+  let settingsModalInstance = null; // To keep a reference to the settings modal
+  let settingsCogButtonElement = null; // To keep a reference to the settings cog button
 
   function getTimestampSuffix() {
     const now = new Date();
@@ -853,7 +855,7 @@
     // Configuration for main buttons
     const mainButtonConfigs = [
       { label: "🐣", title: "Add timestamp", action: handleAddTimestamp },
-      { label: "⚙️", title: "Settings", action: createSettingsModal },
+      { label: "⚙️", title: "Settings", action: toggleSettingsModal }, // Changed action
       { label: "📋", title: "Copy timestamps to clipboard", action: handleCopyTimestamps },
       { label: "🔀", title: "Sort timestamps by time", action: sortTimestampsAndUpdateDisplay }
     ];
@@ -865,6 +867,9 @@
       button.title = config.title;
       button.classList.add("ytls-main-button");
       button.onclick = config.action;
+      if (config.label === "⚙️") { // Store a reference to the settings cog button
+        settingsCogButtonElement = button;
+      }
       btns.appendChild(button);
     });
 
@@ -878,20 +883,35 @@
       return button;
     }
 
-    // Function to create the settings modal
-    function createSettingsModal() {
-      const settingsModal = document.createElement("div");
-      settingsModal.id = "ytls-settings-modal"; // Added ID
+    // Function to create and toggle the settings modal
+    function toggleSettingsModal() {
+      if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
+        // Modal exists and is visible, so close it
+        document.body.removeChild(settingsModalInstance);
+        settingsModalInstance = null;
+        document.removeEventListener('click', handleClickOutsideSettingsModal, true); // Remove click-outside listener
+        return;
+      }
+
+      // Modal doesn't exist or isn't visible, so create and show it
+      settingsModalInstance = document.createElement("div");
+      settingsModalInstance.id = "ytls-settings-modal";
 
       const settingsContent = document.createElement("div");
-      settingsContent.id = "ytls-settings-content"; // Added ID
+      settingsContent.id = "ytls-settings-content";
 
       const buttonConfigs = [
-        { label: "💾 Save", title: "Save", action: saveBtn.onclick },
+        { label: "💾 Save", title: "Save As...", action: saveBtn.onclick }, // Assuming saveBtn.onclick shows another modal
         { label: "📂 Load", title: "Load", action: loadBtn.onclick },
-        { label: "📤 Export", title: "Export", action: exportBtn.onclick },
-        { label: "📥 Import", title: "Import", action: importBtn.onclick },
-        { label: "Close", title: "Close", action: () => document.body.removeChild(settingsModal) }
+        { label: "📤 Export", title: "Export All Data", action: exportBtn.onclick },
+        { label: "📥 Import", title: "Import All Data", action: importBtn.onclick },
+        { label: "Close", title: "Close", action: () => {
+            if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
+                document.body.removeChild(settingsModalInstance);
+                settingsModalInstance = null;
+                document.removeEventListener('click', handleClickOutsideSettingsModal, true);
+            }
+        }}
       ];
 
       buttonConfigs.forEach(({ label, title, action }) => {
@@ -899,8 +919,30 @@
         settingsContent.appendChild(button);
       });
 
-      settingsModal.appendChild(settingsContent);
-      document.body.appendChild(settingsModal);
+      settingsModalInstance.appendChild(settingsContent);
+      document.body.appendChild(settingsModalInstance);
+
+      // Add click-outside listener
+      // Use setTimeout to ensure this listener is added after the current click event cycle
+      setTimeout(() => {
+        document.addEventListener('click', handleClickOutsideSettingsModal, true);
+      }, 0);
+    }
+
+    function handleClickOutsideSettingsModal(event) {
+      // If the click is on the cog button itself, let toggleSettingsModal handle it
+      if (settingsCogButtonElement && settingsCogButtonElement.contains(event.target)) {
+        return;
+      }
+
+      if (settingsModalInstance && !settingsModalInstance.contains(event.target)) {
+        // Clicked outside the modal
+        if (settingsModalInstance.parentNode === document.body) {
+            document.body.removeChild(settingsModalInstance);
+            settingsModalInstance = null;
+            document.removeEventListener('click', handleClickOutsideSettingsModal, true);
+        }
+      }
     }
 
     // Add a save button to the buttons section
