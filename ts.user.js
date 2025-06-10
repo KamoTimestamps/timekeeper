@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.11
+// @version      2.2.13
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -758,11 +758,12 @@
 
     var pane = document.createElement("div"),
       header = document.createElement("div"),
-      list = document.createElement("ul"), // Ensure `list` is initialized here
+      list = document.createElement("ul"),
       btns = document.createElement("div"),
       timeDisplay = document.createElement("span"),
       style = document.createElement("style"),
-      minimizeBtn = document.createElement("button");
+      minimizeBtn = document.createElement("button"),
+      versionDisplay = document.createElement("span");
 
     // Add event listeners to `list` after it is initialized
     list.addEventListener("mouseenter", () => {
@@ -775,7 +776,12 @@
 
     pane.id = "ytls-pane";
     pane.classList.add("minimized");
-    header.style = "display:flex;justify-content:flex-start;align-items:center;padding:5px;flex-wrap:nowrap;overflow:hidden;"; // Align items to the top-left, ensure no wrap, and hide overflow
+    header.style = "display:flex;justify-content:space-between;align-items:center;padding:5px;nowrap;";
+
+    const scriptVersion = GM_info.script.version; // Get script version
+    versionDisplay.textContent = `v${scriptVersion}`;
+    versionDisplay.style = "font-size:12px; color: #aaa; margin-left: auto; padding-right: 5px; cursor: default"; // Style for version
+
     timeDisplay.id = "ytls-current-time";
     timeDisplay.textContent = "CT: ";
     timeDisplay.style = "color:white;font-size:14px;cursor:pointer;"; // Add pointer cursor
@@ -1609,6 +1615,7 @@
 
     header.appendChild(minimizeBtn); // Add minimize button to the header first
     header.appendChild(timeDisplay); // Then add timeDisplay
+    header.appendChild(versionDisplay); // Add versionDisplay to header
 
     var content = document.createElement("div"); content.id = "ytls-content";
     content.append(list, btns); // list and btns are now directly in content; header is separate
