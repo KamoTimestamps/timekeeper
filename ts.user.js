@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.5
+// @version      2.2.7
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -1453,14 +1453,22 @@
     let dragOccurredSinceLastMouseDown = false; // Flag to track if a drag occurred
 
     pane.addEventListener("mousedown", (e) => {
-      if (e.target !== pane && e.target !== minimizeBtn && e.target !== header) return;
+      // Prevent dragging if the target is an input field
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Prevent dragging if the cursor is a pointer
+      if (window.getComputedStyle(e.target).cursor === 'pointer') {
+        return;
+      }
 
       isDragging = true;
-      dragOccurredSinceLastMouseDown = false; // Reset flag on new mousedown
+      dragOccurredSinceLastMouseDown = false;
       offsetX = e.clientX - pane.getBoundingClientRect().left;
       offsetY = e.clientY - pane.getBoundingClientRect().top;
 
-      pane.style.transition = "none"; // Disable transition during drag
+      pane.style.transition = "none";
     });
 
     document.addEventListener("mousemove", (e) => {
