@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.10
+// @version      2.2.11
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -782,8 +782,16 @@
 
     // Enable clicking on the current timestamp to jump to the latest point in the live stream
     timeDisplay.onclick = () => {
-      const video = document.querySelector("video");
-      video.currentTime = video.seekable.end(video.seekable.length - 1);
+      const liveBadge = document.querySelector(".ytp-live-badge");
+      if (liveBadge) {
+        const ariaDisabled = liveBadge.getAttribute("aria-disabled") === "true";
+        const isDisabled = liveBadge.disabled === true; // Check for disabled property, common on buttons
+
+        if (!ariaDisabled && !isDisabled) {
+          liveBadge.click();
+        }
+      }
+      // If liveBadge is not found, or if it is disabled, do nothing.
     };
 
     minimizeBtn.textContent = "▶️";
