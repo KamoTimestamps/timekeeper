@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.7
+// @version      2.2.8
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -119,6 +119,7 @@
   let saveTimeoutId = null; // Variable to hold the timeout ID for debouncing
   let loadTimeoutId = null; // Variable to hold the timeout ID for debouncing loads from broadcast
   let isMouseOverTimestamps = false; // Default to false
+  let lastUrlUpdateTime = -1; // Variable to track the last time URL was updated
 
   function getTimestampSuffix() {
     const now = new Date();
@@ -791,6 +792,12 @@
       if (v) {
         var t = Math.floor(v.currentTime), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
         timeDisplay.textContent = `CT: ${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}`;
+
+        // Update URL if the second has changed
+        if (t !== lastUrlUpdateTime) {
+          updateBrowserUrlWithTimestamp(t);
+          lastUrlUpdateTime = t;
+        }
       }
       requestAnimationFrame(updateTime);
     }
