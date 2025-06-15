@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.14
+// @version      2.2.15
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -174,20 +174,30 @@
     }
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set('t', `${timeInSeconds}s`);
-    // history.pushState(null, '', currentUrl.toString());
     history.replaceState({}, '', currentUrl.toString()); // Use replaceState to avoid adding a new history entry
   }
 
+  // Helper function to resume video playback if paused
+  function resumePlaybackIfPaused(video) {
+    if (video && video.paused) {
+      video.play().catch(error => console.error("Error attempting to play video:", error));
+    }
+  }
+
   function handleClick(e) {
+    const video = document.querySelector("video"); // Get video element once
+
     if (e.target.dataset.time) {
       e.preventDefault();
       const newTime = e.target.dataset.time;
-      document.querySelector("video").currentTime = newTime;
-
+      if (video) { // Check if video exists
+        video.currentTime = newTime;
+        resumePlaybackIfPaused(video); // Use the new helper function
+      }
     } else if (e.target.dataset.increment) {
       e.preventDefault();
-      var t = e.target.parentElement.querySelector('a[data-time]');
-      var currTime = parseInt(t.dataset.time);
+      var t_link = e.target.parentElement.querySelector('a[data-time]'); // Link element
+      var currTime = parseInt(t_link.dataset.time);
       var increment = parseInt(e.target.dataset.increment);
 
       // Check if Shift key is pressed
@@ -196,8 +206,11 @@
       }
 
       var newTime = Math.max(0, currTime + increment);
-      formatTime(t, newTime);
-      document.querySelector("video").currentTime = newTime; // Seek to the new timestamp
+      formatTime(t_link, newTime); // Update the link's display and data-time
+      if (video) { // Check if video exists
+        video.currentTime = newTime; // Seek to the new timestamp
+        resumePlaybackIfPaused(video); // Use the new helper function
+      }
 
       // No automatic reordering here. User will click the sort button.
       updateSeekbarMarkers();
@@ -1401,7 +1414,7 @@
         background: #777; /* Example hover effect */
       }
 
-      /* Styles for save format choice modal */
+      /* Style for the save format choice modal */
       #ytls-save-modal {
         position:fixed;
         top:50%;
