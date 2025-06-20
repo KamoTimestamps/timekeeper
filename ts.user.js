@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.15
+// @version      2.2.16
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -177,11 +177,10 @@
     history.replaceState({}, '', currentUrl.toString()); // Use replaceState to avoid adding a new history entry
   }
 
-  // Helper function to resume video playback if paused
   function resumePlaybackIfPaused(video) {
-    if (video && video.paused) {
+    // if (video && video.paused) {
       video.play().catch(error => console.error("Error attempting to play video:", error));
-    }
+    // }
   }
 
   function handleClick(e) {
@@ -192,7 +191,7 @@
       const newTime = e.target.dataset.time;
       if (video) { // Check if video exists
         video.currentTime = newTime;
-        resumePlaybackIfPaused(video); // Use the new helper function
+        resumePlaybackIfPaused(video);
       }
     } else if (e.target.dataset.increment) {
       e.preventDefault();
@@ -209,7 +208,7 @@
       formatTime(t_link, newTime); // Update the link's display and data-time
       if (video) { // Check if video exists
         video.currentTime = newTime; // Seek to the new timestamp
-        resumePlaybackIfPaused(video); // Use the new helper function
+        resumePlaybackIfPaused(video);
       }
 
       // No automatic reordering here. User will click the sort button.
