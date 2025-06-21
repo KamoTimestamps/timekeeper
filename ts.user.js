@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.17
+// @version      2.2.18
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -81,6 +81,8 @@
     "4bf77ad4863b4dd22cd59415cc85af3cebbdbfeb2637c8b58cfbd2015ef8bb7b",
     "2947f746580463d08ccd57e41a35925376a4bde0f78dfcde940295f04a48c41b",
     "9bd7e4a54cdd6fd1bce97ff2ac14f272cc5c7b44165a61320efd939247c878fd",
+    "02efb0ecb86135a382490d9ebf5fb5c99d4b701afc4a55dfe4d69121712e2c10",
+    "d4d44d5f0c285df5d70ce6e214370857eb09c0f0d82ebb9959f30e53277362c3",
   ]
 
   const membersOnlyVideos = [
