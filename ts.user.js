@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.16
+// @version      2.2.17
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -1648,6 +1648,18 @@
         updateBrowserUrlWithTimestamp(currentTime); // Use helper function
       });
     }
+
+    // Commit changes to IndexedDB when window or timestamp UI loses focus
+    window.addEventListener("blur", () => {
+      saveTimestamps();
+    });
+
+    list.addEventListener("focusout", (e) => {
+      // Only save if focus leaves the list or its children
+      if (!list.contains(e.relatedTarget)) {
+        saveTimestamps();
+      }
+    });
   }
 
   // Add a function to handle URL changes
