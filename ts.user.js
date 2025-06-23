@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.18
+// @version      2.2.19
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -193,7 +193,7 @@
       const newTime = e.target.dataset.time;
       if (video) { // Check if video exists
         video.currentTime = newTime;
-        resumePlaybackIfPaused(video);
+        // resumePlaybackIfPaused(video);
       }
     } else if (e.target.dataset.increment) {
       e.preventDefault();
