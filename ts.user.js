@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.19
+// @version      2.2.21
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -303,15 +303,6 @@
       saveTimestamps();
     }
     return commentInput;
-  }
-
-  // Add event listener for the 'seeked' event on the video element
-  const videoElementForSeek = document.querySelector("video");
-  if (videoElementForSeek) {
-    videoElementForSeek.addEventListener("seeked", () => {
-      const currentTime = Math.floor(videoElementForSeek.currentTime);
-      updateBrowserUrlWithTimestamp(currentTime);
-    });
   }
 
   function sortTimestampsAndUpdateDisplay() {
@@ -823,12 +814,6 @@
       if (v) {
         var t = Math.floor(v.currentTime), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
         timeDisplay.textContent = `CT: ${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}`;
-
-        // Update URL if the second has changed
-        if (t !== lastUrlUpdateTime) {
-          updateBrowserUrlWithTimestamp(t);
-          lastUrlUpdateTime = t;
-        }
       }
       requestAnimationFrame(updateTime);
     }
