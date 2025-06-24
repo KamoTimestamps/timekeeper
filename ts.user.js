@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.21
+// @version      2.2.23
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -1633,6 +1633,14 @@
       video.addEventListener("pause", () => {
         const currentTime = Math.floor(video.currentTime);
         updateBrowserUrlWithTimestamp(currentTime); // Use helper function
+      });
+      // Remove timestamp from URL during playback
+      video.addEventListener("play", () => {
+        const currentUrl = new URL(window.location.href);
+        if (currentUrl.searchParams.has('t')) {
+          currentUrl.searchParams.delete('t');
+          history.replaceState({}, '', currentUrl.toString());
+        }
       });
     }
 
