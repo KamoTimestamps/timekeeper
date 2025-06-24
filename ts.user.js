@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.22
+// @version      2.2.21
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -209,10 +209,8 @@
       var newTime = Math.max(0, currTime + increment);
       formatTime(t_link, newTime); // Update the link's display and data-time
       if (video) { // Check if video exists
-        setTimeout(() => {
-          video.currentTime = newTime; // Seek to the new timestamp after 250ms
-          resumePlaybackIfPaused(video);
-        }, 250);
+        video.currentTime = newTime; // Seek to the new timestamp
+        resumePlaybackIfPaused(video);
       }
 
       // No automatic reordering here. User will click the sort button.
