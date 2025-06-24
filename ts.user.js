@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.25
+// @version      2.2.26
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -20,6 +20,22 @@
   if (window.top !== window.self) {
     return; // Don't run in iframes
   }
+
+  // Wait for YouTube interface to load completely
+  async function waitForYouTubeReady() {
+    // Wait for the main video element and controls to be present
+    while (!document.querySelector('video') || !document.querySelector('#movie_player')) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+    // Optionally, wait for the progress bar and other UI elements
+    while (!document.querySelector('.ytp-progress-bar')) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+    // Wait a little extra to ensure dynamic elements are ready
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  await waitForYouTubeReady();
 
   // Configuration for timestamp offset
   const OFFSET_KEY = "timestampOffsetSeconds";
@@ -198,6 +214,18 @@
       if (video) { // Check if video exists
         video.currentTime = newTime;
         // resumePlaybackIfPaused(video);
+      }
+      // Highlight the clicked timestamp immediately
+      const clickedLi = e.target.closest('li');
+      if (clickedLi) {
+        Array.from(list.children).forEach(li => {
+          if (li.style.background !== "darkred") {
+            li.style.background = "rgba(255, 255, 255, 0.05)";
+          }
+        });
+        if (clickedLi.style.background !== "darkred") {
+          clickedLi.style.background = "rgba(0, 128, 255, 0.2)";
+        }
       }
     } else if (e.target.dataset.increment) {
       e.preventDefault();
