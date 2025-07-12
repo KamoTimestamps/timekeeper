@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.26
+// @version      2.2.28
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
 // @match        https://www.youtube.com/*
-// @noframe
+// @noframes
+// @run-at       document-start
 // @icon         data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%2272px%22 font-size=%2272px%22>⏲️</text></svg>
 // @grant        GM.getValue
 // @grant        GM.setValue
@@ -1277,6 +1278,7 @@
         z-index: 5000;
         font-family: Arial, sans-serif;
         width: 300px;
+        user-select: none; /* Prevent text selection in pane */
       }
       #ytls-pane.minimized {
         width: 3em; /* Size relative to the icon */
@@ -1312,6 +1314,7 @@
         list-style: none;
         padding: 0;
         margin: 0;
+        user-select: none; /* Prevent text selection in timestamp list */
       }
       #ytls-pane li {
         display: flex;
@@ -1321,6 +1324,7 @@
         background: rgba(255, 255, 255, 0.05);
         padding: 5px;
         border-radius: 3px;
+        user-select: none; /* Prevent text selection in timestamp items */
       }
       #ytls-pane .time-row {
         display: flex;
