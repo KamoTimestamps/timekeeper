@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.29
+// @version      2.2.30
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -169,8 +169,11 @@
       return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
     }
 
-    // Otherwise, format as HH:MM:SS
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    // If video is >= 10 hours, pad hours to 2 digits, otherwise use single digit
+    const hoursString = videoDuration >= 36000 ? String(h).padStart(2, "0") : String(h);
+
+    // Format as H:MM:SS or HH:MM:SS based on video length
+    return `${hoursString}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
   // Update existing calls to formatTimeString to pass video duration
