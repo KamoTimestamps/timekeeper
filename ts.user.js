@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.31
+// @version      2.2.32
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -199,25 +199,19 @@
     history.replaceState({}, '', currentUrl.toString()); // Use replaceState to avoid adding a new history entry
   }
 
-  function resumePlaybackIfPaused(video) {
-    // if (video && video.paused) {
-      video.play().catch(error => console.error("Error attempting to play video:", error));
-    // }
-  }
-
   // Debounce state for seeking
   let seekTimeoutId = null;
   let pendingSeekTime = null;
 
   function handleClick(e) {
-    const video = document.querySelector("video"); // Get video element once
+    const player = document.getElementById("movie_player");
 
     if (e.target.dataset.time) {
       e.preventDefault();
       const newTime = e.target.dataset.time;
-      if (video) { // Check if video exists
-        video.currentTime = newTime;
-        // resumePlaybackIfPaused(video);
+      if (player) {
+        player.seekTo(newTime);
+        player.playVideo();
       }
       // Highlight the clicked timestamp immediately
       const clickedLi = e.target.closest('li');
@@ -244,12 +238,12 @@
 
       var newTime = Math.max(0, currTime + increment);
       formatTime(t_link, newTime); // Update the link's display and data-time
-      if (video) { // Check if video exists
+      if (player) {
         pendingSeekTime = newTime;
         if (seekTimeoutId) clearTimeout(seekTimeoutId);
         seekTimeoutId = setTimeout(() => {
-          video.currentTime = pendingSeekTime;
-          resumePlaybackIfPaused(video);
+          player.seekTo(pendingSeekTime);
+          player.playVideo();
           seekTimeoutId = null;
         }, 200);
       }
@@ -282,9 +276,9 @@
 
     // Add click event to the record button
     record.onclick = () => {
-      const video = document.querySelector("video");
-      if (video) {
-        const currentTime = Math.floor(video.currentTime);
+      const player = document.getElementById("movie_player");
+      if (player) {
+        const currentTime = Math.floor(player.getCurrentTime());
         formatTime(a, currentTime);
         saveTimestamps();
       }
@@ -465,8 +459,8 @@
       console.log(`Exporting timestamps for video ID: ${videoId}`);
     }
 
-    const video = document.querySelector("video");
-    const videoDuration = video ? Math.floor(video.duration) : 0;
+    const player = document.getElementById("movie_player");
+    const videoDuration = player ? Math.floor(player.getDuration()) : 0;
 
     const timestamps = Array.from(list.children).map(li => {
       const startLink = li.querySelector('a[data-time]');
@@ -582,13 +576,14 @@
   }
 
   function highlightNearestTimestamp() {
+    const player = document.getElementById("movie_player");
     const video = document.querySelector("video");
     if (!video) return;
 
     video.addEventListener("timeupdate", () => {
       if (isMouseOverTimestamps) return; // Skip auto-scrolling if the mouse is over the timestamps window
 
-      const currentTime = Math.floor(video.currentTime);
+      const currentTime = Math.floor(player.getCurrentTime());
       let nearestTimestamp = null;
       let smallestDifference = Infinity;
 
@@ -854,9 +849,9 @@
     minimizeBtn.classList.add("ytls-minimize-button"); // Added class
     minimizeBtn.id = "ytls-minimize";
     function updateTime() {
-      var v = document.querySelector("video");
-      if (v) {
-        var t = Math.floor(v.currentTime), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
+      const player = document.getElementById("movie_player");
+      if (player) {
+        var t = Math.floor(player.getCurrentTime()), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
         timeDisplay.textContent = `CT: ${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}`;
       }
       requestAnimationFrame(updateTime);
@@ -866,11 +861,11 @@
 
     // Define handlers for main buttons
     const handleAddTimestamp = () => {
-      const video = document.querySelector("video");
-      if (video) {
+      const player = document.getElementById("movie_player");
+      if (player) {
         // Use configuredOffset if available, otherwise default to 0
         const offset = typeof configuredOffset !== 'undefined' ? configuredOffset : 0;
-        const currentTime = Math.floor(video.currentTime + offset);
+        const currentTime = Math.floor(player.getCurrentTime() + offset);
         // Call addTimestamp with doNotSave = true to prevent immediate save
         const newCommentInput = addTimestamp(currentTime, "", true);
         if (newCommentInput) { // addTimestamp returns the input element
@@ -1682,9 +1677,10 @@
 
     // Add event listener for video pause to update URL
     const video = document.querySelector("video");
+    const player = document.getElementById("movie_player");
     if (video) {
       video.addEventListener("pause", () => {
-        const currentTime = Math.floor(video.currentTime);
+        const currentTime = Math.floor(player.getCurrentTime());
         updateBrowserUrlWithTimestamp(currentTime); // Use helper function
       });
       // Remove timestamp from URL during playback
