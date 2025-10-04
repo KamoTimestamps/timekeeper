@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         YouTube Timestamp Tool
+// @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.32
+// @version      2.2.33
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -62,7 +62,7 @@
       loadTimeoutId = setTimeout(() => {
         console.log('Reloading timestamps due to external update for video:', event.data.videoId);
         loadTimestamps();
-      }, 250); // Set new timeout to load after 250ms
+      }, 500); // Set new timeout to load after 500ms
     }
   };
 
@@ -142,7 +142,6 @@
   let saveTimeoutId = null; // Variable to hold the timeout ID for debouncing
   let loadTimeoutId = null; // Variable to hold the timeout ID for debouncing loads from broadcast
   let isMouseOverTimestamps = false; // Default to false
-  let lastUrlUpdateTime = -1; // Variable to track the last time URL was updated
   let settingsModalInstance = null; // To keep a reference to the settings modal
   let settingsCogButtonElement = null; // To keep a reference to the settings cog button
 
@@ -215,7 +214,6 @@
       const newTime = e.target.dataset.time;
       if (player) {
         player.seekTo(newTime);
-        player.playVideo();
       }
       // Highlight the clicked timestamp immediately
       const clickedLi = e.target.closest('li');
@@ -247,9 +245,11 @@
         if (seekTimeoutId) clearTimeout(seekTimeoutId);
         seekTimeoutId = setTimeout(() => {
           player.seekTo(pendingSeekTime);
-          player.playVideo();
+          if (player.getPlayerState() === 2){
+            document.querySelector(".ytp-play-button").click();
+          }
           seekTimeoutId = null;
-        }, 200);
+        }, 500);
       }
 
       // No automatic reordering here. User will click the sort button.
@@ -293,7 +293,7 @@
     commentInput.style = "width:100%;margin-top:5px;display:block;";
     commentInput.addEventListener("input", () => {
       clearTimeout(saveTimeoutId); // Clear existing timeout
-      saveTimeoutId = setTimeout(saveTimestamps, 250); // Set new timeout
+      saveTimeoutId = setTimeout(saveTimestamps, 500); // Set new timeout
     });
     del.textContent = "🗑️"; del.style = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
     del.onclick = () => {
