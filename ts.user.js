@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Timestamp Tool
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.30
+// @version      2.2.31
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -267,6 +267,9 @@
   }
 
   function addTimestamp(e, t, doNotSave = false) {
+    // Ensure timestamp is not negative. Usually occurs for pre-live videos.
+    e = Math.max(0, e);
+
     var li = document.createElement("li"), timeRow = document.createElement("div"), minus = document.createElement("span"),
       record = document.createElement("span"), plus = document.createElement("span"), a = document.createElement("a"),
       commentInput = document.createElement("input"), del = document.createElement("button");
