@@ -12,6 +12,10 @@
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @run-at       document-idle
+// @homepageURL  https://github.com/KamoTimestamps/timekeeper
+// @supportURL   https://github.com/KamoTimestamps/timekeeper/issue
+// @downloadURL  https://raw.githubusercontent.com/KamoTimestamps/timekeeper/main/ts.user.js
+// @updateURL    https://raw.githubusercontent.com/KamoTimestamps/timekeeper/main/ts.user.js
 // @license MIT
 // ==/UserScript==
 
