@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.34
+// @version      2.2.35
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -1598,6 +1598,9 @@
       if (!isDragging) return;
 
       isDragging = false;
+      setTimeout(() => {
+        dragOccurredSinceLastMouseDown = false; // Reset the flag after a short delay
+      }, 50);
       pane.style.transition = "all 0.2s ease"; // Re-enable transition
 
       // Snap to the nearest edge
