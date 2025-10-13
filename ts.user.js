@@ -385,7 +385,11 @@
   function updateSeekbarMarkers() {
     var video = document.querySelector("video");
     var progressBar = document.querySelector(".ytp-progress-bar");
-    if (!video || !progressBar || !isFinite(video.duration)) return;
+    var player = document.getElementById("movie_player");
+
+    // Skip if video isn't ready, progress bar isn't found, or if it's a live stream
+    if (!video || !progressBar || !isFinite(video.duration) ||
+        (player && player.getVideoData && player.getVideoData().isLive)) return;
 
     var existingMarkers = document.querySelectorAll(".ytls-marker");
     existingMarkers.forEach(marker => marker.remove());
