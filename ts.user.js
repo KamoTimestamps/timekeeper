@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.39
+// @version      2.2.40
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -161,24 +161,19 @@
     }
   }
 
-  // Helper function to format time based on video length
+  // Helper function to format timestamps based on total duration
   function formatTimeString(seconds, videoDuration = seconds) {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
+    const s = String(seconds % 60).padStart(2, "0");
 
-    // If video duration is less than 1 hour and less than 10 minutes, format as M:SS
+    // For times under 1 hour, show M:SS or MM:SS
     if (videoDuration < 3600) {
-      if (m < 10) {
-        return `${m}:${String(s).padStart(2, "0")}`;
-      }
-      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+      return `${m < 10 ? m : String(m).padStart(2, "0")}:${s}`;
     }
 
-    // If video is >= 10 hours, pad hours to 2 digits, otherwise use single digit
-    const hoursString = videoDuration >= 36000 ? String(h).padStart(2, "0") : String(h);
-    // Format as H:MM:SS or HH:MM:SS based on video length
-    return `${hoursString}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    // For times with hours, show H:MM:SS or HH:MM:SS
+    return `${videoDuration >= 36000 ? String(h).padStart(2, "0") : h}:${String(m).padStart(2, "0")}:${s}`;
   }
 
   // Update existing calls to formatTimeString to pass video duration
