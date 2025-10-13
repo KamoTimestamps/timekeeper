@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.35
+// @version      2.2.36
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -851,9 +851,9 @@
         var t = Math.floor(player.getCurrentTime()), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
         timeDisplay.textContent = `CT: ${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}`;
       }
-      requestAnimationFrame(updateTime);
     }
     updateTime();
+    const timeUpdateInterval = setInterval(updateTime, 1000);
     btns.id = "ytls-buttons";
 
     // Define handlers for main buttons
