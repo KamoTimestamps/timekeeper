@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.37
+// @version      2.2.39
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -162,7 +162,7 @@
   }
 
   // Helper function to format time based on video length
-  function formatTimeString(seconds, videoDuration) {
+  function formatTimeString(seconds, videoDuration = seconds) {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = seconds % 60;
@@ -174,7 +174,6 @@
 
     // If video is >= 10 hours, pad hours to 2 digits, otherwise use single digit
     const hoursString = videoDuration >= 36000 ? String(h).padStart(2, "0") : String(h);
-
     // Format as H:MM:SS or HH:MM:SS based on video length
     return `${hoursString}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
@@ -252,12 +251,16 @@
         }, 500);
       }
 
+      // Update time differences for all timestamps
+      updateTimeDifferences();
+
       // No automatic reordering here. User will click the sort button.
       updateSeekbarMarkers();
       saveTimestamps();
     } else if (e.target.dataset.action === "clear") {
       e.preventDefault();
       list.textContent = "";
+      // No need to call updateTimeDifferences() since all timestamps are removed
       updateSeekbarMarkers();
       updateScroll();
       saveTimestamps();
@@ -270,7 +273,7 @@
 
     var li = document.createElement("li"), timeRow = document.createElement("div"), minus = document.createElement("span"),
       record = document.createElement("span"), plus = document.createElement("span"), a = document.createElement("a"),
-      commentInput = document.createElement("input"), del = document.createElement("button");
+      timeDiff = document.createElement("span"), commentInput = document.createElement("input"), del = document.createElement("button");
 
     timeRow.className = "time-row";
     minus.textContent = "➖"; minus.dataset.increment = -1; minus.style.cursor = "pointer";
@@ -284,6 +287,7 @@
       if (player) {
         const currentTime = Math.floor(player.getCurrentTime());
         formatTime(a, currentTime);
+        updateTimeDifferences();
         saveTimestamps();
       }
     };
@@ -299,6 +303,7 @@
     del.onclick = () => {
       if (li.dataset.deleteConfirmed === "true") {
         li.remove(); // Remove the timestamp
+        updateTimeDifferences(); // Update time differences after deletion
         updateSeekbarMarkers();
         updateScroll();
         saveTimestamps();
@@ -316,24 +321,58 @@
       }
     };
 
-    timeRow.append(minus, record, plus, a, del);
+    // Setup time difference span
+    timeDiff.className = 'time-diff';
+    timeDiff.style.color = '#888';
+    timeDiff.style.marginLeft = '5px';
+
+    timeRow.append(minus, record, plus, a, timeDiff, del);
     li.append(timeRow, commentInput);
     li.style = "display:flex;flex-direction:column;gap:5px;padding:5px;background:rgba(255,255,255,0.05);border-radius:3px;";
 
     // Insert the new timestamp in the correct sorted position
     const newTime = parseInt(a.dataset.time);
     let inserted = false;
-    Array.from(list.children).forEach(existingLi => {
-      if (inserted) return;
+    const existingItems = Array.from(list.children);
+
+    for (let i = 0; i < existingItems.length; i++) {
+      const existingLi = existingItems[i];
       const existingTime = parseInt(existingLi.querySelector('a[data-time]').dataset.time);
+
       if (newTime < existingTime) {
+        // Insert before this item
         list.insertBefore(li, existingLi);
         inserted = true;
+
+        // Update time difference for the new timestamp
+        const prevLi = existingItems[i - 1];
+        if (prevLi) {
+          const prevTime = parseInt(prevLi.querySelector('a[data-time]').dataset.time);
+          const diff = newTime - prevTime;
+          timeDiff.textContent = `${formatTimeString(diff)}`;
+        }
+
+        // Update time difference for the next timestamp
+        const nextTimeDiff = existingLi.querySelector('.time-diff');
+        if (nextTimeDiff) {
+          const diff = existingTime - newTime;
+          nextTimeDiff.textContent = `${formatTimeString(diff)}`;
+        }
+        break;
       }
-    });
+    }
 
     if (!inserted) {
-      list.appendChild(li); // Append to the end if it's the latest or list is empty
+      // Append to the end if it's the latest or list is empty
+      list.appendChild(li);
+
+      // Update time difference if there's a previous timestamp
+      if (existingItems.length > 0) {
+        const lastLi = existingItems[existingItems.length - 1];
+        const lastTime = parseInt(lastLi.querySelector('a[data-time]').dataset.time);
+        const diff = newTime - lastTime;
+        timeDiff.textContent = `${formatTimeString(diff)}`;
+      }
     }
 
     // Scroll to the newly added timestamp
@@ -345,6 +384,25 @@
       saveTimestamps();
     }
     return commentInput;
+  }
+
+  // Helper function to update time differences for timestamps
+  function updateTimeDifferences(startIndex = 0) {
+    const items = Array.from(list.children);
+    items.forEach((item, index) => {
+      const timeDiffSpan = item.querySelector('.time-diff');
+      if (timeDiffSpan) {
+        if (index > 0) {
+          const currentTime = parseInt(item.querySelector('a[data-time]').dataset.time);
+          const prevTime = parseInt(items[index - 1].querySelector('a[data-time]').dataset.time);
+          const diff = currentTime - prevTime;
+          const sign = diff < 0 ? '-' : '';
+          timeDiffSpan.textContent = ` ${sign}${formatTimeString(Math.abs(diff))}`;
+        } else {
+          timeDiffSpan.textContent = '';
+        }
+      }
+    });
   }
 
   function sortTimestampsAndUpdateDisplay() {
@@ -364,6 +422,9 @@
     sortedItems.forEach(item => {
       list.appendChild(item.element);
     });
+
+    // Update all time differences
+    updateTimeDifferences();
 
     updateSeekbarMarkers();
     saveTimestamps(); // Save after sorting
@@ -871,7 +932,7 @@
             const currentTimeMinutes = Math.max(1, t / 60);
             const liveTimestamps = timestamps.filter(time => time <= t);
             if (liveTimestamps.length > 0) {
-              const timestampsPerMin = (liveTimestamps.length / currentTimeMinutes).toFixed(1);
+              const timestampsPerMin = (liveTimestamps.length / currentTimeMinutes).toFixed(2);
               if (parseFloat(timestampsPerMin) > 0) {
                 timestampDisplay = ` (${timestampsPerMin}/min)`;
               }
@@ -928,10 +989,7 @@
       }
 
       const plainText = timestamps.map(ts => {
-        // Use formatTimeString if available, otherwise provide a basic time string
-        const timeString = typeof formatTimeString === 'function'
-          ? formatTimeString(ts.start, videoDuration)
-          : `${Math.floor(ts.start / 3600)}:${String(Math.floor(ts.start / 60) % 60).padStart(2, '0')}:${String(ts.start % 60).padStart(2, '0')}`;
+        const timeString = formatTimeString(ts.start, videoDuration);
         return `${timeString} ${ts.comment}`;
       }).join("\n");
 
