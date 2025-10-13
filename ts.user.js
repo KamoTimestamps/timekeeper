@@ -167,8 +167,11 @@
     const m = Math.floor((seconds % 3600) / 60);
     const s = seconds % 60;
 
-    // If video duration is less than 1 hour, format as MM:SS
+    // If video duration is less than 1 hour and less than 10 minutes, format as M:SS
     if (videoDuration < 3600) {
+      if (m < 10) {
+        return `${m}:${String(s).padStart(2, "0")}`;
+      }
       return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
     }
 
