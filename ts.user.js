@@ -1,17 +1,15 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.36
+// @version      2.2.37
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
 // @match        https://www.youtube.com/*
 // @noframes
-// @run-at       document-start
 // @icon         data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%2272px%22 font-size=%2272px%22>⏲️</text></svg>
 // @grant        GM.getValue
 // @grant        GM.setValue
-// @run-at       document-idle
 // @homepageURL  https://github.com/KamoTimestamps/timekeeper
 // @supportURL   https://github.com/KamoTimestamps/timekeeper/issue
 // @downloadURL  https://raw.githubusercontent.com/KamoTimestamps/timekeeper/main/ts.user.js
@@ -847,13 +845,48 @@
     };
 
     minimizeBtn.textContent = "▶️";
-    minimizeBtn.classList.add("ytls-minimize-button"); // Added class
+    minimizeBtn.classList.add("ytls-minimize-button");
     minimizeBtn.id = "ytls-minimize";
     function updateTime() {
       const player = document.getElementById("movie_player");
-      if (player) {
-        var t = Math.floor(player.getCurrentTime()), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
-        timeDisplay.textContent = `CT: ${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}`;
+      const video = document.querySelector("video");
+      if (player && video) {
+        var t = Math.floor(player.getCurrentTime());
+        var h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
+
+        // Get video data to check if it's a live stream
+        const isLive = player.getVideoData && player.getVideoData().isLive;
+
+        // Get all timestamps
+        const timestamps = Array.from(list.children).map(li => {
+          const timeLink = li.querySelector('a[data-time]');
+          return timeLink ? parseFloat(timeLink.getAttribute('data-time')) : 0;
+        });
+
+        let timestampDisplay = "";
+        if (timestamps.length > 0) {  // Only calculate and show rate if there are timestamps
+          if (isLive) {
+            // For live streams: calc ts/min based on current play head position,
+            // since we can't get an accurate total duration during live streams.
+            const currentTimeMinutes = Math.max(1, t / 60);
+            const liveTimestamps = timestamps.filter(time => time <= t);
+            if (liveTimestamps.length > 0) {
+              const timestampsPerMin = (liveTimestamps.length / currentTimeMinutes).toFixed(1);
+              if (parseFloat(timestampsPerMin) > 0) {
+                timestampDisplay = ` (${timestampsPerMin}/min)`;
+              }
+            }
+          } else {
+            // For regular videos: calculate ts/min based on total duration
+            const totalMinutes = Math.max(1, video.duration / 60);
+            const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(1);
+            if (parseFloat(timestampsPerMin) > 0) {
+              timestampDisplay = ` (${timestampsPerMin}/min)`;
+            }
+          }
+        }
+
+        timeDisplay.textContent = `CT: ${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
       }
     }
     updateTime();
