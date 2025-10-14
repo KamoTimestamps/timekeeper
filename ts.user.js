@@ -1368,7 +1368,7 @@
         position: fixed;
         bottom: 0;
         right: 0;
-        padding: 10px;
+        padding: 5px 10px 10px 10px;
         border-radius: 12px; /* Add rounded corners */
         border: 1px solid rgba(85, 85, 85, 0.8); /* Add a thin grey border */
         opacity: 0.9;
