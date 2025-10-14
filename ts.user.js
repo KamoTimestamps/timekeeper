@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.40
+// @version      2.3.3
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -265,13 +265,19 @@
     }
   }
 
-  function addTimestamp(e, t, doNotSave = false) {
+  function addTimestamp(e, t, doNotSave = false, guid = null) {
     // Ensure timestamp is not negative. Usually occurs for pre-live videos.
     e = Math.max(0, e);
+
+    // Generate or use provided GUID
+    const timestampGuid = guid || crypto.randomUUID();
 
     var li = document.createElement("li"), timeRow = document.createElement("div"), minus = document.createElement("span"),
       record = document.createElement("span"), plus = document.createElement("span"), a = document.createElement("a"),
       timeDiff = document.createElement("span"), commentInput = document.createElement("input"), del = document.createElement("button");
+
+    // Store GUID as a data attribute
+    li.dataset.guid = timestampGuid;
 
     timeRow.className = "time-row";
     minus.textContent = "➖"; minus.dataset.increment = -1; minus.style.cursor = "pointer";
@@ -408,8 +414,15 @@
     const sortedItems = items.map(li => {
       const timeLink = li.querySelector('a[data-time]');
       const time = parseInt(timeLink.dataset.time);
-      return { time, element: li };
-    }).sort((a, b) => a.time - b.time);
+      const guid = li.dataset.guid;
+      return { time, guid, element: li };
+    }).sort((a, b) => {
+      // First sort by time
+      const timeDiff = a.time - b.time;
+      if (timeDiff !== 0) return timeDiff;
+      // If times are equal, sort by GUID to maintain consistent order
+      return (a.guid || '').localeCompare(b.guid || '');
+    });
 
     // Clear current list
     while (list.firstChild) {
@@ -455,7 +468,10 @@
       var startLink = li.querySelector('a[data-time]');
       var comment = li.querySelector('input').value;
       var startTime = parseInt(startLink.dataset.time);
-      return { start: startTime, comment: comment };
+      var guid = li.dataset.guid || crypto.randomUUID();
+      // Update the element's GUID if it was missing
+      if (!li.dataset.guid) li.dataset.guid = guid;
+      return { start: startTime, comment: comment, guid: guid };
     });
 
     timestamps.forEach(ts => {
@@ -533,7 +549,12 @@
       const startLink = li.querySelector('a[data-time]');
       const comment = li.querySelector('input').value;
       const startTime = parseInt(startLink.dataset.time);
-      return { start: startTime, comment: comment };
+      const guid = li.dataset.guid || crypto.randomUUID(); // Use existing GUID or generate new one
+      return {
+        start: startTime,
+        comment: comment,
+        guid: guid
+      };
     });
 
     const timestampSuffix = getTimestampSuffix();
@@ -571,7 +592,11 @@
     loadFromIndexedDB(videoId).then(dbTimestamps => {
       let finalTimestampsToDisplay = [];
       if (dbTimestamps) {
-        finalTimestampsToDisplay = dbTimestamps;
+        // Ensure all timestamps from DB have GUIDs
+        finalTimestampsToDisplay = dbTimestamps.map(ts => ({
+          ...ts,
+          guid: ts.guid || crypto.randomUUID()
+        }));
         console.log(`Loaded timestamps from IndexedDB for ${videoId}`);
       } else {
         console.log(`No timestamps found in IndexedDB for ${videoId}`);
@@ -584,7 +609,10 @@
             if (parsedData && parsedData.video_id === videoId && Array.isArray(parsedData.timestamps)) {
               finalTimestampsToDisplay = parsedData.timestamps.filter(ts =>
                 ts && typeof ts.start === 'number' && typeof ts.comment === 'string'
-              );
+              ).map(ts => ({
+                ...ts,
+                guid: ts.guid || crypto.randomUUID() // Ensure each timestamp has a GUID
+              }));
               // Save to IndexedDB and remove from localStorage after successful migration
               if (finalTimestampsToDisplay.length > 0) {
                 saveToIndexedDB(videoId, finalTimestampsToDisplay)
@@ -747,17 +775,20 @@
         // Check if all items are valid timestamp objects
         const isValidJsonData = timestamps.every(ts => typeof ts.start === 'number' && typeof ts.comment === 'string');
         if (isValidJsonData) {
+          // Single pass: Process each timestamp
           timestamps.forEach(ts => {
-            const existingLi = Array.from(list.children).find(li => {
-              const timeLink = li.querySelector('a[data-time]');
-              return timeLink && parseInt(timeLink.dataset.time) === ts.start;
-            });
-            if (existingLi) {
-              const commentInput = existingLi.querySelector('input');
-              if (commentInput) commentInput.value = ts.comment;
-            } else {
-              addTimestamp(ts.start, ts.comment);
+            const guid = ts.guid || crypto.randomUUID();
+            // If timestamp has a GUID, look for exact GUID match first
+            if (ts.guid) {
+              const existingLi = Array.from(list.children).find(li => li.dataset.guid === ts.guid);
+              if (existingLi) {
+                const commentInput = existingLi.querySelector('input');
+                if (commentInput) commentInput.value = ts.comment;
+                return; // GUID match found and updated, done with this timestamp
+              }
             }
+            // No GUID match found (or no GUID provided), add as new timestamp
+            addTimestamp(ts.start, ts.comment, false, guid);
           });
           processedSuccessfully = true;
         } else {
@@ -1332,8 +1363,13 @@
 
                 // Ensure videoData has the expected structure before saving
                 if (videoData && typeof videoData.video_id === 'string' && Array.isArray(videoData.timestamps)) {
+                  // Ensure each timestamp has a guid
+                  const timestampsWithGuids = videoData.timestamps.map(ts => ({
+                    ...ts,
+                    guid: ts.guid || crypto.randomUUID()
+                  }));
                   // Save to IndexedDB
-                  const promise = saveToIndexedDB(videoId, videoData.timestamps)
+                  const promise = saveToIndexedDB(videoId, timestampsWithGuids)
                     .then(() => console.log(`Imported ${videoId} to IndexedDB`))
                     .catch(err => console.error(`Failed to import ${videoId} to IndexedDB:`, err));
                   importPromises.push(promise);
