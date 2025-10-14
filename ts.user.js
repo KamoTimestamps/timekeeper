@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.2.40
+// @version      2.3.1
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -265,13 +265,19 @@
     }
   }
 
-  function addTimestamp(e, t, doNotSave = false) {
+  function addTimestamp(e, t, doNotSave = false, guid = null) {
     // Ensure timestamp is not negative. Usually occurs for pre-live videos.
     e = Math.max(0, e);
+
+    // Generate or use provided GUID
+    const timestampGuid = guid || crypto.randomUUID();
 
     var li = document.createElement("li"), timeRow = document.createElement("div"), minus = document.createElement("span"),
       record = document.createElement("span"), plus = document.createElement("span"), a = document.createElement("a"),
       timeDiff = document.createElement("span"), commentInput = document.createElement("input"), del = document.createElement("button");
+
+    // Store GUID as a data attribute
+    li.dataset.guid = timestampGuid;
 
     timeRow.className = "time-row";
     minus.textContent = "➖"; minus.dataset.increment = -1; minus.style.cursor = "pointer";
@@ -455,7 +461,10 @@
       var startLink = li.querySelector('a[data-time]');
       var comment = li.querySelector('input').value;
       var startTime = parseInt(startLink.dataset.time);
-      return { start: startTime, comment: comment };
+      var guid = li.dataset.guid || crypto.randomUUID();
+      // Update the element's GUID if it was missing
+      if (!li.dataset.guid) li.dataset.guid = guid;
+      return { start: startTime, comment: comment, guid: guid };
     });
 
     timestamps.forEach(ts => {
@@ -533,7 +542,12 @@
       const startLink = li.querySelector('a[data-time]');
       const comment = li.querySelector('input').value;
       const startTime = parseInt(startLink.dataset.time);
-      return { start: startTime, comment: comment };
+      const guid = li.dataset.guid || crypto.randomUUID(); // Use existing GUID or generate new one
+      return {
+        start: startTime,
+        comment: comment,
+        guid: guid
+      };
     });
 
     const timestampSuffix = getTimestampSuffix();
@@ -584,7 +598,10 @@
             if (parsedData && parsedData.video_id === videoId && Array.isArray(parsedData.timestamps)) {
               finalTimestampsToDisplay = parsedData.timestamps.filter(ts =>
                 ts && typeof ts.start === 'number' && typeof ts.comment === 'string'
-              );
+              ).map(ts => ({
+                ...ts,
+                guid: ts.guid || crypto.randomUUID() // Ensure each timestamp has a GUID
+              }));
               // Save to IndexedDB and remove from localStorage after successful migration
               if (finalTimestampsToDisplay.length > 0) {
                 saveToIndexedDB(videoId, finalTimestampsToDisplay)
@@ -748,15 +765,19 @@
         const isValidJsonData = timestamps.every(ts => typeof ts.start === 'number' && typeof ts.comment === 'string');
         if (isValidJsonData) {
           timestamps.forEach(ts => {
+            const guid = ts.guid || crypto.randomUUID();
             const existingLi = Array.from(list.children).find(li => {
+              // Match by GUID first if available, then by time
+              if (ts.guid && li.dataset.guid === ts.guid) return true;
               const timeLink = li.querySelector('a[data-time]');
               return timeLink && parseInt(timeLink.dataset.time) === ts.start;
             });
             if (existingLi) {
               const commentInput = existingLi.querySelector('input');
               if (commentInput) commentInput.value = ts.comment;
+              if (!existingLi.dataset.guid) existingLi.dataset.guid = guid;
             } else {
-              addTimestamp(ts.start, ts.comment);
+              addTimestamp(ts.start, ts.comment, false, guid);
             }
           });
           processedSuccessfully = true;
