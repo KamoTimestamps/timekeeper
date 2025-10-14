@@ -1022,7 +1022,7 @@
       }
     };
 
-    const handleCopyTimestamps = function () { // Using function() to ensure 'this' refers to the button
+    const handleCopyTimestamps = function (e) { // Accept event parameter to check Ctrl key
       const video = document.querySelector("video");
       const videoDuration = video ? Math.floor(video.duration) : 0;
 
@@ -1031,7 +1031,8 @@
         const commentInput = li.querySelector('input');
         const comment = commentInput ? commentInput.value : '';
         const startTime = parseInt(startLink.dataset.time);
-        return { start: startTime, comment: comment };
+        const guid = li.dataset.guid || crypto.randomUUID(); // Use existing GUID or generate new one
+        return { start: startTime, comment: comment, guid: guid };
       });
 
       if (timestamps.length === 0) {
@@ -1040,9 +1041,15 @@
         return; // Do not copy if empty
       }
 
+      const includeGuids = e.ctrlKey; // Check if Ctrl key is held
       const plainText = timestamps.map(ts => {
         const timeString = formatTimeString(ts.start, videoDuration);
-        return `${timeString} ${ts.comment}`;
+        if (includeGuids) {
+          // Use HTML comment style for GUIDs, same as file export format
+          return `${timeString} ${ts.comment} <!-- guid:${ts.guid} -->`.trimStart();
+        } else {
+          return `${timeString} ${ts.comment}`;
+        }
       }).join("\n");
 
       navigator.clipboard.writeText(plainText).then(() => {
@@ -1069,7 +1076,12 @@
       button.textContent = config.label;
       button.title = config.title;
       button.classList.add("ytls-main-button");
-      button.onclick = config.action;
+      if (config.label === "📋") {
+        // For copy button, bind to an event handler that includes the event object
+        button.onclick = function(e) { config.action.call(this, e); };
+      } else {
+        button.onclick = config.action;
+      }
       if (config.label === "⚙️") { // Store a reference to the settings cog button
         settingsCogButtonElement = button;
       }
