@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.3.3
+// @version      2.3.4
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -499,7 +499,8 @@
       const startLink = li.querySelector('a[data-time]');
       const comment = li.querySelector('input').value;
       const startTime = parseInt(startLink.dataset.time);
-      return { start: startTime, comment: comment };
+      const guid = li.dataset.guid || crypto.randomUUID(); // Use existing GUID or generate new one
+      return { start: startTime, comment: comment, guid: guid };
     });
 
     // Sort timestamps from UI just in case, though they should generally be in order.
@@ -570,7 +571,8 @@
     } else if (format === "text") {
       const plainText = timestamps.map(ts => {
         const timeString = formatTimeString(ts.start, videoDuration);
-        return `${timeString} ${ts.comment}`;
+        const commentWithGuid = `${ts.comment} <!-- guid:${ts.guid} -->`.trimStart();
+        return `${timeString} ${commentWithGuid}`;
       }).join("\n");
 
       const blob = new Blob([plainText], { type: "text/plain" });
@@ -635,7 +637,8 @@
         finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
         clearTimestampsDisplay();
         finalTimestampsToDisplay.forEach(ts => {
-          addTimestamp(ts.start, ts.comment, true); // Pass true to prevent re-saving during load
+          // Pass the GUID when loading timestamps
+          addTimestamp(ts.start, ts.comment, true, ts.guid);
         });
         pane.classList.remove("minimized");
         updateSeekbarMarkers();
@@ -777,18 +780,20 @@
         if (isValidJsonData) {
           // Single pass: Process each timestamp
           timestamps.forEach(ts => {
-            const guid = ts.guid || crypto.randomUUID();
-            // If timestamp has a GUID, look for exact GUID match first
             if (ts.guid) {
+              // Look for exact GUID match first
               const existingLi = Array.from(list.children).find(li => li.dataset.guid === ts.guid);
               if (existingLi) {
                 const commentInput = existingLi.querySelector('input');
                 if (commentInput) commentInput.value = ts.comment;
-                return; // GUID match found and updated, done with this timestamp
+              } else {
+                // Use the original GUID when creating new timestamp
+                addTimestamp(ts.start, ts.comment, false, ts.guid);
               }
+            } else {
+              // Only generate new GUID if timestamp doesn't have one
+              addTimestamp(ts.start, ts.comment, false, crypto.randomUUID());
             }
-            // No GUID match found (or no GUID provided), add as new timestamp
-            addTimestamp(ts.start, ts.comment, false, guid);
           });
           processedSuccessfully = true;
         } else {
@@ -814,17 +819,35 @@
             const minutes = parseInt(match[2]);
             const seconds = parseInt(match[3]);
             const start = hours * 3600 + minutes * 60 + seconds;
-            const comment = match[4] ? match[4].trim() : "";
+            const remainingText = match[4] ? match[4].trim() : "";
 
-            const existingLi = Array.from(list.children).find(li => {
-              const timeLink = li.querySelector('a[data-time]');
-              return timeLink && parseInt(timeLink.dataset.time) === start;
-            });
+            // Parse GUID if present in HTML comment format <!-- guid:xyz -->
+            let guid = null;
+            let comment = remainingText;
+            const guidMatch = remainingText.match(/<!--\s*guid:([^>]+?)\s*-->/);
+            if (guidMatch) {
+              guid = guidMatch[1].trim();
+              comment = remainingText.replace(/<!--\s*guid:[^>]+?\s*-->/, '').trim();
+            }
+
+            // First try to match by GUID if available, then fall back to timestamp matching
+            let existingLi = null;
+            if (guid) {
+              existingLi = Array.from(list.children).find(li => li.dataset.guid === guid);
+            }
+            if (!existingLi && !guid) {
+              // Only try timestamp matching if no GUID is present
+              existingLi = Array.from(list.children).find(li => {
+                if (li.dataset.guid) return false; // Skip entries that already have GUIDs
+                const timeLink = li.querySelector('a[data-time]');
+                return timeLink && parseInt(timeLink.dataset.time) === start;
+              });
+            }
             if (existingLi) {
               const commentInput = existingLi.querySelector('input');
               if (commentInput) commentInput.value = comment;
             } else {
-              addTimestamp(start, comment);
+              addTimestamp(start, comment, false, guid || crypto.randomUUID()); // Use existing GUID or generate new one
             }
           }
         });
