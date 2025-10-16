@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.3.7
+// @version      2.3.8
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -76,28 +76,180 @@
     "getDuration"
   ];
   const PLAYER_METHOD_CHECK_TIMEOUT_MS = 5000;
+  const PLAYER_METHODS_WITH_FALLBACK = new Set([
+    "getCurrentTime",
+    "seekTo",
+    "getPlayerState",
+    "seekToLiveHead",
+    "getVideoData",
+    "getDuration"
+  ]);
+
+  function methodHasFallback(method) {
+    return PLAYER_METHODS_WITH_FALLBACK.has(method);
+  }
+
+  function getVideoElement() {
+    return document.querySelector("video");
+  }
+
+  let lastValidatedPlayer = null;
+
+  function getActivePlayer() {
+    if (lastValidatedPlayer && document.contains(lastValidatedPlayer)) {
+      return lastValidatedPlayer;
+    }
+    const player = document.getElementById("movie_player");
+    if (player && document.contains(player)) {
+      return player;
+    }
+    return null;
+  }
 
   function hasRequiredPlayerMethods(playerInstance) {
-    return !!playerInstance && REQUIRED_PLAYER_METHODS.every(method => typeof playerInstance[method] === "function");
+    return REQUIRED_PLAYER_METHODS.every(method => {
+      if (typeof playerInstance?.[method] === "function") {
+        return true;
+      }
+      if (!methodHasFallback(method)) {
+        return false;
+      }
+      return !!getVideoElement();
+    });
   }
 
   function missingPlayerMethods(playerInstance) {
-    return REQUIRED_PLAYER_METHODS.filter(method => typeof playerInstance?.[method] !== "function");
+    return REQUIRED_PLAYER_METHODS.filter(method => {
+      if (typeof playerInstance?.[method] === "function") {
+        return false;
+      }
+      if (!methodHasFallback(method)) {
+        return true;
+      }
+      return !getVideoElement();
+    });
   }
 
   async function waitForPlayerWithMethods(timeoutMs = PLAYER_METHOD_CHECK_TIMEOUT_MS) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      const playerInstance = document.getElementById("movie_player");
+      const playerInstance = getActivePlayer();
       if (hasRequiredPlayerMethods(playerInstance)) {
         return playerInstance;
       }
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    return document.getElementById("movie_player") || null;
+    const fallbackPlayer = getActivePlayer();
+    if (hasRequiredPlayerMethods(fallbackPlayer)) {
+      return fallbackPlayer;
+    }
+    return fallbackPlayer;
   }
 
-  let lastValidatedPlayer = null;
+  function getCurrentTimeCompat() {
+    const player = getActivePlayer();
+    if (player && typeof player.getCurrentTime === "function") {
+      try {
+        return player.getCurrentTime();
+      } catch (err) {
+        console.warn("Timekeeper fallback: player.getCurrentTime failed, using video element.", err);
+      }
+    }
+    const video = getVideoElement();
+    return video ? video.currentTime || 0 : 0;
+  }
+
+  function seekToCompat(seconds, allowSeekAhead = true) {
+    const player = getActivePlayer();
+    if (player && typeof player.seekTo === "function") {
+      try {
+        player.seekTo(seconds, allowSeekAhead);
+        return true;
+      } catch (err) {
+        console.warn("Timekeeper fallback: player.seekTo failed, using video element.", err);
+      }
+    }
+    const video = getVideoElement();
+    if (video) {
+      video.currentTime = seconds;
+      return true;
+    }
+    return false;
+  }
+
+  function getPlayerStateCompat() {
+    const player = getActivePlayer();
+    if (player && typeof player.getPlayerState === "function") {
+      try {
+        return player.getPlayerState();
+      } catch (err) {
+        console.warn("Timekeeper fallback: player.getPlayerState failed, using video element.", err);
+      }
+    }
+    const video = getVideoElement();
+    if (!video) {
+      return -1; // unstarted/unknown
+    }
+    if (video.ended) {
+      return 0; // ended
+    }
+    if (video.paused) {
+      return 2; // paused
+    }
+    return 1; // playing
+  }
+
+  function seekToLiveHeadCompat() {
+    const player = getActivePlayer();
+    if (player && typeof player.seekToLiveHead === "function") {
+      try {
+        player.seekToLiveHead();
+        return true;
+      } catch (err) {
+        console.warn("Timekeeper fallback: player.seekToLiveHead failed, using video element.", err);
+      }
+    }
+    // TODO: Need a way to detect whether or not the video is a live stream before attempting this
+    // As is, it just seeks to the end of the video, which you don't want for VODs.
+    // const video = getVideoElement();
+    // if (video && video.seekable && video.seekable.length > 0) {
+    //   const liveEdge = video.seekable.end(video.seekable.length - 1);
+    //   video.currentTime = liveEdge;
+    //   return true;
+    // }
+    return false;
+  }
+
+  function getVideoDataCompat() {
+    const player = getActivePlayer();
+    if (player && typeof player.getVideoData === "function") {
+      try {
+        return player.getVideoData();
+      } catch (err) {
+        console.warn("Timekeeper fallback: player.getVideoData failed, using video element.", err);
+      }
+    }
+    const video = getVideoElement();
+    if (!video) {
+      return { isLive: false };
+    }
+    const duration = video.duration;
+    const isLive = !Number.isFinite(duration) || duration === Infinity;
+    return { isLive };
+  }
+
+  function getDurationCompat() {
+    const player = getActivePlayer();
+    if (player && typeof player.getDuration === "function") {
+      try {
+        return player.getDuration();
+      } catch (err) {
+        console.warn("Timekeeper fallback: player.getDuration failed, using video element.", err);
+      }
+    }
+    const video = getVideoElement();
+    return video ? video.duration || 0 : 0;
+  }
 
   // Configuration for timestamp offset
   const OFFSET_KEY = "timestampOffsetSeconds";
@@ -265,13 +417,11 @@
   let pendingSeekTime = null;
 
   function handleClick(e) {
-    const player = document.getElementById("movie_player");
-
     if (e.target.dataset.time) {
       e.preventDefault();
-      const newTime = e.target.dataset.time;
-      if (player) {
-        player.seekTo(newTime);
+      const newTime = Number(e.target.dataset.time);
+      if (Number.isFinite(newTime)) {
+        seekToCompat(newTime);
       }
       // Highlight the clicked timestamp immediately
       const clickedLi = e.target.closest('li');
@@ -298,17 +448,18 @@
 
       var newTime = Math.max(0, currTime + increment);
       formatTime(t_link, newTime); // Update the link's display and data-time
-      if (player) {
-        pendingSeekTime = newTime;
-        if (seekTimeoutId) clearTimeout(seekTimeoutId);
-        seekTimeoutId = setTimeout(() => {
-          player.seekTo(pendingSeekTime);
-          if (player.getPlayerState() === 2){
-            document.querySelector(".ytp-play-button").click();
+      pendingSeekTime = newTime;
+      if (seekTimeoutId) clearTimeout(seekTimeoutId);
+      seekTimeoutId = setTimeout(() => {
+        seekToCompat(pendingSeekTime);
+        if (getPlayerStateCompat() === 2) {
+          const playButton = document.querySelector(".ytp-play-button");
+          if (playButton) {
+            playButton.click();
           }
-          seekTimeoutId = null;
-        }, 500);
-      }
+        }
+        seekTimeoutId = null;
+      }, 500);
 
       // Update time differences for all timestamps
       updateTimeDifferences();
@@ -349,9 +500,8 @@
 
     // Add click event to the record button
     record.onclick = () => {
-      const player = document.getElementById("movie_player");
-      if (player) {
-        const currentTime = Math.floor(player.getCurrentTime());
+      const currentTime = Math.floor(getCurrentTimeCompat());
+      if (Number.isFinite(currentTime)) {
         formatTime(a, currentTime);
         updateTimeDifferences();
         saveTimestamps();
@@ -538,13 +688,13 @@
 
   function updateSeekbarMarkers() {
     if (!list) return;
-    var video = document.querySelector("video");
-    var progressBar = document.querySelector(".ytp-progress-bar");
-    var player = document.getElementById("movie_player");
+    const video = getVideoElement();
+    const progressBar = document.querySelector(".ytp-progress-bar");
+    const videoData = getVideoDataCompat();
+    const isLiveStream = !!videoData && !!videoData.isLive;
 
     // Skip if video isn't ready, progress bar isn't found, or if it's a live stream
-    if (!video || !progressBar || !isFinite(video.duration) ||
-        (player && player.getVideoData && player.getVideoData().isLive)) return;
+    if (!video || !progressBar || !isFinite(video.duration) || isLiveStream) return;
 
     removeSeekbarMarkers();
 
@@ -573,7 +723,7 @@
         marker.style.cursor = "pointer";
         marker.style.left = (ts.start / video.duration * 100) + "%";
         marker.dataset.time = ts.start;
-        marker.addEventListener("click", () => video.currentTime = ts.start);
+        marker.addEventListener("click", () => seekToCompat(ts.start));
         progressBar.appendChild(marker);
       }
     });
@@ -646,8 +796,7 @@
       console.log(`Exporting timestamps for video ID: ${videoId}`);
     }
 
-    const player = document.getElementById("movie_player");
-    const videoDuration = player ? Math.floor(player.getDuration()) : 0;
+  const videoDuration = Math.floor(getDurationCompat());
 
     const timestamps = Array.from(list.children).map(li => {
       const startLink = li.querySelector('a[data-time]');
@@ -893,17 +1042,16 @@
   }
 
   function highlightNearestTimestamp() {
-    const video = document.querySelector("video");
+    const video = getVideoElement();
     if (!video || !list) return;
 
     video.addEventListener("timeupdate", () => {
       if (!list) return;
       if (isMouseOverTimestamps) return; // Skip auto-scrolling if the mouse is over the timestamps window
 
-      const playerInstance = document.getElementById("movie_player");
-      if (!hasRequiredPlayerMethods(playerInstance)) return;
+      const currentTime = Math.floor(getCurrentTimeCompat());
+      if (!Number.isFinite(currentTime)) return;
 
-      const currentTime = Math.floor(playerInstance.getCurrentTime());
       let nearestTimestamp = null;
       let smallestDifference = Infinity;
 
@@ -1188,56 +1336,56 @@
 
     // Enable clicking on the current timestamp to jump to the latest point in the live stream
     timeDisplay.onclick = () => {
-      const playerInstance = lastValidatedPlayer || document.getElementById("movie_player");
-      if (playerInstance && typeof playerInstance.seekToLiveHead === "function") {
-        playerInstance.seekToLiveHead();
-      }
+      seekToLiveHeadCompat();
     };
 
     minimizeBtn.textContent = "▶️";
     minimizeBtn.classList.add("ytls-minimize-button");
     minimizeBtn.id = "ytls-minimize";
     function updateTime() {
-      const player = document.getElementById("movie_player");
-      const video = document.querySelector("video");
-      if (player && video) {
-        var t = Math.floor(player.getCurrentTime());
-        var h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
+      const video = getVideoElement();
+      const playerInstance = getActivePlayer();
+      if (!video && !playerInstance) {
+        return;
+      }
 
-        // Get video data to check if it's a live stream
-        const isLive = player.getVideoData && player.getVideoData().isLive;
+      const currentSeconds = Math.max(0, Math.floor(getCurrentTimeCompat()));
+      const h = Math.floor(currentSeconds / 3600);
+      const m = Math.floor(currentSeconds / 60) % 60;
+      const s = currentSeconds % 60;
 
-        // Get all timestamps
-        const timestamps = list ? Array.from(list.children).map(li => {
-          const timeLink = li.querySelector('a[data-time]');
-          return timeLink ? parseFloat(timeLink.getAttribute('data-time')) : 0;
-        }) : [];
+      const { isLive } = getVideoDataCompat() || { isLive: false };
 
-        let timestampDisplay = "";
-        if (timestamps.length > 0) {  // Only calculate and show rate if there are timestamps
-          if (isLive) {
-            // For live streams: calc ts/min based on current play head position,
-            // since we can't get an accurate total duration during live streams.
-            const currentTimeMinutes = Math.max(1, t / 60);
-            const liveTimestamps = timestamps.filter(time => time <= t);
-            if (liveTimestamps.length > 0) {
-              const timestampsPerMin = (liveTimestamps.length / currentTimeMinutes).toFixed(2);
-              if (parseFloat(timestampsPerMin) > 0) {
-                timestampDisplay = ` (${timestampsPerMin}/min)`;
-              }
-            }
-          } else {
-            // For regular videos: calculate ts/min based on total duration
-            const totalMinutes = Math.max(1, video.duration / 60);
-            const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(1);
+      const timestamps = list ? Array.from(list.children).map(li => {
+        const timeLink = li.querySelector('a[data-time]');
+        return timeLink ? parseFloat(timeLink.getAttribute('data-time')) : 0;
+      }) : [];
+
+      let timestampDisplay = "";
+      if (timestamps.length > 0) {
+        if (isLive) {
+          const currentTimeMinutes = Math.max(1, currentSeconds / 60);
+          const liveTimestamps = timestamps.filter(time => time <= currentSeconds);
+          if (liveTimestamps.length > 0) {
+            const timestampsPerMin = (liveTimestamps.length / currentTimeMinutes).toFixed(2);
             if (parseFloat(timestampsPerMin) > 0) {
               timestampDisplay = ` (${timestampsPerMin}/min)`;
             }
           }
+        } else {
+          const durationSeconds = getDurationCompat();
+          const validDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
+            ? durationSeconds
+            : (video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0);
+          const totalMinutes = Math.max(1, validDuration / 60);
+          const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(1);
+          if (parseFloat(timestampsPerMin) > 0) {
+            timestampDisplay = ` (${timestampsPerMin}/min)`;
+          }
         }
-
-        timeDisplay.textContent = `CT: ${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
       }
+
+      timeDisplay.textContent = `CT: ${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
     }
     updateTime();
     if (timeUpdateIntervalId) {
@@ -1252,18 +1400,17 @@
         return;
       }
 
-      const player = document.getElementById("movie_player");
-      if (player) {
-        // Use configuredOffset if available, otherwise default to 0
-        const offset = typeof configuredOffset !== 'undefined' ? configuredOffset : 0;
-        const currentTime = Math.floor(player.getCurrentTime() + offset);
-        // Call addTimestamp with doNotSave = true to prevent immediate save
-        const newCommentInput = addTimestamp(currentTime, "", true);
-        if (newCommentInput) { // addTimestamp returns the input element
-          newCommentInput.focus();
-        }
-        // No direct saveTimestamps() call here; debounced save on input will handle it.
+      // Use configuredOffset if available, otherwise default to 0
+      const offset = typeof configuredOffset !== 'undefined' ? configuredOffset : 0;
+      const currentTime = Math.floor(getCurrentTimeCompat() + offset);
+      if (!Number.isFinite(currentTime)) {
+        return;
       }
+      const newCommentInput = addTimestamp(currentTime, "", true);
+      if (newCommentInput) {
+        newCommentInput.focus();
+      }
+      // No direct saveTimestamps() call here; debounced save on input will handle it.
     };
 
     const handleCopyTimestamps = function (e) { // Accept event parameter to check Ctrl key
@@ -2093,13 +2240,12 @@
   document.body.appendChild(pane);
 
     // Add event listener for video pause to update URL
-    const video = document.querySelector("video");
+    const video = getVideoElement();
     if (video) {
       video.addEventListener("pause", () => {
-        const playerInstance = lastValidatedPlayer || document.getElementById("movie_player");
-        if (playerInstance && typeof playerInstance.getCurrentTime === "function") {
-          const currentTime = Math.floor(playerInstance.getCurrentTime());
-          updateBrowserUrlWithTimestamp(currentTime); // Use helper function
+        const currentTime = Math.floor(getCurrentTimeCompat());
+        if (Number.isFinite(currentTime)) {
+          updateBrowserUrlWithTimestamp(currentTime);
         }
       });
       // Remove timestamp from URL during playback
