@@ -1,0 +1,19 @@
+// ==UserScript==
+// @name         Timekeeper
+// @namespace    https://violentmonkey.github.io/
+// @version      ${TIMEKEEPER_VERSION}
+// @description  Enhanced timestamp tool for YouTube videos
+// @author       Silent Shout
+// @match        https://www.youtube.com/*
+// @run-at       document-idle
+// @noframes
+// @icon         data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%2272px%22 font-size=%2272px%22>⏲️</text></svg>
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @grant        GM.setClipboard
+// @homepageURL  https://github.com/KamoTimestamps/timekeeper
+// @supportURL   https://github.com/KamoTimestamps/timekeeper/issues
+// @downloadURL  https://raw.githubusercontent.com/KamoTimestamps/timekeeper/main/ts.user.js
+// @updateURL    https://raw.githubusercontent.com/KamoTimestamps/timekeeper/main/ts.user.js
+// @license MIT
+// ==/UserScript==
