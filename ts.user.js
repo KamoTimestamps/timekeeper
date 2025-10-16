@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.3.9
+// @version      2.3.10
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -1405,11 +1405,10 @@
       if (!Number.isFinite(currentTime)) {
         return;
       }
-      const newCommentInput = addTimestamp(currentTime, "", true);
+      const newCommentInput = addTimestamp(currentTime, "");
       if (newCommentInput) {
         newCommentInput.focus();
       }
-      // No direct saveTimestamps() call here; debounced save on input will handle it.
     };
 
     const handleCopyTimestamps = function (e) { // Accept event parameter to check Ctrl key
