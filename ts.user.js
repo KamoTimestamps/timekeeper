@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.3.10
+// @version      2.3.11
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -51,6 +51,9 @@
   let minimizeBtn = null;
   let versionDisplay = null;
   let timeUpdateIntervalId = null;
+  let lastViewportWidth = window.innerWidth;
+  let lastViewportHeight = window.innerHeight;
+  let pendingStoredViewport = null;
 
   // Wait for YouTube interface to load completely
   async function waitForYouTubeReady() {
@@ -899,6 +902,7 @@
     style = null;
     minimizeBtn = null;
     versionDisplay = null;
+    pendingStoredViewport = null;
 
     lastValidatedPlayer = null;
     removeSeekbarMarkers();
@@ -2091,27 +2095,130 @@
     function loadPanePosition() {
       if (!pane) return;
       const pos = localStorage.getItem(panePositionKey);
-      if (pos) {
-        try {
-          const { left, top, right, bottom } = JSON.parse(pos);
-          if (left !== undefined && top !== undefined) {
-            pane.style.left = left;
-            pane.style.top = top;
-            pane.style.right = right;
-            pane.style.bottom = bottom;
-          }
-        } catch { }
+      if (!pos) return;
+      try {
+        const parsed = JSON.parse(pos);
+        const { left, top, right, bottom, viewportWidth, viewportHeight } = parsed || {};
+        if (typeof left === "string") {
+          pane.style.left = left;
+        }
+        if (typeof top === "string") {
+          pane.style.top = top;
+        }
+        if (typeof right === "string") {
+          pane.style.right = right;
+        }
+        if (typeof bottom === "string") {
+          pane.style.bottom = bottom;
+        }
+        if (Number.isFinite(viewportWidth) && Number.isFinite(viewportHeight)) {
+          pendingStoredViewport = { width: viewportWidth, height: viewportHeight };
+        }
+      } catch (err) {
+        console.warn("Timekeeper failed to parse stored pane position:", err);
+        pendingStoredViewport = null;
       }
     }
     function savePanePosition() {
       if (!pane) return;
       const style = pane.style;
       localStorage.setItem(panePositionKey, JSON.stringify({
-        left: style.left,
-        top: style.top,
-        right: style.right,
-        bottom: style.bottom
+        left: style.left || "",
+        top: style.top || "",
+        right: style.right || "",
+        bottom: style.bottom || "",
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight
       }));
+    }
+
+    function isEdgePinned(value) {
+      if (!value || value === "auto") {
+        return false;
+      }
+      const parsed = parseFloat(value);
+      return Number.isFinite(parsed) && Math.abs(parsed) < 0.5;
+    }
+
+    function adjustPanePositionForViewportChange() {
+      if (!pane || !document.body.contains(pane)) {
+        lastViewportWidth = window.innerWidth;
+        lastViewportHeight = window.innerHeight;
+        return;
+      }
+
+      const rect = pane.getBoundingClientRect();
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+      const paneWidth = rect.width;
+      const paneHeight = rect.height;
+
+      const pinnedLeft = isEdgePinned(pane.style.left);
+      const pinnedRight = isEdgePinned(pane.style.right);
+      const pinnedTop = isEdgePinned(pane.style.top);
+      const pinnedBottom = isEdgePinned(pane.style.bottom);
+
+      if (paneWidth >= windowWidth) {
+        pane.style.left = "0";
+        pane.style.right = "auto";
+      } else if (pinnedLeft && !pinnedRight) {
+        pane.style.left = "0";
+        pane.style.right = "auto";
+      } else if (pinnedRight && !pinnedLeft) {
+        pane.style.right = "0";
+        pane.style.left = "auto";
+      } else {
+        const prevAvailableWidth = Math.max(1, lastViewportWidth - paneWidth);
+        const clampedLeft = Math.max(0, Math.min(rect.left, prevAvailableWidth));
+        const ratioX = prevAvailableWidth > 0 ? clampedLeft / prevAvailableWidth : 0;
+        const newAvailableWidth = Math.max(0, windowWidth - paneWidth);
+        const newLeft = ratioX * newAvailableWidth;
+        pane.style.left = `${newLeft}px`;
+        pane.style.right = "auto";
+      }
+
+      if (paneHeight >= windowHeight) {
+        pane.style.top = "0";
+        pane.style.bottom = "auto";
+      } else if (pinnedTop && !pinnedBottom) {
+        pane.style.top = "0";
+        pane.style.bottom = "auto";
+      } else if (pinnedBottom && !pinnedTop) {
+        pane.style.bottom = "0";
+        pane.style.top = "auto";
+      } else {
+        const prevAvailableHeight = Math.max(1, lastViewportHeight - paneHeight);
+        const clampedTop = Math.max(0, Math.min(rect.top, prevAvailableHeight));
+        const ratioY = prevAvailableHeight > 0 ? clampedTop / prevAvailableHeight : 0;
+        const newAvailableHeight = Math.max(0, windowHeight - paneHeight);
+        const newTop = ratioY * newAvailableHeight;
+        pane.style.top = `${newTop}px`;
+        pane.style.bottom = "auto";
+      }
+
+      const finalRect = pane.getBoundingClientRect();
+      if (finalRect.left < 0) {
+        pane.style.left = "0";
+        pane.style.right = "auto";
+      }
+      if (finalRect.top < 0) {
+        pane.style.top = "0";
+        pane.style.bottom = "auto";
+      }
+      if (finalRect.right > windowWidth) {
+        const adjustedLeft = Math.max(0, windowWidth - finalRect.width);
+        pane.style.left = `${adjustedLeft}px`;
+        pane.style.right = "auto";
+      }
+      if (finalRect.bottom > windowHeight) {
+        const adjustedTop = Math.max(0, windowHeight - finalRect.height);
+        pane.style.top = `${adjustedTop}px`;
+        pane.style.bottom = "auto";
+      }
+
+      savePanePosition();
+      lastViewportWidth = window.innerWidth;
+      lastViewportHeight = window.innerHeight;
     }
 
     // Enable dragging and edge snapping for the pane
@@ -2202,29 +2309,7 @@
 
     // Ensure the timestamps window is fully onscreen after resizing
     window.addEventListener("resize", () => {
-      if (!pane) return;
-      const rect = pane.getBoundingClientRect();
-      const windowWidth = window.innerWidth;
-      const windowHeight = window.innerHeight;
-
-      // Adjust the pane's position if it goes offscreen
-      if (rect.right > windowWidth) {
-        pane.style.left = `${windowWidth - rect.width}px`;
-        pane.style.right = "auto";
-      }
-      if (rect.bottom > windowHeight) {
-        pane.style.top = `${windowHeight - rect.height}px`;
-        pane.style.bottom = "auto";
-      }
-      if (rect.left < 0) {
-        pane.style.left = "0";
-        pane.style.right = "auto";
-      }
-      if (rect.top < 0) {
-        pane.style.top = "0";
-        pane.style.bottom = "auto";
-      }
-      savePanePosition();
+      adjustPanePositionForViewportChange();
     });
 
     header.appendChild(minimizeBtn); // Add minimize button to the header first
@@ -2236,6 +2321,16 @@
 
   pane.append(header, content, style); // Append header, then content, then style to the pane
   document.body.appendChild(pane);
+
+    if (pendingStoredViewport) {
+      lastViewportWidth = pendingStoredViewport.width;
+      lastViewportHeight = pendingStoredViewport.height;
+      pendingStoredViewport = null;
+    } else {
+      lastViewportWidth = window.innerWidth;
+      lastViewportHeight = window.innerHeight;
+    }
+    adjustPanePositionForViewportChange();
 
     // Add event listener for video pause to update URL
     const video = getVideoElement();
