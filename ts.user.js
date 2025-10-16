@@ -7,12 +7,11 @@
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
 // @match        https://www.youtube.com/watch*
 // @match        https://www.youtube.com/live*
-// @run-at       document-end
+// @run-at       document-idle
 // @noframes
 // @icon         data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%2272px%22 font-size=%2272px%22>⏲️</text></svg>
 // @grant        GM.getValue
 // @grant        GM.setValue
-// @grant        GM.setClipboard
 // @homepageURL  https://github.com/KamoTimestamps/timekeeper
 // @supportURL   https://github.com/KamoTimestamps/timekeeper/issue
 // @downloadURL  https://raw.githubusercontent.com/KamoTimestamps/timekeeper/main/ts.user.js
@@ -77,49 +76,6 @@
     "getDuration"
   ];
   const PLAYER_METHOD_CHECK_TIMEOUT_MS = 5000;
-  let cachedPlayerElement = null;
-  let lastValidatedPlayer = null;
-
-  function isPlayerConnected(playerElement) {
-    if (!playerElement) {
-      return false;
-    }
-    if (typeof playerElement.isConnected === "boolean") {
-      return playerElement.isConnected;
-    }
-    return document.contains(playerElement);
-  }
-
-  function getCachedPlayerElement() {
-    return isPlayerConnected(cachedPlayerElement) ? cachedPlayerElement : null;
-  }
-
-  function cachePlayerFromDom() {
-    const player = document.getElementById("movie_player");
-    if (player) {
-      if (player !== cachedPlayerElement) {
-        cachedPlayerElement = player;
-        lastValidatedPlayer = null;
-      }
-    } else {
-      cachedPlayerElement = null;
-      lastValidatedPlayer = null;
-    }
-    return getCachedPlayerElement();
-  }
-
-  function clearCachedPlayerState() {
-    cachedPlayerElement = null;
-    lastValidatedPlayer = null;
-  }
-
-  function getValidatedPlayerInstance() {
-    return isPlayerConnected(lastValidatedPlayer) ? lastValidatedPlayer : null;
-  }
-
-  function getPlayerInstanceForActions() {
-    return getValidatedPlayerInstance() || getCachedPlayerElement();
-  }
 
   function hasRequiredPlayerMethods(playerInstance) {
     return !!playerInstance && REQUIRED_PLAYER_METHODS.every(method => typeof playerInstance[method] === "function");
@@ -131,33 +87,17 @@
 
   async function waitForPlayerWithMethods(timeoutMs = PLAYER_METHOD_CHECK_TIMEOUT_MS) {
     const start = Date.now();
-    let playerInstance = getPlayerInstanceForActions();
-
-    if (!isPlayerConnected(playerInstance)) {
-      playerInstance = cachePlayerFromDom();
-    }
-
     while (Date.now() - start < timeoutMs) {
+      const playerInstance = document.getElementById("movie_player");
       if (hasRequiredPlayerMethods(playerInstance)) {
-        cachedPlayerElement = playerInstance;
         return playerInstance;
       }
-
       await new Promise(resolve => setTimeout(resolve, 100));
-
-      if (!isPlayerConnected(playerInstance)) {
-        playerInstance = cachePlayerFromDom();
-      }
     }
-
-    if (hasRequiredPlayerMethods(playerInstance)) {
-      cachedPlayerElement = playerInstance;
-      return playerInstance;
-    }
-
-    const fallbackPlayer = getPlayerInstanceForActions();
-    return hasRequiredPlayerMethods(fallbackPlayer) ? fallbackPlayer : null;
+    return document.getElementById("movie_player") || null;
   }
+
+  let lastValidatedPlayer = null;
 
   // Configuration for timestamp offset
   const OFFSET_KEY = "timestampOffsetSeconds";
@@ -325,12 +265,12 @@
   let pendingSeekTime = null;
 
   function handleClick(e) {
-    const player = getPlayerInstanceForActions();
+    const player = document.getElementById("movie_player");
 
     if (e.target.dataset.time) {
       e.preventDefault();
       const newTime = e.target.dataset.time;
-      if (player && typeof player.seekTo === "function") {
+      if (player) {
         player.seekTo(newTime);
       }
       // Highlight the clicked timestamp immediately
@@ -358,12 +298,12 @@
 
       var newTime = Math.max(0, currTime + increment);
       formatTime(t_link, newTime); // Update the link's display and data-time
-      if (player && typeof player.seekTo === "function") {
+      if (player) {
         pendingSeekTime = newTime;
         if (seekTimeoutId) clearTimeout(seekTimeoutId);
         seekTimeoutId = setTimeout(() => {
           player.seekTo(pendingSeekTime);
-          if (typeof player.getPlayerState === "function" && player.getPlayerState() === 2) {
+          if (player.getPlayerState() === 2){
             document.querySelector(".ytp-play-button").click();
           }
           seekTimeoutId = null;
@@ -409,8 +349,8 @@
 
     // Add click event to the record button
     record.onclick = () => {
-      const player = getPlayerInstanceForActions();
-      if (player && typeof player.getCurrentTime === "function") {
+      const player = document.getElementById("movie_player");
+      if (player) {
         const currentTime = Math.floor(player.getCurrentTime());
         formatTime(a, currentTime);
         updateTimeDifferences();
@@ -600,11 +540,11 @@
     if (!list) return;
     var video = document.querySelector("video");
     var progressBar = document.querySelector(".ytp-progress-bar");
-    var player = getPlayerInstanceForActions();
-    const isLiveStream = player && typeof player.getVideoData === "function" && player.getVideoData().isLive;
+    var player = document.getElementById("movie_player");
 
     // Skip if video isn't ready, progress bar isn't found, or if it's a live stream
-    if (!video || !progressBar || !isFinite(video.duration) || isLiveStream) return;
+    if (!video || !progressBar || !isFinite(video.duration) ||
+        (player && player.getVideoData && player.getVideoData().isLive)) return;
 
     removeSeekbarMarkers();
 
@@ -706,10 +646,8 @@
       console.log(`Exporting timestamps for video ID: ${videoId}`);
     }
 
-    const player = getPlayerInstanceForActions();
-    const videoDuration = player && typeof player.getDuration === "function"
-      ? Math.floor(player.getDuration())
-      : 0;
+    const player = document.getElementById("movie_player");
+    const videoDuration = player ? Math.floor(player.getDuration()) : 0;
 
     const timestamps = Array.from(list.children).map(li => {
       const startLink = li.querySelector('a[data-time]');
@@ -814,7 +752,7 @@
     minimizeBtn = null;
     versionDisplay = null;
 
-    clearCachedPlayerState();
+    lastValidatedPlayer = null;
     removeSeekbarMarkers();
   }
 
@@ -962,7 +900,7 @@
       if (!list) return;
       if (isMouseOverTimestamps) return; // Skip auto-scrolling if the mouse is over the timestamps window
 
-      const playerInstance = getPlayerInstanceForActions();
+      const playerInstance = document.getElementById("movie_player");
       if (!hasRequiredPlayerMethods(playerInstance)) return;
 
       const currentTime = Math.floor(playerInstance.getCurrentTime());
@@ -1250,7 +1188,7 @@
 
     // Enable clicking on the current timestamp to jump to the latest point in the live stream
     timeDisplay.onclick = () => {
-      const playerInstance = getPlayerInstanceForActions();
+      const playerInstance = lastValidatedPlayer || document.getElementById("movie_player");
       if (playerInstance && typeof playerInstance.seekToLiveHead === "function") {
         playerInstance.seekToLiveHead();
       }
@@ -1260,14 +1198,14 @@
     minimizeBtn.classList.add("ytls-minimize-button");
     minimizeBtn.id = "ytls-minimize";
     function updateTime() {
-      const player = getPlayerInstanceForActions();
+      const player = document.getElementById("movie_player");
       const video = document.querySelector("video");
-      if (player && video && typeof player.getCurrentTime === "function") {
+      if (player && video) {
         var t = Math.floor(player.getCurrentTime());
         var h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
 
         // Get video data to check if it's a live stream
-        const isLive = typeof player.getVideoData === "function" && player.getVideoData().isLive;
+        const isLive = player.getVideoData && player.getVideoData().isLive;
 
         // Get all timestamps
         const timestamps = list ? Array.from(list.children).map(li => {
@@ -1314,8 +1252,8 @@
         return;
       }
 
-      const player = getPlayerInstanceForActions();
-      if (player && typeof player.getCurrentTime === "function") {
+      const player = document.getElementById("movie_player");
+      if (player) {
         // Use configuredOffset if available, otherwise default to 0
         const offset = typeof configuredOffset !== 'undefined' ? configuredOffset : 0;
         const currentTime = Math.floor(player.getCurrentTime() + offset);
@@ -2158,7 +2096,7 @@
     const video = document.querySelector("video");
     if (video) {
       video.addEventListener("pause", () => {
-        const playerInstance = getPlayerInstanceForActions();
+        const playerInstance = lastValidatedPlayer || document.getElementById("movie_player");
         if (playerInstance && typeof playerInstance.getCurrentTime === "function") {
           const currentTime = Math.floor(playerInstance.getCurrentTime());
           updateBrowserUrlWithTimestamp(currentTime); // Use helper function
@@ -2194,10 +2132,7 @@
       return;
     }
 
-    clearCachedPlayerState();
-
     await waitForYouTubeReady();
-    cachePlayerFromDom();
     await initializePaneIfNeeded();
 
     // Remove any stray minimized icons or duplicate panes before proceeding
