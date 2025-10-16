@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      2.3.5
+// @version      2.3.6
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @author       Vat5aL, original author (https://openuserjs.org/install/Vat5aL/YouTube_Timestamp_Tool_by_Vat5aL.user.js)
@@ -40,7 +40,37 @@
 
   await waitForYouTubeReady();
 
-  const player = document.getElementById("movie_player");
+  const REQUIRED_PLAYER_METHODS = [
+    "getCurrentTime",
+    "seekTo",
+    "getPlayerState",
+    "seekToLiveHead",
+    "getVideoData",
+    "getDuration"
+  ];
+  const PLAYER_METHOD_CHECK_TIMEOUT_MS = 5000;
+
+  function hasRequiredPlayerMethods(playerInstance) {
+    return !!playerInstance && REQUIRED_PLAYER_METHODS.every(method => typeof playerInstance[method] === "function");
+  }
+
+  function missingPlayerMethods(playerInstance) {
+    return REQUIRED_PLAYER_METHODS.filter(method => typeof playerInstance?.[method] !== "function");
+  }
+
+  async function waitForPlayerWithMethods(timeoutMs = PLAYER_METHOD_CHECK_TIMEOUT_MS) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const playerInstance = document.getElementById("movie_player");
+      if (hasRequiredPlayerMethods(playerInstance)) {
+        return playerInstance;
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return document.getElementById("movie_player") || null;
+  }
+
+  let lastValidatedPlayer = null;
 
   // Configuration for timestamp offset
   const OFFSET_KEY = "timestampOffsetSeconds";
@@ -183,7 +213,7 @@
     e.textContent = formatTimeString(t, videoDuration);
     e.dataset.time = t;
     const vid = location.search.split(/.+v=|&/)[1] || location.href.split(/\/live\/|\/shorts\/|\?|&/)[1];
-    e.href = "https://youtu.be/" + vid + "?t=" + t;
+    e.href = "https://www.youtube.com/watch?v=" + vid + "&t=" + t;
   }
 
   // Helper function to update browser URL with timestamp
@@ -392,13 +422,27 @@
 
   // Helper function to update time differences for timestamps
   function updateTimeDifferences(startIndex = 0) {
+    if (!list || list.querySelector('.ytls-error-message')) {
+      return;
+    }
+
     const items = Array.from(list.children);
     items.forEach((item, index) => {
       const timeDiffSpan = item.querySelector('.time-diff');
       if (timeDiffSpan) {
+        const timeLink = item.querySelector('a[data-time]');
+        if (!timeLink) {
+          timeDiffSpan.textContent = '';
+          return;
+        }
         if (index > 0) {
-          const currentTime = parseInt(item.querySelector('a[data-time]').dataset.time);
-          const prevTime = parseInt(items[index - 1].querySelector('a[data-time]').dataset.time);
+          const currentTime = parseInt(timeLink.dataset.time);
+          const previousLink = items[index - 1].querySelector('a[data-time]');
+          if (!previousLink) {
+            timeDiffSpan.textContent = '';
+            return;
+          }
+          const prevTime = parseInt(previousLink.dataset.time);
           const diff = currentTime - prevTime;
           const sign = diff < 0 ? '-' : '';
           timeDiffSpan.textContent = ` ${sign}${formatTimeString(Math.abs(diff))}`;
@@ -410,13 +454,20 @@
   }
 
   function sortTimestampsAndUpdateDisplay() {
+    if (!list || list.querySelector('.ytls-error-message')) {
+      return;
+    }
+
     const items = Array.from(list.children);
     const sortedItems = items.map(li => {
       const timeLink = li.querySelector('a[data-time]');
+      if (!timeLink) {
+        return null;
+      }
       const time = parseInt(timeLink.dataset.time);
       const guid = li.dataset.guid;
       return { time, guid, element: li };
-    }).sort((a, b) => {
+    }).filter(Boolean).sort((a, b) => {
       // First sort by time
       const timeDiff = a.time - b.time;
       if (timeDiff !== 0) return timeDiff;
@@ -466,13 +517,17 @@
 
     var timestamps = Array.from(list.children).map(li => {
       var startLink = li.querySelector('a[data-time]');
-      var comment = li.querySelector('input').value;
+      if (!startLink) {
+        return null;
+      }
+      var commentInput = li.querySelector('input');
+      var comment = commentInput ? commentInput.value : "";
       var startTime = parseInt(startLink.dataset.time);
       var guid = li.dataset.guid || crypto.randomUUID();
       // Update the element's GUID if it was missing
       if (!li.dataset.guid) li.dataset.guid = guid;
       return { start: startTime, comment: comment, guid: guid };
-    });
+    }).filter(Boolean);
 
     timestamps.forEach(ts => {
       if (ts.start) {
@@ -492,16 +547,25 @@
   }
 
   function saveTimestamps() {
+    if (!list) return;
+    if (list.querySelector('.ytls-error-message')) {
+      return; // Skip saving when displaying an error message
+    }
+
     const videoId = getVideoId();
     if (!videoId) return;
 
     const currentTimestampsFromUI = Array.from(list.children).map(li => {
       const startLink = li.querySelector('a[data-time]');
-      const comment = li.querySelector('input').value;
+      if (!startLink) {
+        return null;
+      }
+      const commentInput = li.querySelector('input');
+      const comment = commentInput ? commentInput.value : '';
       const startTime = parseInt(startLink.dataset.time);
       const guid = li.dataset.guid || crypto.randomUUID(); // Use existing GUID or generate new one
       return { start: startTime, comment: comment, guid: guid };
-    });
+    }).filter(Boolean);
 
     // Sort timestamps from UI just in case, though they should generally be in order.
     currentTimestampsFromUI.sort((a, b) => a.start - b.start);
@@ -524,6 +588,12 @@
   }
 
   async function saveTimestampsAs(format) {
+    if (!list) return;
+    if (list.querySelector('.ytls-error-message')) {
+      alert("Cannot export timestamps while displaying an error message.");
+      return;
+    }
+
     const videoId = getVideoId();
     if (!videoId) return;
 
@@ -548,7 +618,11 @@
 
     const timestamps = Array.from(list.children).map(li => {
       const startLink = li.querySelector('a[data-time]');
-      const comment = li.querySelector('input').value;
+      if (!startLink) {
+        return null;
+      }
+      const commentInput = li.querySelector('input');
+      const comment = commentInput ? commentInput.value : '';
       const startTime = parseInt(startLink.dataset.time);
       const guid = li.dataset.guid || crypto.randomUUID(); // Use existing GUID or generate new one
       return {
@@ -556,7 +630,7 @@
         comment: comment,
         guid: guid
       };
-    });
+    }).filter(Boolean);
 
     const timestampSuffix = getTimestampSuffix();
 
@@ -585,52 +659,120 @@
     }
   }
 
-  function loadTimestamps() {
-    console.log(`loadTimestamps start`);
-    const videoId = getVideoId();
-    if (!videoId) return;
-    console.log(`loadTimestamps for ${videoId}`);
+  function displayPaneError(message) {
+    if (!pane || !list) {
+      console.error("Timekeeper error:", message);
+      return;
+    }
 
-    loadFromIndexedDB(videoId).then(dbTimestamps => {
+    pane.classList.remove("minimized");
+    clearTimestampsDisplay();
+
+    const errorItem = document.createElement("li");
+    errorItem.textContent = message;
+    errorItem.classList.add("ytls-error-message");
+    errorItem.style.color = "#ff6b6b";
+    errorItem.style.fontWeight = "bold";
+    errorItem.style.padding = "8px";
+    errorItem.style.background = "rgba(255, 0, 0, 0.1)";
+
+    list.appendChild(errorItem);
+    updateSeekbarMarkers();
+  }
+
+  async function validatePlayerAndVideoId() {
+    const videoId = getVideoId();
+    if (!videoId) {
+      lastValidatedPlayer = null;
+      return {
+        ok: false,
+        message: "Timekeeper cannot determine the current video ID. Please refresh the page or open a standard YouTube watch URL."
+      };
+    }
+
+    const playerInstance = await waitForPlayerWithMethods();
+    if (!hasRequiredPlayerMethods(playerInstance)) {
+      const missingMethods = missingPlayerMethods(playerInstance);
+      const missingDetail = missingMethods.length ? ` Missing methods: ${missingMethods.join(", ")}.` : "";
+      const baseMessage = playerInstance
+        ? "Timekeeper cannot access the YouTube player API."
+        : "Timekeeper cannot find the YouTube player on this page.";
+      lastValidatedPlayer = null;
+      return {
+        ok: false,
+        message: `${baseMessage}${missingDetail} Try refreshing once playback is ready.`
+      };
+    }
+
+    lastValidatedPlayer = playerInstance;
+
+    return {
+      ok: true,
+      player: playerInstance,
+      videoId
+    };
+  }
+
+  async function loadTimestamps() {
+    try {
+      const validation = await validatePlayerAndVideoId();
+      if (!validation.ok) {
+        displayPaneError(validation.message);
+        return;
+      }
+
+      const { videoId } = validation;
+      console.log(`loadTimestamps for ${videoId}`);
+
       let finalTimestampsToDisplay = [];
-      if (dbTimestamps) {
-        // Ensure all timestamps from DB have GUIDs
-        finalTimestampsToDisplay = dbTimestamps.map(ts => ({
-          ...ts,
-          guid: ts.guid || crypto.randomUUID()
-        }));
-        console.log(`Loaded timestamps from IndexedDB for ${videoId}`);
-      } else {
-        console.log(`No timestamps found in IndexedDB for ${videoId}`);
-        // Attempt to load from localStorage as a fallback (for migration)
-        const savedDataRaw = localStorage.getItem(`ytls-${videoId}`);
-        if (savedDataRaw) {
-          console.log(`Found data in localStorage for ${videoId}, attempting to migrate.`);
-          try {
-            let parsedData = JSON.parse(savedDataRaw);
-            if (parsedData && parsedData.video_id === videoId && Array.isArray(parsedData.timestamps)) {
-              finalTimestampsToDisplay = parsedData.timestamps.filter(ts =>
-                ts && typeof ts.start === 'number' && typeof ts.comment === 'string'
-              ).map(ts => ({
-                ...ts,
-                guid: ts.guid || crypto.randomUUID() // Ensure each timestamp has a GUID
-              }));
-              // Save to IndexedDB and remove from localStorage after successful migration
-              if (finalTimestampsToDisplay.length > 0) {
-                saveToIndexedDB(videoId, finalTimestampsToDisplay)
-                  .then(() => {
-                    console.log(`Successfully migrated localStorage data to IndexedDB for ${videoId}`);
-                    localStorage.removeItem(`ytls-${videoId}`); // Remove from localStorage after migration
-                  })
-                  .catch(err => console.error(`Error migrating localStorage to IndexedDB for ${videoId}:`, err));
+
+      try {
+        const dbTimestamps = await loadFromIndexedDB(videoId);
+        if (dbTimestamps) {
+          // Ensure all timestamps from DB have GUIDs
+          finalTimestampsToDisplay = dbTimestamps.map(ts => ({
+            ...ts,
+            guid: ts.guid || crypto.randomUUID()
+          }));
+          console.log(`Loaded timestamps from IndexedDB for ${videoId}`);
+        } else {
+          console.log(`No timestamps found in IndexedDB for ${videoId}`);
+          // Attempt to load from localStorage as a fallback (for migration)
+          const savedDataRaw = localStorage.getItem(`ytls-${videoId}`);
+          if (savedDataRaw) {
+            console.log(`Found data in localStorage for ${videoId}, attempting to migrate.`);
+            try {
+              let parsedData = JSON.parse(savedDataRaw);
+              if (parsedData && parsedData.video_id === videoId && Array.isArray(parsedData.timestamps)) {
+                finalTimestampsToDisplay = parsedData.timestamps.filter(ts =>
+                  ts && typeof ts.start === 'number' && typeof ts.comment === 'string'
+                ).map(ts => ({
+                  ...ts,
+                  guid: ts.guid || crypto.randomUUID() // Ensure each timestamp has a GUID
+                }));
+                // Save to IndexedDB and remove from localStorage after successful migration
+                if (finalTimestampsToDisplay.length > 0) {
+                  saveToIndexedDB(videoId, finalTimestampsToDisplay)
+                    .then(() => {
+                      console.log(`Successfully migrated localStorage data to IndexedDB for ${videoId}`);
+                      localStorage.removeItem(`ytls-${videoId}`); // Remove from localStorage after migration
+                    })
+                    .catch(err => console.error(`Error migrating localStorage to IndexedDB for ${videoId}:`, err));
+                }
+              } else {
+                console.warn(`localStorage data for ${videoId} is not in the expected format. Ignoring.`);
               }
-            } else {
-              console.warn(`localStorage data for ${videoId} is not in the expected format. Ignoring.`);
+            } catch (e) {
+              console.error("Failed to parse localStorage data during migration:", e);
             }
-          } catch (e) {
-            console.error("Failed to parse localStorage data during migration:", e);
           }
         }
+      } catch (dbError) {
+        console.error(`Failed to load timestamps from IndexedDB for ${videoId}:`, dbError);
+        pane.classList.add("minimized");
+        clearTimestampsDisplay();
+        updateSeekbarMarkers();
+        return;
       }
 
       if (finalTimestampsToDisplay.length > 0) {
@@ -647,12 +789,10 @@
         clearTimestampsDisplay(); // Ensure UI is cleared if no timestamps are found
         updateSeekbarMarkers(); // Ensure seekbar markers are cleared
       }
-    }).catch(err => {
-      console.error(`Failed to load timestamps from IndexedDB for ${videoId}:`, err);
-      pane.classList.add("minimized");
-      clearTimestampsDisplay();
-      updateSeekbarMarkers();
-    });
+    } catch (err) {
+      console.error("Unexpected error while loading timestamps:", err);
+      displayPaneError("Timekeeper encountered an unexpected error while loading timestamps. Check the console for details.");
+    }
   }
 
   function getVideoId() {
@@ -674,20 +814,26 @@
   }
 
   function highlightNearestTimestamp() {
-    const player = document.getElementById("movie_player");
     const video = document.querySelector("video");
     if (!video) return;
 
     video.addEventListener("timeupdate", () => {
       if (isMouseOverTimestamps) return; // Skip auto-scrolling if the mouse is over the timestamps window
 
-      const currentTime = Math.floor(player.getCurrentTime());
+      const playerInstance = document.getElementById("movie_player");
+      if (!hasRequiredPlayerMethods(playerInstance)) return;
+
+      const currentTime = Math.floor(playerInstance.getCurrentTime());
       let nearestTimestamp = null;
       let smallestDifference = Infinity;
 
       // Find the nearest timestamp
       Array.from(list.children).forEach(li => {
-        const timestamp = parseInt(li.querySelector('a[data-time]').dataset.time);
+        const timeLink = li.querySelector('a[data-time]');
+        if (!timeLink) {
+          return;
+        }
+        const timestamp = parseInt(timeLink.dataset.time);
         const difference = Math.abs(currentTime - timestamp);
         if (difference < smallestDifference) {
           smallestDifference = difference;
@@ -954,7 +1100,10 @@
 
     // Enable clicking on the current timestamp to jump to the latest point in the live stream
     timeDisplay.onclick = () => {
-      player.seekToLiveHead();
+      const playerInstance = lastValidatedPlayer || document.getElementById("movie_player");
+      if (playerInstance && typeof playerInstance.seekToLiveHead === "function") {
+        playerInstance.seekToLiveHead();
+      }
     };
 
     minimizeBtn.textContent = "▶️";
@@ -1008,6 +1157,10 @@
 
     // Define handlers for main buttons
     const handleAddTimestamp = () => {
+      if (!list || list.querySelector('.ytls-error-message')) {
+        return;
+      }
+
       const player = document.getElementById("movie_player");
       if (player) {
         // Use configuredOffset if available, otherwise default to 0
@@ -1023,17 +1176,26 @@
     };
 
     const handleCopyTimestamps = function (e) { // Accept event parameter to check Ctrl key
+      if (!list || list.querySelector('.ytls-error-message')) {
+        this.textContent = "❌";
+        setTimeout(() => { this.textContent = "📋"; }, 2000);
+        return;
+      }
+
       const video = document.querySelector("video");
       const videoDuration = video ? Math.floor(video.duration) : 0;
 
       const timestamps = Array.from(list.children).map(li => {
         const startLink = li.querySelector('a[data-time]');
+        if (!startLink) {
+          return null;
+        }
         const commentInput = li.querySelector('input');
         const comment = commentInput ? commentInput.value : '';
         const startTime = parseInt(startLink.dataset.time);
         const guid = li.dataset.guid || crypto.randomUUID(); // Use existing GUID or generate new one
         return { start: startTime, comment: comment, guid: guid };
-      });
+      }).filter(Boolean);
 
       if (timestamps.length === 0) {
         this.textContent = "❌";
@@ -1835,17 +1997,19 @@
 
     pane.append(header, content, style); // Append header, then content, then style to the pane
     document.body.appendChild(pane);
-    loadTimestamps();
+    await loadTimestamps();
     highlightNearestTimestamp();
     updateSeekbarMarkers();
 
     // Add event listener for video pause to update URL
     const video = document.querySelector("video");
-    const player = document.getElementById("movie_player");
     if (video) {
       video.addEventListener("pause", () => {
-        const currentTime = Math.floor(player.getCurrentTime());
-        updateBrowserUrlWithTimestamp(currentTime); // Use helper function
+        const playerInstance = lastValidatedPlayer || document.getElementById("movie_player");
+        if (playerInstance && typeof playerInstance.getCurrentTime === "function") {
+          const currentTime = Math.floor(playerInstance.getCurrentTime());
+          updateBrowserUrlWithTimestamp(currentTime); // Use helper function
+        }
       });
       // Remove timestamp from URL during playback
       video.addEventListener("play", () => {
@@ -1871,7 +2035,7 @@
   }
 
   // Add a function to handle URL changes
-  const handleUrlChange = () => {
+  const handleUrlChange = async () => {
     // Remove any stray minimized icons or duplicate panes before proceeding
     document.querySelectorAll("#ytls-pane").forEach((el, idx) => {
       if (idx > 0) el.remove();
@@ -1888,7 +2052,7 @@
 
     // loadTimestamps will get the videoId itself, load data from IndexedDB (migrating from localStorage if needed),
     // and manage pane visibility (minimized or not) based on whether timestamps are found.
-    loadTimestamps();
+    await loadTimestamps();
 
     // highlightNearestTimestamp sets up listeners on the video element if present
     // for continuous highlighting of the nearest timestamp.
@@ -1898,5 +2062,5 @@
   window.addEventListener("yt-navigate-finish", handleUrlChange);
 
   // Initial call to handle the current URL
-  handleUrlChange();
+  await handleUrlChange();
 })();
