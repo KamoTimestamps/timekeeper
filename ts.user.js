@@ -24,6 +24,33 @@
     return; // Don't run in iframes
   }
 
+  const SUPPORTED_PATH_PREFIXES = ["/watch", "/live"];
+
+  function isSupportedUrl(url = window.location.href) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.origin !== "https://www.youtube.com") {
+        return false;
+      }
+      return SUPPORTED_PATH_PREFIXES.some(prefix => {
+        return parsed.pathname === prefix || parsed.pathname.startsWith(`${prefix}/`);
+      });
+    } catch (err) {
+      console.error("Timekeeper failed to parse URL for support check:", err);
+      return false;
+    }
+  }
+
+  let pane = null;
+  let header = null;
+  let list = null;
+  let btns = null;
+  let timeDisplay = null;
+  let style = null;
+  let minimizeBtn = null;
+  let versionDisplay = null;
+  let timeUpdateIntervalId = null;
+
   // Wait for YouTube interface to load completely
   async function waitForYouTubeReady() {
     // Wait for the main video element and controls to be present
@@ -37,8 +64,6 @@
     // Wait a little extra to ensure dynamic elements are ready
     await new Promise(r => setTimeout(r, 200));
   }
-
-  await waitForYouTubeReady();
 
   const REQUIRED_PLAYER_METHODS = [
     "getCurrentTime",
@@ -86,6 +111,9 @@
   // Listen for messages from other tabs
   channel.onmessage = (event) => {
     console.log('Received message from another tab:', event.data);
+    if (!isSupportedUrl() || !list || !pane) {
+      return;
+    }
     if (event.data && event.data.type === 'timestamps_updated' && event.data.videoId === getVideoId()) {
       console.log('Debouncing timestamp load due to external update for video:', event.data.videoId);
       clearTimeout(loadTimeoutId); // Clear existing load timeout
@@ -186,6 +214,7 @@
   }
 
   function clearTimestampsDisplay() {
+    if (!list) return;
     while (list.firstChild) { // Clear the existing timestamps
       list.removeChild(list.firstChild);
     }
@@ -296,6 +325,7 @@
   }
 
   function addTimestamp(e, t, doNotSave = false, guid = null) {
+    if (!list) return null;
     // Ensure timestamp is not negative. Usually occurs for pre-live videos.
     e = Math.max(0, e);
 
@@ -493,6 +523,7 @@
   }
 
   function updateScroll() {
+    if (!list) return;
     var tsCount = list.children.length;
     if (tsCount > 2) {
       list.style.maxHeight = "200px";
@@ -504,6 +535,7 @@
   }
 
   function updateSeekbarMarkers() {
+    if (!list) return;
     var video = document.querySelector("video");
     var progressBar = document.querySelector(".ytp-progress-bar");
     var player = document.getElementById("movie_player");
@@ -512,8 +544,7 @@
     if (!video || !progressBar || !isFinite(video.duration) ||
         (player && player.getVideoData && player.getVideoData().isLive)) return;
 
-    var existingMarkers = document.querySelectorAll(".ytls-marker");
-    existingMarkers.forEach(marker => marker.remove());
+    removeSeekbarMarkers();
 
     var timestamps = Array.from(list.children).map(li => {
       var startLink = li.querySelector('a[data-time]');
@@ -680,6 +711,49 @@
     updateSeekbarMarkers();
   }
 
+  function removeSeekbarMarkers() {
+    document.querySelectorAll(".ytls-marker").forEach(marker => marker.remove());
+  }
+
+  function unloadTimekeeper() {
+    if (saveTimeoutId) {
+      clearTimeout(saveTimeoutId);
+      saveTimeoutId = null;
+    }
+    if (loadTimeoutId) {
+      clearTimeout(loadTimeoutId);
+      loadTimeoutId = null;
+    }
+    if (timeUpdateIntervalId) {
+      clearInterval(timeUpdateIntervalId);
+      timeUpdateIntervalId = null;
+    }
+
+    if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
+      document.body.removeChild(settingsModalInstance);
+    }
+    settingsModalInstance = null;
+    settingsCogButtonElement = null;
+    isMouseOverTimestamps = false;
+
+    if (pane && pane.parentNode) {
+      pane.remove();
+    }
+
+    clearTimestampsDisplay();
+    pane = null;
+    header = null;
+    list = null;
+    btns = null;
+    timeDisplay = null;
+    style = null;
+    minimizeBtn = null;
+    versionDisplay = null;
+
+    lastValidatedPlayer = null;
+    removeSeekbarMarkers();
+  }
+
   async function validatePlayerAndVideoId() {
     const videoId = getVideoId();
     if (!videoId) {
@@ -714,6 +788,9 @@
   }
 
   async function loadTimestamps() {
+    if (!pane || !list) {
+      return;
+    }
     try {
       const validation = await validatePlayerAndVideoId();
       if (!validation.ok) {
@@ -815,9 +892,10 @@
 
   function highlightNearestTimestamp() {
     const video = document.querySelector("video");
-    if (!video) return;
+    if (!video || !list) return;
 
     video.addEventListener("timeupdate", () => {
+      if (!list) return;
       if (isMouseOverTimestamps) return; // Skip auto-scrolling if the mouse is over the timestamps window
 
       const playerInstance = document.getElementById("movie_player");
@@ -916,6 +994,10 @@
   }
 
   function processImportedData(contentString) {
+    if (!list) {
+      console.warn("Timekeeper UI is not initialized; cannot import timestamps.");
+      return;
+    }
     let processedSuccessfully = false;
     // Try parsing as JSON first
     try {
@@ -1063,18 +1145,22 @@
     });
   }
 
-  if (!document.querySelector("#ytls-pane")) {
+  async function initializePaneIfNeeded() {
+    if (pane && document.body.contains(pane)) {
+      return;
+    }
+
     // Remove any stray minimized icons before creating a new pane
     document.querySelectorAll("#ytls-pane").forEach(el => el.remove());
 
-    var pane = document.createElement("div"),
-      header = document.createElement("div"),
-      list = document.createElement("ul"),
-      btns = document.createElement("div"),
-      timeDisplay = document.createElement("span"),
-      style = document.createElement("style"),
-      minimizeBtn = document.createElement("button"),
-      versionDisplay = document.createElement("span");
+    pane = document.createElement("div");
+    header = document.createElement("div");
+    list = document.createElement("ul");
+    btns = document.createElement("div");
+    timeDisplay = document.createElement("span");
+    style = document.createElement("style");
+    minimizeBtn = document.createElement("button");
+    versionDisplay = document.createElement("span");
 
     // Add event listeners to `list` after it is initialized
     list.addEventListener("mouseenter", () => {
@@ -1120,10 +1206,10 @@
         const isLive = player.getVideoData && player.getVideoData().isLive;
 
         // Get all timestamps
-        const timestamps = Array.from(list.children).map(li => {
+        const timestamps = list ? Array.from(list.children).map(li => {
           const timeLink = li.querySelector('a[data-time]');
           return timeLink ? parseFloat(timeLink.getAttribute('data-time')) : 0;
-        });
+        }) : [];
 
         let timestampDisplay = "";
         if (timestamps.length > 0) {  // Only calculate and show rate if there are timestamps
@@ -1152,7 +1238,10 @@
       }
     }
     updateTime();
-    const timeUpdateInterval = setInterval(updateTime, 1000);
+    if (timeUpdateIntervalId) {
+      clearInterval(timeUpdateIntervalId);
+    }
+    timeUpdateIntervalId = setInterval(updateTime, 1000);
     btns.id = "ytls-buttons";
 
     // Define handlers for main buttons
@@ -1853,6 +1942,7 @@
     // Load pane position from localStorage
     const panePositionKey = "ytls-pane-position";
     function loadPanePosition() {
+      if (!pane) return;
       const pos = localStorage.getItem(panePositionKey);
       if (pos) {
         try {
@@ -1867,6 +1957,7 @@
       }
     }
     function savePanePosition() {
+      if (!pane) return;
       const style = pane.style;
       localStorage.setItem(panePositionKey, JSON.stringify({
         left: style.left,
@@ -1964,6 +2055,7 @@
 
     // Ensure the timestamps window is fully onscreen after resizing
     window.addEventListener("resize", () => {
+      if (!pane) return;
       const rect = pane.getBoundingClientRect();
       const windowWidth = window.innerWidth;
       const windowHeight = window.innerHeight;
@@ -1995,11 +2087,8 @@
     var content = document.createElement("div"); content.id = "ytls-content";
     content.append(list, btns); // list and btns are now directly in content; header is separate
 
-    pane.append(header, content, style); // Append header, then content, then style to the pane
-    document.body.appendChild(pane);
-    await loadTimestamps();
-    highlightNearestTimestamp();
-    updateSeekbarMarkers();
+  pane.append(header, content, style); // Append header, then content, then style to the pane
+  document.body.appendChild(pane);
 
     // Add event listener for video pause to update URL
     const video = document.querySelector("video");
@@ -2035,7 +2124,15 @@
   }
 
   // Add a function to handle URL changes
-  const handleUrlChange = async () => {
+  async function handleUrlChange() {
+    if (!isSupportedUrl()) {
+      unloadTimekeeper();
+      return;
+    }
+
+    await waitForYouTubeReady();
+    await initializePaneIfNeeded();
+
     // Remove any stray minimized icons or duplicate panes before proceeding
     document.querySelectorAll("#ytls-pane").forEach((el, idx) => {
       if (idx > 0) el.remove();
@@ -2057,7 +2154,7 @@
     // highlightNearestTimestamp sets up listeners on the video element if present
     // for continuous highlighting of the nearest timestamp.
     highlightNearestTimestamp();
-  };
+  }
 
   window.addEventListener("yt-navigate-finish", handleUrlChange);
 
