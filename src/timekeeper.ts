@@ -299,65 +299,6 @@ declare const GM_info: {
     }
   };
 
-  // Function to calculate SHA-256 checksum for a string using Web Crypto API
-  async function calculateSHA256(str) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(str);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer)); // convert buffer to byte array
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join(''); // convert bytes to hex string
-    return hashHex;
-  }
-
-  // SHA-256 checksums of unlisted video IDs
-  const unlistedVideos = [
-    "0f56203c7e6752d8eb5841402ce4d8d92911e34bcccf659b55b00b8c4984e8e2",
-    "4d71f8bfd4e8e313a04f8dfa02e193555b996381b398d90b6b57812a634cbb38",
-    "79946442e52bb1a58c403abf0afad9b100f1138564a27f7317be7b60c9414de5",
-    "e0724969699f84ed462938ffa8ee400ca1618036ef8eba63c9144afc58db426f",
-    "ea6a60748c857f61b57f4674b17df30d8bb45ad8a4073dceb69eec5e87ab0518",
-    "74a37dc5af3e3ef371407bfe11c15d335666cf247eda2089a0bdcce087aae222",
-    "d4b2c0477a4064d3df5389751bb94a417b52acdcf9001fdecbaf8cf9600b1709",
-    "e9c2da2a44cd011c8a8f0304a54918658e04285f172313c4f4c68a0bde2dcd85",
-    "2e65c921f773133a58e8e230aca54b935e11dcf131371fcde7871787af170be6",
-    "d321d25925cda8542c75bb698d1d5024d59befde0c2c18c174c2eda4f9d0222b",
-    "336e7f9a2723fc3f24722a686fc5e15a45185bdfda7f844389fb70784e109fdb",
-    "8a56bf2876f2e16feb6009c2638f821dc4e053e0d6169eae1b0ae91161ad5b97",
-    "e121e1c02c691df273e965d9dfb82aac880f8b26fde816f722d825f1c279db39",
-    "590bd83ca5f5f6e3871f0f96136bd23721aac6e4d2be67acf69a6c269f38e7f3",
-    "c4dd9fdf15af44255e939607f373977d4b59c583690e8747b437a3443887c83b",
-    "66c0422eadb640dadb3abb1de3d07dcfa5f58e5f134ce1b7278f04fdf5be39fd",
-    "0df446f1832be948120e1d86034fba90d58b1c4c445e85e91ebbe80d65e9e702",
-    "ec3a5466558bf18f3541ddfa57e3f7a278070debdae4ba8aad757230c6dbfb93",
-    "6b65b77895ded8a274691207787ee3cd543ab0556c07f2f420783de07b1de26c",
-    "9139db27a4fade29cca1ffc53573f89aa9fa6cffe08c3487cab8db1cbd7bb1ea",
-    "a6437fd71ac65eb1fa0c4eac39433be00aec45ff7fd64976697f35e7c920094b",
-    "4bf77ad4863b4dd22cd59415cc85af3cebbdbfeb2637c8b58cfbd2015ef8bb7b",
-    "2947f746580463d08ccd57e41a35925376a4bde0f78dfcde940295f04a48c41b",
-    "9bd7e4a54cdd6fd1bce97ff2ac14f272cc5c7b44165a61320efd939247c878fd",
-    "02efb0ecb86135a382490d9ebf5fb5c99d4b701afc4a55dfe4d69121712e2c10",
-    "d4d44d5f0c285df5d70ce6e214370857eb09c0f0d82ebb9959f30e53277362c3",
-  ];
-
-  const membersOnlyVideos = [
-    '6qRwsGJXV2k',
-    '7tq1YGVdPx4',
-    '7xpy9DhEdDo',
-    'DDMh3FTUAGA',
-    'dZSuq11ChGk',
-    'eGwpa2OmQMY',
-    'GQ89hSaSff4',
-    'I6xrkDABPw4',
-    'J8Da7DgGgtM',
-    'N1dFWp2rdvo',
-    'QYlDf09X4FE',
-    'scnoaETm-Bc',
-    'teWSxSxIws0',
-    'ttayh3dZXTk',
-    'vh2Kb-DFkY0',
-    'YT0AahfOhYg'
-  ];
-
   // The user can configure 'timestampOffsetSeconds' in ViolentMonkey's script values.
   // A positive value will make it after current time, negative before.
   let configuredOffset = await GM.getValue<number>(OFFSET_KEY);
@@ -377,6 +318,7 @@ declare const GM_info: {
   let isMouseOverTimestamps = false; // Default to false
   let settingsModalInstance: HTMLDivElement | null = null; // To keep a reference to the settings modal
   let settingsCogButtonElement: HTMLButtonElement | null = null; // To keep a reference to the settings cog button
+  let currentLoadedVideoId: string | null = null; // Track the currently loaded video to prevent duplicate loads
 
   type TimestampRecord = {
     start: number;
@@ -427,6 +369,22 @@ declare const GM_info: {
     return !!value && Number.isFinite(value.start) && typeof value.comment === "string" && typeof value.guid === "string";
   }
 
+  // Helper function to build YouTube URL with timestamp parameter
+  function buildYouTubeUrlWithTimestamp(timeInSeconds: number, currentUrl: string = window.location.href): string {
+    // Try to reuse the original URL structure
+    try {
+      const url = new URL(currentUrl);
+      url.searchParams.set('t', `${timeInSeconds}s`);
+      return url.toString();
+    } catch {
+      // Fallback if URL parsing fails: extract video ID and build from scratch
+      const vid = currentUrl.search(/[?&]v=/) >= 0
+        ? currentUrl.split(/[?&]v=/)[1].split(/&/)[0]
+        : currentUrl.split(/\/live\/|\/shorts\/|\?|&/)[1];
+      return `https://www.youtube.com/watch?v=${vid}&t=${timeInSeconds}s`;
+    }
+  }
+
   // Update existing calls to formatTimeString to pass video duration
   function formatTime(anchor: HTMLAnchorElement, timeInSeconds: number) {
     const video = document.querySelector<HTMLVideoElement>("video");
@@ -434,21 +392,7 @@ declare const GM_info: {
     const videoDuration = rawDuration && Number.isFinite(rawDuration) ? Math.floor(rawDuration) : 0;
     anchor.textContent = formatTimeString(timeInSeconds, videoDuration);
     anchor.dataset.time = String(timeInSeconds);
-    const vid = location.search.split(/.+v=|&/)[1] || location.href.split(/\/live\/|\/shorts\/|\?|&/)[1];
-    anchor.href = `https://www.youtube.com/watch?v=${vid}&t=${timeInSeconds}`;
-  }
-
-  // Helper function to update browser URL with timestamp
-  function updateBrowserUrlWithTimestamp(timeInSeconds) {
-    const pathname = window.location.pathname;
-    const search = window.location.search;
-    const isValidPath = (pathname.startsWith('/watch') && search != "") || pathname.startsWith('/live/');
-    if (!isValidPath) {
-      return;
-    }
-    const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.set('t', `${timeInSeconds}s`);
-    history.replaceState({}, '', currentUrl.toString()); // Use replaceState to avoid adding a new history entry
+    anchor.href = buildYouTubeUrlWithTimestamp(timeInSeconds, window.location.href);
   }
 
   // Debounce state for seeking
@@ -509,10 +453,6 @@ declare const GM_info: {
       seekTimeoutId = setTimeout(() => {
         if (pendingSeekTime !== null) {
           seekToCompat(pendingSeekTime);
-        }
-        if (getPlayerStateCompat() === 2) {
-          const playButton = document.querySelector<HTMLButtonElement>(".ytp-play-button");
-          playButton?.click();
         }
         seekTimeoutId = null;
         pendingSeekTime = null;
@@ -696,7 +636,7 @@ declare const GM_info: {
     updateScroll();
     updateSeekbarMarkers();
     if (!doNotSave) {
-      saveTimestamps();
+      debouncedSaveTimestamps();
     }
     return commentInput;
   }
@@ -895,16 +835,15 @@ declare const GM_info: {
       return;
     } else {
       // Save UI timestamps directly to IndexedDB
-      log(`Timestamps changed: Saving ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`);
       saveToIndexedDB(videoId, currentTimestampsFromUI)
-        .then(() => log(`Successfully saved timestamps for ${videoId} to IndexedDB`))
+        .then(() => log(`Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`))
         .catch(err => log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, 'error'));
       // Notify other tabs about the update
       channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
   }
 
-  // Debounced save function that waits 250ms after last change before saving
+  // Debounced save function that waits after last change before saving
   function debouncedSaveTimestamps() {
     if (saveTimeoutId) {
       clearTimeout(saveTimeoutId);
@@ -913,7 +852,7 @@ declare const GM_info: {
       log('Timestamps changed: Executing debounced save');
       saveTimestamps();
       saveTimeoutId = null;
-    }, 250);
+    }, 1000);
   }
 
   async function saveTimestampsAs(format) {
@@ -926,21 +865,7 @@ declare const GM_info: {
     const videoId = getVideoId();
     if (!videoId) return;
 
-    const hashedVideoId = await calculateSHA256(videoId);
-    const isUnlisted = unlistedVideos.includes(hashedVideoId);
-    const isMembersOnly = membersOnlyVideos.includes(videoId); // Direct check for members-only
-
-    if (isUnlisted || isMembersOnly) {
-      const videoType = isUnlisted && isMembersOnly ? "unlisted and members-only" : isUnlisted ? "unlisted" : "members-only";
-      const userChoice = await showRestrictedExportConfirmationModal(1, videoType);
-      if (!userChoice) {
-        alert("Export cancelled by user.");
-        return;
-      }
-      log(`User confirmed export for ${videoType} video ID: ${videoId}`);
-    } else {
-      log(`Exporting timestamps for video ID: ${videoId}`);
-    }
+    log(`Exporting timestamps for video ID: ${videoId}`);
 
     const videoDuration = Math.floor(getDurationCompat());
 
@@ -1037,6 +962,7 @@ declare const GM_info: {
     settingsModalInstance = null;
     settingsCogButtonElement = null;
     isMouseOverTimestamps = false;
+    currentLoadedVideoId = null;
 
     if (pane && pane.parentNode) {
       pane.remove();
@@ -1102,7 +1028,6 @@ declare const GM_info: {
       }
 
       const { videoId } = validation;
-      log(`loadTimestamps for ${videoId}`);
 
       let finalTimestampsToDisplay = [];
 
@@ -1114,7 +1039,7 @@ declare const GM_info: {
             ...ts,
             guid: ts.guid || crypto.randomUUID()
           }));
-          log(`Loaded timestamps from IndexedDB for ${videoId}`);
+          log(`Loaded ${finalTimestampsToDisplay.length} timestamps from IndexedDB for ${videoId}`);
         } else {
           log(`No timestamps found in IndexedDB for ${videoId}`);
           // Attempt to load from localStorage as a fallback (for migration)
@@ -1191,11 +1116,12 @@ declare const GM_info: {
     return null;
   }
 
-  function highlightNearestTimestamp() {
+  function setupVideoEventListeners() {
     const video = getVideoElement();
-    if (!video || !list) return;
+    if (!video) return;
 
-    video.addEventListener("timeupdate", () => {
+    // Handler for timeupdate: highlight nearest timestamp
+    const handleTimeUpdate = () => {
       if (!list) return;
       if (isMouseOverTimestamps) return; // Skip auto-scrolling if the mouse is over the timestamps window
 
@@ -1235,7 +1161,15 @@ declare const GM_info: {
         nearestTimestamp.style.background = "rgba(0, 128, 255, 0.2)"; // Highlight nearest timestamp
         nearestTimestamp.scrollIntoView({ behavior: "smooth", block: "center" }); // Scroll to it
       }
-    });
+    };
+
+    // Handler for pause: no URL updates (removed)
+    const handlePause = () => {
+      // URL updates disabled
+    };
+
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    video.addEventListener("pause", handlePause);
   }
 
   // === IndexedDB Helper Functions ===
@@ -1478,65 +1412,6 @@ declare const GM_info: {
     }
   }
 
-  // Helper function to show confirmation modal for exporting restricted videos
-  async function showRestrictedExportConfirmationModal(restrictedCount, videoType) {
-    return new Promise((resolve) => {
-      const modalId = "ytls-restricted-export-confirm-modal";
-      // Remove existing modal if any
-      const existingModal = document.getElementById(modalId);
-      if (existingModal) {
-        existingModal.remove();
-      }
-
-      const modal = document.createElement("div");
-      modal.id = modalId;
-      modal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#2c2c2c;padding:25px;border-radius:12px;z-index:10002;color:white;text-align:center;width:380px;box-shadow:0 4px 15px rgba(0,0,0,0.2);border:1px solid #444;";
-
-      const message = document.createElement("p");
-      message.textContent = `This export includes ${restrictedCount} video(s) marked as ${videoType}. Do you want to include their data in the export?`;
-      message.style = "margin-bottom:20px;font-size:16px;line-height:1.5;";
-
-      const buttonContainer = document.createElement("div");
-      buttonContainer.style = "display:flex;justify-content:space-around;gap:15px;";
-
-      const yesButton = document.createElement("button");
-      yesButton.textContent = "Yes, Include";
-      yesButton.style = "background:#4CAF50;color:white;padding:12px 22px;border:none;border-radius:8px;cursor:pointer;font-size:15px;flex-grow:1;";
-      yesButton.onmouseover = () => yesButton.style.background = "#45a049";
-      yesButton.onmouseout = () => yesButton.style.background = "#4CAF50";
-      yesButton.onclick = () => {
-        modal.classList.add("fade-out");
-        setTimeout(() => {
-          if (document.body.contains(modal)) {
-            document.body.removeChild(modal);
-          }
-          resolve(true); // User chose to include
-        }, 300); // Match animation duration
-      };
-
-      const noButton = document.createElement("button");
-      noButton.textContent = "No, Exclude";
-      noButton.style = "background:#f44336;color:white;padding:12px 22px;border:none;border-radius:8px;cursor:pointer;font-size:15px;flex-grow:1;";
-      noButton.onmouseover = () => noButton.style.background = "#e53935";
-      noButton.onmouseout = () => noButton.style.background = "#f44336";
-      noButton.onclick = () => {
-        modal.classList.add("fade-out");
-        setTimeout(() => {
-          if (document.body.contains(modal)) {
-            document.body.removeChild(modal);
-          }
-          resolve(false); // User chose to exclude
-        }, 300); // Match animation duration
-      };
-
-      buttonContainer.appendChild(yesButton);
-      buttonContainer.appendChild(noButton);
-
-      modal.appendChild(message);
-      modal.appendChild(buttonContainer);
-      document.body.appendChild(modal);
-    });
-  }
 
   async function initializePaneIfNeeded() {
     if (pane && document.body.contains(pane)) {
@@ -1978,62 +1853,11 @@ declare const GM_info: {
 
       try {
         const allTimestamps = await getAllFromIndexedDB(STORE_NAME);
-        let restrictedCount = 0;
-        let isUnlistedRestrictedFound = false;
-        let isMembersOnlyRestrictedFound = false;
-        let includeRestricted = false; // Default to not including restricted data
 
-        // First loop: Count restricted videos and determine their types
-        for (const videoData of allTimestamps) {
-          if (videoData && typeof (videoData as any).video_id === 'string') {
-            const videoIdHash = await calculateSHA256((videoData as any).video_id);
-            // Assume unlistedVideos and membersOnlyVideos are defined in an accessible scope
-            const isUnlisted = typeof unlistedVideos !== 'undefined' && unlistedVideos.includes(videoIdHash);
-            const isMembers = typeof membersOnlyVideos !== 'undefined' && membersOnlyVideos.includes((videoData as any).video_id);
-
-            if (isUnlisted || isMembers) {
-              restrictedCount++;
-              if (isUnlisted) isUnlistedRestrictedFound = true;
-              if (isMembers) isMembersOnlyRestrictedFound = true;
-            }
-          }
-        }
-
-        let videoType = "";
-        if (isUnlistedRestrictedFound && isMembersOnlyRestrictedFound) {
-            videoType = "unlisted and members-only";
-        } else if (isUnlistedRestrictedFound) {
-            videoType = "unlisted";
-        } else if (isMembersOnlyRestrictedFound) {
-            videoType = "members-only";
-        }
-
-        if (restrictedCount > 0) {
-          const userChoice = await showRestrictedExportConfirmationModal(restrictedCount, videoType);
-          if (userChoice) {
-            includeRestricted = true;
-          } else {
-            // User chose No or closed the modal
-            log(`User chose to exclude ${videoType ? videoType : 'restricted'} videos from export.`);
-          }
-        }
-
-        // Second loop: Populate exportData based on user's choice and restriction checks
+        // Populate exportData with all timestamps
         for (const videoData of allTimestamps) {
           if (videoData && typeof (videoData as any).video_id === 'string' && Array.isArray((videoData as any).timestamps)) {
-            const videoIdHash = await calculateSHA256((videoData as any).video_id);
-            const isUnlisted = typeof unlistedVideos !== 'undefined' && unlistedVideos.includes(videoIdHash);
-            const isMembers = typeof membersOnlyVideos !== 'undefined' && membersOnlyVideos.includes((videoData as any).video_id);
-            const currentVideoIsRestricted = isUnlisted || isMembers;
-
-            if (includeRestricted || !currentVideoIsRestricted) {
-              exportData[`ytls-${(videoData as any).video_id}`] = videoData;
-            } else {
-              const restrictedTypeInfo = [] as string[];
-              if (isUnlisted) restrictedTypeInfo.push("Unlisted");
-              if (isMembers) restrictedTypeInfo.push("Members-Only");
-              log(`Skipping export for restricted video ID: ${(videoData as any).video_id} (Type: ${restrictedTypeInfo.join('/')})`);
-            }
+            exportData[`ytls-${(videoData as any).video_id}`] = videoData;
           } else {
             log(`Skipping data for video_id ${videoData && (videoData as any).video_id ? (videoData as any).video_id : 'unknown'} during export due to unexpected format.`, 'warn');
           }
@@ -2487,11 +2311,9 @@ declare const GM_info: {
 
     list.onclick = (e) => {
       handleClick(e);
-      saveTimestamps();
     };
     list.ontouchstart = (e) => {
       handleClick(e);
-      saveTimestamps();
     };
 
     // Load pane position from IndexedDB settings
@@ -2783,6 +2605,12 @@ declare const GM_info: {
     content.append(list, btns); // list and btns are now directly in content; header is separate
 
     pane.append(header, content, style); // Append header, then content, then style to the pane
+  }
+
+  // Append the pane to the DOM and set up final UI
+  function displayPane() {
+    if (!pane) return;
+
     document.body.appendChild(pane);
 
     // Load the global minimized state
@@ -2796,39 +2624,6 @@ declare const GM_info: {
       lastViewportWidth = window.innerWidth;
       lastViewportHeight = window.innerHeight;
     }
-    adjustPanePositionForViewportChange();
-
-    // Add event listener for video pause to update URL
-    const video = getVideoElement();
-    if (video) {
-      video.addEventListener("pause", () => {
-        const currentTime = Math.floor(getCurrentTimeCompat());
-        if (Number.isFinite(currentTime)) {
-          updateBrowserUrlWithTimestamp(currentTime);
-        }
-      });
-      // Remove timestamp from URL during playback
-      video.addEventListener("play", () => {
-        const currentUrl = new URL(window.location.href);
-        if (currentUrl.searchParams.has('t')) {
-          currentUrl.searchParams.delete('t');
-          history.replaceState({}, '', currentUrl.toString());
-        }
-      });
-    }
-
-    // Commit changes to IndexedDB when window or timestamp UI loses focus
-    window.addEventListener("blur", () => {
-      saveTimestamps();
-    });
-
-    list.addEventListener("focusout", (e) => {
-      const relatedTarget = e.relatedTarget;
-      if (relatedTarget && relatedTarget instanceof Node && list.contains(relatedTarget)) {
-        return;
-      }
-      saveTimestamps();
-    });
   }
 
   // Add a function to handle URL changes
@@ -2852,15 +2647,24 @@ declare const GM_info: {
     log("Video ID:", currentVideoId);
     log("Current URL:", window.location.href);
 
+    // Skip loading if the video ID hasn't changed (prevents double-loading on initial page load)
+    if (currentVideoId === currentLoadedVideoId) {
+      log("Video ID unchanged, skipping timestamp load");
+      return;
+    }
+
+    currentLoadedVideoId = currentVideoId;
     clearTimestampsDisplay();
     updateSeekbarMarkers();
 
     // loadTimestamps will get the videoId itself, load data from IndexedDB (migrating from localStorage if needed),
     await loadTimestamps();
 
-    // highlightNearestTimestamp sets up listeners on the video element if present
-    // for continuous highlighting of the nearest timestamp.
-    highlightNearestTimestamp();
+    // Display the pane after loading timestamps
+    displayPane();
+
+    // Setup video event listeners for highlighting and URL updates
+    setupVideoEventListeners();
   }
 
   window.addEventListener("yt-navigate-finish", handleUrlChange);
