@@ -472,6 +472,7 @@ declare const GM_info: {
       }
 
       const newTime = Math.max(0, currTime + increment);
+      console.log(`Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`);
       formatTime(timeLink, newTime);
       pendingSeekTime = newTime;
       if (seekTimeoutId) {
@@ -491,13 +492,14 @@ declare const GM_info: {
 
       updateTimeDifferences();
       updateSeekbarMarkers();
-      saveTimestamps();
+      debouncedSaveTimestamps();
     } else if (target.dataset.action === "clear") {
       event.preventDefault();
+      console.log('Timestamps changed: All timestamps cleared from UI');
       list.textContent = "";
       updateSeekbarMarkers();
       updateScroll();
-      saveTimestamps();
+      debouncedSaveTimestamps();
     }
   }
 
@@ -538,9 +540,10 @@ declare const GM_info: {
     record.onclick = () => {
       const currentTime = Math.floor(getCurrentTimeCompat());
       if (Number.isFinite(currentTime)) {
+        console.log(`Timestamps changed: Timestamp time set to current playback time ${currentTime}`);
         formatTime(anchor, currentTime);
         updateTimeDifferences();
-        saveTimestamps();
+        debouncedSaveTimestamps();
       }
     };
 
@@ -549,21 +552,20 @@ declare const GM_info: {
     commentInput.value = comment || "";
     commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
     commentInput.addEventListener("input", () => {
-      if (saveTimeoutId) {
-        clearTimeout(saveTimeoutId);
-      }
-      saveTimeoutId = setTimeout(saveTimestamps, 500);
+      console.log('Timestamps changed: Comment modified');
+      debouncedSaveTimestamps();
     });
 
     del.textContent = "🗑️";
     del.style.cssText = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
     del.onclick = () => {
       if (li.dataset.deleteConfirmed === "true") {
+        console.log('Timestamps changed: Timestamp deleted');
         li.remove();
         updateTimeDifferences();
         updateSeekbarMarkers();
         updateScroll();
-        saveTimestamps();
+        debouncedSaveTimestamps();
       } else {
         li.dataset.deleteConfirmed = "true";
         li.style.background = "darkred";
@@ -758,7 +760,8 @@ declare const GM_info: {
     updateTimeDifferences();
 
     updateSeekbarMarkers();
-    saveTimestamps(); // Save after sorting
+    console.log('Timestamps changed: Timestamps sorted');
+    debouncedSaveTimestamps(); // Save after sorting
   }
 
   function updateScroll() {
@@ -858,20 +861,31 @@ declare const GM_info: {
     currentTimestampsFromUI.sort((a, b) => a.start - b.start);
 
     if (currentTimestampsFromUI.length === 0) {
-      // If there are no timestamps in the UI, remove the IndexedDB entry
-      removeFromIndexedDB(videoId)
-        .then(() => console.log(`Removed timestamps for ${videoId} from IndexedDB`))
-        .catch(err => console.error(`Failed to remove timestamps for ${videoId} from IndexedDB:`, err));
-      // Notify other tabs about the update
-      channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'removed' });
+      // If there are no timestamps in the UI, don't clear the database
+      // This preserves the timestamps in case they were accidentally cleared from the UI
+      console.log(`Timestamps changed: No timestamps in UI for ${videoId}; keeping database entry intact`);
+      return;
     } else {
       // Save UI timestamps directly to IndexedDB
+      console.log(`Timestamps changed: Saving ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`);
       saveToIndexedDB(videoId, currentTimestampsFromUI)
-        .then(() => console.log(`Saved timestamps for ${videoId} to IndexedDB`))
+        .then(() => console.log(`Successfully saved timestamps for ${videoId} to IndexedDB`))
         .catch(err => console.error(`Failed to save timestamps for ${videoId} to IndexedDB:`, err));
       // Notify other tabs about the update
       channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
+  }
+
+  // Debounced save function that waits 250ms after last change before saving
+  function debouncedSaveTimestamps() {
+    if (saveTimeoutId) {
+      clearTimeout(saveTimeoutId);
+    }
+    saveTimeoutId = setTimeout(() => {
+      console.log('Timestamps changed: Executing debounced save');
+      saveTimestamps();
+      saveTimeoutId = null;
+    }, 250);
   }
 
   async function saveTimestampsAs(format) {
@@ -1426,7 +1440,8 @@ declare const GM_info: {
     }
 
     if (processedSuccessfully) {
-      saveTimestamps();
+      console.log('Timestamps changed: Imported timestamps from file/clipboard');
+      debouncedSaveTimestamps();
       updateSeekbarMarkers();
       updateScroll();
       // alert("Timestamps loaded and merged successfully!");
