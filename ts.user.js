@@ -931,6 +931,8 @@
             const validation = await validatePlayerAndVideoId();
             if (!validation.ok) {
                 displayPaneError(validation.message);
+                clearTimestampsDisplay();
+                updateSeekbarMarkers();
                 return;
             }
             const { videoId } = validation;
@@ -2451,6 +2453,8 @@
         updateSeekbarMarkers();
         // loadTimestamps will get the videoId itself, load data from IndexedDB (migrating from localStorage if needed),
         await loadTimestamps();
+        // Ensure seekbar markers are updated after timestamps are loaded
+        updateSeekbarMarkers();
         // Display the pane after loading timestamps
         displayPane();
         // Setup video event listeners for highlighting and URL updates

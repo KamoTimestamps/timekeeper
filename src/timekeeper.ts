@@ -1024,6 +1024,8 @@ declare const GM_info: {
       const validation = await validatePlayerAndVideoId();
       if (!validation.ok) {
         displayPaneError(validation.message);
+        clearTimestampsDisplay();
+        updateSeekbarMarkers();
         return;
       }
 
@@ -2659,6 +2661,9 @@ declare const GM_info: {
 
     // loadTimestamps will get the videoId itself, load data from IndexedDB (migrating from localStorage if needed),
     await loadTimestamps();
+
+    // Ensure seekbar markers are updated after timestamps are loaded
+    updateSeekbarMarkers();
 
     // Display the pane after loading timestamps
     displayPane();
