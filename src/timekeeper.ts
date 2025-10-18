@@ -2191,9 +2191,106 @@ declare const GM_info: {
       }
     `;
 
+    // Helper function to ensure pane is fully clamped within viewport
+    function clampPaneToViewport() {
+      if (!pane || !document.body.contains(pane)) return;
+
+      const rect = pane.getBoundingClientRect();
+      const viewportWidth = document.documentElement.clientWidth;
+      const viewportHeight = document.documentElement.clientHeight;
+      const paneWidth = rect.width;
+      const paneHeight = rect.height;
+
+      let needsAdjustment = false;
+
+      // Clamp left
+      if (rect.left < 0) {
+        pane.style.left = "0";
+        pane.style.right = "auto";
+        needsAdjustment = true;
+      }
+
+      // Clamp right
+      if (rect.right > viewportWidth) {
+        const adjustedLeft = Math.max(0, viewportWidth - paneWidth);
+        pane.style.left = `${adjustedLeft}px`;
+        pane.style.right = "auto";
+        needsAdjustment = true;
+      }
+
+      // Clamp top
+      if (rect.top < 0) {
+        pane.style.top = "0";
+        pane.style.bottom = "auto";
+        needsAdjustment = true;
+      }
+
+      // Clamp bottom
+      if (rect.bottom > viewportHeight) {
+        const adjustedTop = Math.max(0, viewportHeight - paneHeight);
+        pane.style.top = `${adjustedTop}px`;
+        pane.style.bottom = "auto";
+        needsAdjustment = true;
+      }
+
+      if (needsAdjustment) {
+        savePanePosition();
+      }
+    }
+
+    // Helper function to snap pane to nearest edge, accounting for scrollbars
+    function snapPaneToNearestEdge() {
+      if (!pane || !document.body.contains(pane)) return;
+
+      pane.style.transition = "all 0.2s ease";
+
+      const rect = pane.getBoundingClientRect();
+      // Use document.documentElement.clientWidth/Height to account for scrollbars
+      const viewportWidth = document.documentElement.clientWidth;
+      const viewportHeight = document.documentElement.clientHeight;
+      const paneWidth = rect.width;
+      const paneHeight = rect.height;
+
+      // Calculate distances to edges
+      const distanceToLeft = rect.left;
+      const distanceToRight = viewportWidth - rect.right;
+      const distanceToTop = rect.top;
+      const distanceToBottom = viewportHeight - rect.bottom;
+
+      // Find the closest edge
+      const minDistance = Math.min(distanceToLeft, distanceToRight, distanceToTop, distanceToBottom);
+
+      if (minDistance === distanceToLeft) {
+        pane.style.left = "0";
+        pane.style.right = "auto";
+      } else if (minDistance === distanceToRight) {
+        // Ensure right snap doesn't push pane off-screen, accounting for scrollbars
+        const rightPosition = Math.max(0, viewportWidth - paneWidth);
+        pane.style.left = `${rightPosition}px`;
+        pane.style.right = "auto";
+      } else if (minDistance === distanceToTop) {
+        pane.style.top = "0";
+        pane.style.bottom = "auto";
+      } else if (minDistance === distanceToBottom) {
+        // Ensure bottom snap doesn't push pane off-screen, accounting for scrollbars
+        const bottomPosition = Math.max(0, viewportHeight - paneHeight);
+        pane.style.top = `${bottomPosition}px`;
+        pane.style.bottom = "auto";
+      }
+
+      // Final safety check to ensure pane is fully on screen
+      clampPaneToViewport();
+      savePanePosition();
+    }
+
     minimizeBtn.onclick = () => {
       if (!dragOccurredSinceLastMouseDown) { // Check the flag before toggling
         pane.classList.toggle("minimized");
+        // Wait for CSS transition to complete (0.2s), then clamp to ensure full visibility
+        setTimeout(() => {
+          clampPaneToViewport();
+          snapPaneToNearestEdge();
+        }, 250);
       }
     };
 
@@ -2343,6 +2440,8 @@ declare const GM_info: {
     pane.style.right = "0";
     pane.style.transition = "all 0.2s ease";
     loadPanePosition();
+    // Ensure initial position is clamped to viewport
+    setTimeout(() => clampPaneToViewport(), 10);
 
     let isDragging = false;
     let offsetX; let offsetY;
@@ -2378,8 +2477,21 @@ declare const GM_info: {
 
       dragOccurredSinceLastMouseDown = true; // Set flag if mouse moves while dragging
 
-      const x = e.clientX - offsetX;
-      const y = e.clientY - offsetY;
+      let x = e.clientX - offsetX;
+      let y = e.clientY - offsetY;
+
+      // Get pane dimensions and viewport dimensions
+      const paneRect = pane.getBoundingClientRect();
+      const paneWidth = paneRect.width;
+      const paneHeight = paneRect.height;
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+
+      // Clamp x to keep pane fully on screen horizontally
+      x = Math.max(0, Math.min(x, windowWidth - paneWidth));
+
+      // Clamp y to keep pane fully on screen vertically
+      y = Math.max(0, Math.min(y, windowHeight - paneHeight));
 
       pane.style.left = `${x}px`;
       pane.style.top = `${y}px`;
@@ -2394,36 +2506,9 @@ declare const GM_info: {
       setTimeout(() => {
         dragOccurredSinceLastMouseDown = false; // Reset the flag after a short delay
       }, 50);
-      pane.style.transition = "all 0.2s ease"; // Re-enable transition
 
-      // Snap to the nearest edge
-      const rect = pane.getBoundingClientRect();
-      const windowWidth = window.innerWidth;
-      const windowHeight = window.innerHeight;
-
-      // Calculate distances to edges
-      const distanceToLeft = rect.left;
-      const distanceToRight = windowWidth - rect.right;
-      const distanceToTop = rect.top;
-      const distanceToBottom = windowHeight - rect.bottom;
-
-      // Find the closest edge
-      const minDistance = Math.min(distanceToLeft, distanceToRight, distanceToTop, distanceToBottom);
-
-      if (minDistance === distanceToLeft) {
-        pane.style.left = "0";
-        pane.style.right = "auto";
-      } else if (minDistance === distanceToRight) {
-        pane.style.left = "auto";
-        pane.style.right = "0";
-      } else if (minDistance === distanceToTop) {
-        pane.style.top = "0";
-        pane.style.bottom = "auto";
-      } else if (minDistance === distanceToBottom) {
-        pane.style.top = "auto";
-        pane.style.bottom = "0";
-      }
-      savePanePosition();
+      // Snap to nearest edge using the helper function
+      snapPaneToNearestEdge();
     });
 
     // Prevent text selection during drag
@@ -2432,6 +2517,7 @@ declare const GM_info: {
     // Ensure the timestamps window is fully onscreen after resizing
     window.addEventListener("resize", () => {
       adjustPanePositionForViewportChange();
+      clampPaneToViewport(); // Also clamp to ensure full visibility after resize
     });
 
     header.appendChild(minimizeBtn); // Add minimize button to the header first
