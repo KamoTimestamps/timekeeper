@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.0.5
+// @version      3.1.0
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -1030,11 +1030,9 @@
                     // Pass the GUID when loading timestamps
                     addTimestamp(ts.start, ts.comment, true, ts.guid);
                 });
-                pane.classList.remove("minimized");
                 updateSeekbarMarkers();
             }
             else {
-                pane.classList.add("minimized");
                 clearTimestampsDisplay(); // Ensure UI is cleared if no timestamps are found
                 updateSeekbarMarkers(); // Ensure seekbar markers are cleared
             }
@@ -1105,8 +1103,9 @@
     }
     // === IndexedDB Helper Functions ===
     const DB_NAME = 'ytls-timestamps-db';
-    const DB_VERSION = 1;
+    const DB_VERSION = 2;
     const STORE_NAME = 'timestamps';
+    const SETTINGS_STORE_NAME = 'settings';
     function openIndexedDB() {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -1114,6 +1113,9 @@
                 const db = event.target.result;
                 if (!db.objectStoreNames.contains(STORE_NAME)) {
                     db.createObjectStore(STORE_NAME, { keyPath: 'video_id' });
+                }
+                if (!db.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
+                    db.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'key' });
                 }
             };
             request.onsuccess = event => {
@@ -1125,45 +1127,94 @@
             };
         });
     }
-    function saveToIndexedDB(videoId, data) {
+    // Helper to execute a transaction with error handling
+    function executeTransaction(storeName, mode, operation) {
         return openIndexedDB().then(db => {
             return new Promise((resolve, reject) => {
-                const tx = db.transaction(STORE_NAME, 'readwrite');
-                const store = tx.objectStore(STORE_NAME);
-                store.put({ video_id: videoId, timestamps: data });
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error ?? new Error('Failed to save to IndexedDB'));
+                const tx = db.transaction(storeName, mode);
+                const store = tx.objectStore(storeName);
+                const request = operation(store);
+                if (request) {
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error ?? new Error(`IndexedDB ${mode} operation failed`));
+                }
+                tx.oncomplete = () => {
+                    if (!request)
+                        resolve(undefined);
+                };
+                tx.onerror = () => reject(tx.error ?? new Error(`IndexedDB transaction failed`));
             });
         });
     }
+    function saveToIndexedDB(videoId, data) {
+        return executeTransaction(STORE_NAME, 'readwrite', (store) => {
+            store.put({ video_id: videoId, timestamps: data });
+        }).then(() => undefined);
+    }
     function loadFromIndexedDB(videoId) {
-        return openIndexedDB().then(db => {
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(STORE_NAME, 'readonly');
-                const store = tx.objectStore(STORE_NAME);
-                const request = store.get(videoId);
-                request.onsuccess = () => {
-                    const result = request.result;
-                    const timestamps = Array.isArray(result?.timestamps)
-                        ? result?.timestamps
-                        : null;
-                    resolve(timestamps);
-                };
-                request.onerror = () => {
-                    reject(request.error ?? new Error('Failed to load from IndexedDB'));
-                };
-            });
+        return executeTransaction(STORE_NAME, 'readonly', (store) => {
+            return store.get(videoId);
+        }).then(result => {
+            const videoData = result;
+            return Array.isArray(videoData?.timestamps) ? videoData.timestamps : null;
         });
     }
     function removeFromIndexedDB(videoId) {
-        return openIndexedDB().then(db => {
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(STORE_NAME, 'readwrite');
-                const store = tx.objectStore(STORE_NAME);
-                store.delete(videoId);
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error ?? new Error('Failed to remove from IndexedDB'));
-            });
+        return executeTransaction(STORE_NAME, 'readwrite', (store) => {
+            store.delete(videoId);
+        }).then(() => undefined);
+    }
+    function getAllFromIndexedDB(storeName) {
+        return executeTransaction(storeName, 'readonly', (store) => {
+            return store.getAll();
+        }).then(result => {
+            return Array.isArray(result) ? result : [];
+        });
+    }
+    function saveGlobalSettings(key, value) {
+        executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
+            store.put({ key, value });
+        }).catch(err => {
+            console.error(`Failed to save setting '${key}' to IndexedDB:`, err);
+        });
+    }
+    function loadGlobalSettings(key) {
+        return executeTransaction(SETTINGS_STORE_NAME, 'readonly', (store) => {
+            return store.get(key);
+        }).then(result => {
+            return result?.value;
+        }).catch(err => {
+            console.error(`Failed to load setting '${key}' from IndexedDB:`, err);
+            return undefined;
+        });
+    }
+    function saveMinimizedState() {
+        if (!pane)
+            return;
+        const isMinimized = pane.classList.contains("minimized");
+        saveGlobalSettings('isMinimized', isMinimized);
+    }
+    function loadMinimizedState() {
+        if (!pane)
+            return;
+        loadGlobalSettings('isMinimized').then(value => {
+            const isMinimized = value;
+            if (typeof isMinimized === 'boolean') {
+                if (isMinimized) {
+                    pane.classList.add("minimized");
+                }
+                else {
+                    pane.classList.remove("minimized");
+                }
+            }
+            else {
+                // Default to minimized if not found
+                pane.classList.add("minimized");
+            }
+        }).catch(err => {
+            console.error("Failed to load minimized state:", err);
+            // Default to minimized on error
+            pane.classList.add("minimized");
         });
     }
     function processImportedData(contentString) {
@@ -1723,18 +1774,8 @@
         exportBtn.classList.add("ytls-file-operation-button");
         exportBtn.onclick = async () => {
             const exportData = {};
-            const db = await openIndexedDB().catch(err => {
-                console.error("Failed to open IndexedDB for export:", err);
-                alert("Failed to export data: Could not open database.");
-                return null;
-            });
-            if (!db)
-                return;
-            const tx = db.transaction(STORE_NAME, 'readonly');
-            const store = tx.objectStore(STORE_NAME);
-            const getAllReq = store.getAll();
-            getAllReq.onsuccess = async () => {
-                const allTimestamps = getAllReq.result;
+            try {
+                const allTimestamps = await getAllFromIndexedDB(STORE_NAME);
                 let restrictedCount = 0;
                 let isUnlistedRestrictedFound = false;
                 let isMembersOnlyRestrictedFound = false;
@@ -1807,11 +1848,11 @@
                 a.download = `ytls-data-${timestampSuffix}.json`;
                 a.click();
                 URL.revokeObjectURL(url);
-            };
-            getAllReq.onerror = (event) => {
-                console.error("Error fetching data from IndexedDB for export:", event.target && event.target.error);
+            }
+            catch (err) {
+                console.error("Failed to export data:", err);
                 alert("Failed to export data: Could not read from database.");
-            };
+            }
         };
         // Add import button to the buttons section
         const importBtn = document.createElement("button");
@@ -2231,6 +2272,7 @@
         minimizeBtn.onclick = () => {
             if (!dragOccurredSinceLastMouseDown) { // Check the flag before toggling
                 pane.classList.toggle("minimized");
+                saveMinimizedState(); // Save the new minimized state
                 // Wait for CSS transition to complete (0.2s), then clamp to ensure full visibility
                 setTimeout(() => {
                     clampPaneToViewport();
@@ -2246,50 +2288,46 @@
             handleClick(e);
             saveTimestamps();
         };
-        // Load pane position from localStorage
-        const panePositionKey = "ytls-pane-position";
+        // Load pane position from IndexedDB settings
         function loadPanePosition() {
             if (!pane)
                 return;
-            const pos = localStorage.getItem(panePositionKey);
-            if (!pos)
-                return;
-            try {
-                const parsed = JSON.parse(pos);
-                const { left, top, right, bottom, viewportWidth, viewportHeight } = parsed || {};
-                if (typeof left === "string") {
-                    pane.style.left = left;
+            loadGlobalSettings('windowPosition').then(value => {
+                if (!value)
+                    return;
+                try {
+                    const pos = value;
+                    const { left, top, right, bottom } = pos || {};
+                    if (typeof left === "string") {
+                        pane.style.left = left;
+                    }
+                    if (typeof top === "string") {
+                        pane.style.top = top;
+                    }
+                    if (typeof right === "string") {
+                        pane.style.right = right;
+                    }
+                    if (typeof bottom === "string") {
+                        pane.style.bottom = bottom;
+                    }
                 }
-                if (typeof top === "string") {
-                    pane.style.top = top;
+                catch (err) {
+                    console.warn("Timekeeper failed to parse stored pane position:", err);
                 }
-                if (typeof right === "string") {
-                    pane.style.right = right;
-                }
-                if (typeof bottom === "string") {
-                    pane.style.bottom = bottom;
-                }
-                if (Number.isFinite(viewportWidth) && Number.isFinite(viewportHeight)) {
-                    pendingStoredViewport = { width: viewportWidth, height: viewportHeight };
-                }
-            }
-            catch (err) {
-                console.warn("Timekeeper failed to parse stored pane position:", err);
-                pendingStoredViewport = null;
-            }
+            }).catch(err => {
+                console.warn("Timekeeper failed to load pane position from IndexedDB:", err);
+            });
         }
         function savePanePosition() {
             if (!pane)
                 return;
             const styleObj = pane.style;
-            localStorage.setItem(panePositionKey, JSON.stringify({
+            saveGlobalSettings('windowPosition', {
                 left: styleObj.left || "",
                 top: styleObj.top || "",
                 right: styleObj.right || "",
-                bottom: styleObj.bottom || "",
-                viewportWidth: window.innerWidth,
-                viewportHeight: window.innerHeight
-            }));
+                bottom: styleObj.bottom || ""
+            });
         }
         function isEdgePinned(value) {
             if (!value || value === "auto") {
@@ -2456,6 +2494,8 @@
         content.append(list, btns); // list and btns are now directly in content; header is separate
         pane.append(header, content, style); // Append header, then content, then style to the pane
         document.body.appendChild(pane);
+        // Load the global minimized state
+        loadMinimizedState();
         if (pendingStoredViewport) {
             lastViewportWidth = pendingStoredViewport.width;
             lastViewportHeight = pendingStoredViewport.height;
@@ -2517,7 +2557,6 @@
         clearTimestampsDisplay();
         updateSeekbarMarkers();
         // loadTimestamps will get the videoId itself, load data from IndexedDB (migrating from localStorage if needed),
-        // and manage pane visibility (minimized or not) based on whether timestamps are found.
         await loadTimestamps();
         // highlightNearestTimestamp sets up listeners on the video element if present
         // for continuous highlighting of the nearest timestamp.

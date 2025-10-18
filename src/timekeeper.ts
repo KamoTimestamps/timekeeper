@@ -1120,10 +1120,8 @@ declare const GM_info: {
           // Pass the GUID when loading timestamps
           addTimestamp(ts.start, ts.comment, true, ts.guid);
         });
-        pane.classList.remove("minimized");
         updateSeekbarMarkers();
       } else {
-        pane.classList.add("minimized");
         clearTimestampsDisplay(); // Ensure UI is cleared if no timestamps are found
         updateSeekbarMarkers(); // Ensure seekbar markers are cleared
       }
@@ -1200,8 +1198,9 @@ declare const GM_info: {
 
   // === IndexedDB Helper Functions ===
   const DB_NAME = 'ytls-timestamps-db';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE_NAME = 'timestamps';
+  const SETTINGS_STORE_NAME = 'settings';
 
   function openIndexedDB(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
@@ -1210,6 +1209,9 @@ declare const GM_info: {
         const db = (event.target as IDBOpenDBRequest).result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME, { keyPath: 'video_id' });
+        }
+        if (!db.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
+          db.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'key' });
         }
       };
       request.onsuccess = event => {
@@ -1222,47 +1224,105 @@ declare const GM_info: {
     });
   }
 
-  function saveToIndexedDB(videoId: string, data: TimestampRecord[]): Promise<void> {
+  // Helper to execute a transaction with error handling
+  function executeTransaction<T>(
+    storeName: string,
+    mode: IDBTransactionMode,
+    operation: (store: IDBObjectStore) => IDBRequest<T> | void
+  ): Promise<T | undefined> {
     return openIndexedDB().then(db => {
-      return new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        store.put({ video_id: videoId, timestamps: data });
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error('Failed to save to IndexedDB'));
+      return new Promise<T | undefined>((resolve, reject) => {
+        const tx = db.transaction(storeName, mode);
+        const store = tx.objectStore(storeName);
+        const request = operation(store) as IDBRequest<T> | undefined;
+
+        if (request) {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error ?? new Error(`IndexedDB ${mode} operation failed`));
+        }
+
+        tx.oncomplete = () => {
+          if (!request) resolve(undefined);
+        };
+        tx.onerror = () => reject(tx.error ?? new Error(`IndexedDB transaction failed`));
       });
     });
   }
 
+  function saveToIndexedDB(videoId: string, data: TimestampRecord[]): Promise<void> {
+    return executeTransaction(STORE_NAME, 'readwrite', (store) => {
+      store.put({ video_id: videoId, timestamps: data });
+    }).then(() => undefined);
+  }
+
   function loadFromIndexedDB(videoId: string): Promise<TimestampRecord[] | null> {
-    return openIndexedDB().then(db => {
-      return new Promise<TimestampRecord[] | null>((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
-        const request = store.get(videoId);
-        request.onsuccess = () => {
-          const result = request.result as { timestamps?: unknown } | undefined;
-          const timestamps = Array.isArray(result?.timestamps)
-            ? (result?.timestamps as TimestampRecord[])
-            : null;
-          resolve(timestamps);
-        };
-        request.onerror = () => {
-          reject(request.error ?? new Error('Failed to load from IndexedDB'));
-        };
-      });
+    return executeTransaction(STORE_NAME, 'readonly', (store) => {
+      return store.get(videoId);
+    }).then(result => {
+      const videoData = result as { timestamps?: unknown } | undefined;
+      return Array.isArray(videoData?.timestamps) ? (videoData.timestamps as TimestampRecord[]) : null;
     });
   }
 
   function removeFromIndexedDB(videoId: string): Promise<void> {
-    return openIndexedDB().then(db => {
-      return new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        store.delete(videoId);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error('Failed to remove from IndexedDB'));
-      });
+    return executeTransaction(STORE_NAME, 'readwrite', (store) => {
+      store.delete(videoId);
+    }).then(() => undefined);
+  }
+
+  function getAllFromIndexedDB(storeName: string): Promise<unknown[]> {
+    return executeTransaction(storeName, 'readonly', (store) => {
+      return store.getAll();
+    }).then(result => {
+      return Array.isArray(result) ? result : [];
+    });
+  }
+
+  function saveGlobalSettings(key: string, value: unknown) {
+    executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
+      store.put({ key, value });
+    }).catch(err => {
+      console.error(`Failed to save setting '${key}' to IndexedDB:`, err);
+    });
+  }
+
+  function loadGlobalSettings(key: string): Promise<unknown> {
+    return executeTransaction(SETTINGS_STORE_NAME, 'readonly', (store) => {
+      return store.get(key);
+    }).then(result => {
+      return (result as { value?: unknown } | undefined)?.value;
+    }).catch(err => {
+      console.error(`Failed to load setting '${key}' from IndexedDB:`, err);
+      return undefined;
+    });
+  }
+
+  function saveMinimizedState() {
+    if (!pane) return;
+
+    const isMinimized = pane.classList.contains("minimized");
+    saveGlobalSettings('isMinimized', isMinimized);
+  }
+
+  function loadMinimizedState() {
+    if (!pane) return;
+
+    loadGlobalSettings('isMinimized').then(value => {
+      const isMinimized = value as boolean | undefined;
+      if (typeof isMinimized === 'boolean') {
+        if (isMinimized) {
+          pane.classList.add("minimized");
+        } else {
+          pane.classList.remove("minimized");
+        }
+      } else {
+        // Default to minimized if not found
+        pane.classList.add("minimized");
+      }
+    }).catch(err => {
+      console.error("Failed to load minimized state:", err);
+      // Default to minimized on error
+      pane.classList.add("minimized");
     });
   }
 
@@ -1872,20 +1932,9 @@ declare const GM_info: {
     exportBtn.classList.add("ytls-file-operation-button");
     exportBtn.onclick = async () => {
       const exportData = {} as Record<string, unknown>;
-      const db = await openIndexedDB().catch(err => {
-        console.error("Failed to open IndexedDB for export:", err);
-        alert("Failed to export data: Could not open database.");
-        return null;
-      });
 
-      if (!db) return;
-
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const getAllReq = store.getAll();
-
-      getAllReq.onsuccess = async () => { // Make this async to await calculateSHA256
-        const allTimestamps = getAllReq.result;
+      try {
+        const allTimestamps = await getAllFromIndexedDB(STORE_NAME);
         let restrictedCount = 0;
         let isUnlistedRestrictedFound = false;
         let isMembersOnlyRestrictedFound = false;
@@ -1893,11 +1942,11 @@ declare const GM_info: {
 
         // First loop: Count restricted videos and determine their types
         for (const videoData of allTimestamps) {
-          if (videoData && typeof videoData.video_id === 'string') {
-            const videoIdHash = await calculateSHA256(videoData.video_id);
+          if (videoData && typeof (videoData as any).video_id === 'string') {
+            const videoIdHash = await calculateSHA256((videoData as any).video_id);
             // Assume unlistedVideos and membersOnlyVideos are defined in an accessible scope
             const isUnlisted = typeof unlistedVideos !== 'undefined' && unlistedVideos.includes(videoIdHash);
-            const isMembers = typeof membersOnlyVideos !== 'undefined' && membersOnlyVideos.includes(videoData.video_id);
+            const isMembers = typeof membersOnlyVideos !== 'undefined' && membersOnlyVideos.includes((videoData as any).video_id);
 
             if (isUnlisted || isMembers) {
               restrictedCount++;
@@ -1928,22 +1977,22 @@ declare const GM_info: {
 
         // Second loop: Populate exportData based on user's choice and restriction checks
         for (const videoData of allTimestamps) {
-          if (videoData && typeof videoData.video_id === 'string' && Array.isArray(videoData.timestamps)) {
-            const videoIdHash = await calculateSHA256(videoData.video_id);
+          if (videoData && typeof (videoData as any).video_id === 'string' && Array.isArray((videoData as any).timestamps)) {
+            const videoIdHash = await calculateSHA256((videoData as any).video_id);
             const isUnlisted = typeof unlistedVideos !== 'undefined' && unlistedVideos.includes(videoIdHash);
-            const isMembers = typeof membersOnlyVideos !== 'undefined' && membersOnlyVideos.includes(videoData.video_id);
+            const isMembers = typeof membersOnlyVideos !== 'undefined' && membersOnlyVideos.includes((videoData as any).video_id);
             const currentVideoIsRestricted = isUnlisted || isMembers;
 
             if (includeRestricted || !currentVideoIsRestricted) {
-              exportData[`ytls-${videoData.video_id}`] = videoData;
+              exportData[`ytls-${(videoData as any).video_id}`] = videoData;
             } else {
               const restrictedTypeInfo = [] as string[];
               if (isUnlisted) restrictedTypeInfo.push("Unlisted");
               if (isMembers) restrictedTypeInfo.push("Members-Only");
-              console.log(`Skipping export for restricted video ID: ${videoData.video_id} (Type: ${restrictedTypeInfo.join('/')})`);
+              console.log(`Skipping export for restricted video ID: ${(videoData as any).video_id} (Type: ${restrictedTypeInfo.join('/')})`);
             }
           } else {
-            console.warn(`Skipping data for video_id ${videoData && videoData.video_id ? videoData.video_id : 'unknown'} during export due to unexpected format.`);
+            console.warn(`Skipping data for video_id ${videoData && (videoData as any).video_id ? (videoData as any).video_id : 'unknown'} during export due to unexpected format.`);
           }
         }
 
@@ -1956,12 +2005,10 @@ declare const GM_info: {
         a.download = `ytls-data-${timestampSuffix}.json`;
         a.click();
         URL.revokeObjectURL(url);
-      };
-
-      getAllReq.onerror = (event) => {
-        console.error("Error fetching data from IndexedDB for export:", event.target && (event.target as IDBRequest).error);
+      } catch (err) {
+        console.error("Failed to export data:", err);
         alert("Failed to export data: Could not read from database.");
-      };
+      }
     };
 
     // Add import button to the buttons section
@@ -2397,6 +2444,7 @@ declare const GM_info: {
     minimizeBtn.onclick = () => {
       if (!dragOccurredSinceLastMouseDown) { // Check the flag before toggling
         pane.classList.toggle("minimized");
+        saveMinimizedState(); // Save the new minimized state
         // Wait for CSS transition to complete (0.2s), then clamp to ensure full visibility
         setTimeout(() => {
           clampPaneToViewport();
@@ -2414,46 +2462,42 @@ declare const GM_info: {
       saveTimestamps();
     };
 
-    // Load pane position from localStorage
-    const panePositionKey = "ytls-pane-position";
+    // Load pane position from IndexedDB settings
     function loadPanePosition() {
       if (!pane) return;
-      const pos = localStorage.getItem(panePositionKey);
-      if (!pos) return;
-      try {
-        const parsed = JSON.parse(pos);
-        const { left, top, right, bottom, viewportWidth, viewportHeight } = parsed || {};
-        if (typeof left === "string") {
-          pane.style.left = left;
+      loadGlobalSettings('windowPosition').then(value => {
+        if (!value) return;
+        try {
+          const pos = value as Record<string, unknown>;
+          const { left, top, right, bottom } = pos || {};
+          if (typeof left === "string") {
+            pane.style.left = left;
+          }
+          if (typeof top === "string") {
+            pane.style.top = top;
+          }
+          if (typeof right === "string") {
+            pane.style.right = right;
+          }
+          if (typeof bottom === "string") {
+            pane.style.bottom = bottom;
+          }
+        } catch (err) {
+          console.warn("Timekeeper failed to parse stored pane position:", err);
         }
-        if (typeof top === "string") {
-          pane.style.top = top;
-        }
-        if (typeof right === "string") {
-          pane.style.right = right;
-        }
-        if (typeof bottom === "string") {
-          pane.style.bottom = bottom;
-        }
-        if (Number.isFinite(viewportWidth) && Number.isFinite(viewportHeight)) {
-          pendingStoredViewport = { width: viewportWidth, height: viewportHeight };
-        }
-      } catch (err) {
-        console.warn("Timekeeper failed to parse stored pane position:", err);
-        pendingStoredViewport = null;
-      }
+      }).catch(err => {
+        console.warn("Timekeeper failed to load pane position from IndexedDB:", err);
+      });
     }
     function savePanePosition() {
       if (!pane) return;
       const styleObj = pane.style;
-      localStorage.setItem(panePositionKey, JSON.stringify({
+      saveGlobalSettings('windowPosition', {
         left: styleObj.left || "",
         top: styleObj.top || "",
         right: styleObj.right || "",
-        bottom: styleObj.bottom || "",
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight
-      }));
+        bottom: styleObj.bottom || ""
+      });
     }
 
     function isEdgePinned(value) {
@@ -2642,6 +2686,9 @@ declare const GM_info: {
     pane.append(header, content, style); // Append header, then content, then style to the pane
     document.body.appendChild(pane);
 
+    // Load the global minimized state
+    loadMinimizedState();
+
     if (pendingStoredViewport) {
       lastViewportWidth = pendingStoredViewport.width;
       lastViewportHeight = pendingStoredViewport.height;
@@ -2710,7 +2757,6 @@ declare const GM_info: {
     updateSeekbarMarkers();
 
     // loadTimestamps will get the videoId itself, load data from IndexedDB (migrating from localStorage if needed),
-    // and manage pane visibility (minimized or not) based on whether timestamps are found.
     await loadTimestamps();
 
     // highlightNearestTimestamp sets up listeners on the video element if present
