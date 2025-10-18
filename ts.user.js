@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.0.0
+// @version      3.0.1
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -2201,7 +2201,9 @@
             if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
                 return;
             }
-            if (window.getComputedStyle(target).cursor === 'pointer') {
+            // Allow dragging from the minimize button in both minimized and maximized states
+            const isMinimizeButton = target === minimizeBtn || minimizeBtn.contains(target);
+            if (!isMinimizeButton && window.getComputedStyle(target).cursor === 'pointer') {
                 return;
             }
             isDragging = true;

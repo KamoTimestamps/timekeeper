@@ -2358,7 +2358,10 @@ declare const GM_info: {
         return;
       }
 
-      if (window.getComputedStyle(target).cursor === 'pointer') {
+      // Allow dragging from the minimize button in both minimized and maximized states
+      const isMinimizeButton = target === minimizeBtn || minimizeBtn.contains(target);
+
+      if (!isMinimizeButton && window.getComputedStyle(target).cursor === 'pointer') {
         return;
       }
 
