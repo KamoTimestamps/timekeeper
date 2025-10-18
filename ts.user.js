@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.0.4
+// @version      3.0.5
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -523,11 +523,28 @@
             else {
                 li.dataset.deleteConfirmed = "true";
                 li.style.background = "darkred";
+                // Add a click listener to cancel delete if clicking anywhere except the delete button
+                const cancelDeleteOnClick = (event) => {
+                    const target = event.target;
+                    // Only cancel if clicking on something that's not the delete button itself
+                    if (target !== del) {
+                        li.dataset.deleteConfirmed = "false";
+                        li.style.background = "rgba(255, 255, 255, 0.05)";
+                        li.removeEventListener("click", cancelDeleteOnClick, true);
+                        document.removeEventListener("click", cancelDeleteOnClick, true);
+                    }
+                };
+                // Add listeners for this timestamp's li and the document
+                li.addEventListener("click", cancelDeleteOnClick, true);
+                document.addEventListener("click", cancelDeleteOnClick, true);
                 setTimeout(() => {
                     if (li.dataset.deleteConfirmed === "true") {
                         li.dataset.deleteConfirmed = "false";
                         li.style.background = "rgba(255, 255, 255, 0.05)";
                     }
+                    // Clean up listeners even if timeout expires
+                    li.removeEventListener("click", cancelDeleteOnClick, true);
+                    document.removeEventListener("click", cancelDeleteOnClick, true);
                 }, 5000);
             }
         };
