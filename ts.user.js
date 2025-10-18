@@ -2544,6 +2544,7 @@
         window.addEventListener("resize", () => {
             adjustPanePositionForViewportChange();
             clampPaneToViewport(); // Also clamp to ensure full visibility after resize
+            snapPaneToNearestEdge(); // Reapply snapping logic after resize
         });
         header.appendChild(minimizeBtn); // Add minimize button to the header first
         header.appendChild(timeDisplay); // Then add timeDisplay
