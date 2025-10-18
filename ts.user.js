@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.1.2
+// @version      3.1.3
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -142,7 +142,7 @@
                 return player.getCurrentTime();
             }
             catch (err) {
-                console.warn("Timekeeper fallback: player.getCurrentTime failed, using video element.", err);
+                logWarn("fallback: player.getCurrentTime failed, using video element.", err);
             }
         }
         const video = getVideoElement();
@@ -156,7 +156,7 @@
                 return true;
             }
             catch (err) {
-                console.warn("Timekeeper fallback: player.seekTo failed, using video element.", err);
+                logWarn("fallback: player.seekTo failed, using video element.", err);
             }
         }
         const video = getVideoElement();
@@ -173,7 +173,7 @@
                 return player.getPlayerState();
             }
             catch (err) {
-                console.warn("Timekeeper fallback: player.getPlayerState failed, using video element.", err);
+                logWarn("fallback: player.getPlayerState failed, using video element.", err);
             }
         }
         const video = getVideoElement();
@@ -196,7 +196,7 @@
                 return true;
             }
             catch (err) {
-                console.warn("Timekeeper fallback: player.seekToLiveHead failed, using video element.", err);
+                logWarn("fallback: player.seekToLiveHead failed, using video element.", err);
             }
         }
         // TODO: Need a way to detect whether or not the video is a live stream before attempting this
@@ -216,7 +216,7 @@
                 return player.getVideoData();
             }
             catch (err) {
-                console.warn("Timekeeper fallback: player.getVideoData failed, using video element.", err);
+                logWarn("fallback: player.getVideoData failed, using video element.", err);
             }
         }
         const video = getVideoElement();
@@ -234,7 +234,7 @@
                 return player.getDuration();
             }
             catch (err) {
-                console.warn("Timekeeper fallback: player.getDuration failed, using video element.", err);
+                logWarn("fallback: player.getDuration failed, using video element.", err);
             }
         }
         const video = getVideoElement();
@@ -246,19 +246,26 @@
     // Configuration for shift-click time skip interval
     const SHIFT_SKIP_KEY = "shiftClickTimeSkipSeconds";
     const DEFAULT_SHIFT_SKIP = 10;
+    // Logging function that prefixes all messages with [Timekeeper]
+    function log(message, ...args) {
+        console.log(`[Timekeeper] ${message}`, ...args);
+    }
+    function logWarn(message, ...args) {
+        console.warn(`[Timekeeper] ${message}`, ...args);
+    }
     // Create a BroadcastChannel for cross-tab communication
     const channel = new BroadcastChannel('ytls_timestamp_channel');
     // Listen for messages from other tabs
     channel.onmessage = (event) => {
-        console.log('Received message from another tab:', event.data);
+        log('Received message from another tab:', event.data);
         if (!isSupportedUrl() || !list || !pane) {
             return;
         }
         if (event.data && event.data.type === 'timestamps_updated' && event.data.videoId === getVideoId()) {
-            console.log('Debouncing timestamp load due to external update for video:', event.data.videoId);
+            log('Debouncing timestamp load due to external update for video:', event.data.videoId);
             clearTimeout(loadTimeoutId); // Clear existing load timeout
             loadTimeoutId = setTimeout(() => {
-                console.log('Reloading timestamps due to external update for video:', event.data.videoId);
+                log('Reloading timestamps due to external update for video:', event.data.videoId);
                 loadTimestamps();
             }, 500); // Set new timeout to load after 500ms
         }
@@ -1232,7 +1239,7 @@
     }
     function processImportedData(contentString) {
         if (!list) {
-            console.warn("Timekeeper UI is not initialized; cannot import timestamps.");
+            logWarn("UI is not initialized; cannot import timestamps.");
             return;
         }
         let processedSuccessfully = false;
@@ -2299,9 +2306,11 @@
         function loadPanePosition() {
             if (!pane)
                 return;
+            log('Loading window position from IndexedDB');
             loadGlobalSettings('windowPosition').then(value => {
                 if (!value) {
                     // Default to 0,0 if no position stored
+                    log('No window position found in IndexedDB, using default position (0,0)');
                     pane.style.left = "0";
                     pane.style.top = "0";
                     pane.style.right = "auto";
@@ -2314,56 +2323,13 @@
                     const pos = value;
                     const currentViewportWidth = document.documentElement.clientWidth;
                     const currentViewportHeight = document.documentElement.clientHeight;
-                    // Restore from minimal data format: x/y ratios with edge indicators
+                    log(`Loaded window position from IndexedDB: x=${pos.x}, y=${pos.y}`);
+                    // Restore from x/y ratios (measured from top-left)
                     if (typeof pos.x === 'number' && typeof pos.y === 'number') {
-                        const xEdge = pos.xEdge || 'left';
-                        const yEdge = pos.yEdge || 'top';
-                        // Apply horizontal position
-                        if (xEdge === 'right') {
-                            pane.style.right = `${pos.x * currentViewportWidth}px`;
-                            pane.style.left = "auto";
-                        }
-                        else {
-                            pane.style.left = `${pos.x * currentViewportWidth}px`;
-                            pane.style.right = "auto";
-                        }
-                        // Apply vertical position
-                        if (yEdge === 'bottom') {
-                            pane.style.bottom = `${pos.y * currentViewportHeight}px`;
-                            pane.style.top = "auto";
-                        }
-                        else {
-                            pane.style.top = `${pos.y * currentViewportHeight}px`;
-                            pane.style.bottom = "auto";
-                        }
-                    }
-                    else if (typeof pos.x === 'number') {
-                        // Partial data: only horizontal position
-                        const xEdge = pos.xEdge || 'left';
-                        if (xEdge === 'right') {
-                            pane.style.right = `${pos.x * currentViewportWidth}px`;
-                            pane.style.left = "auto";
-                        }
-                        else {
-                            pane.style.left = `${pos.x * currentViewportWidth}px`;
-                            pane.style.right = "auto";
-                        }
-                        pane.style.top = "20px";
+                        pane.style.left = `${pos.x * currentViewportWidth}px`;
+                        pane.style.top = `${pos.y * currentViewportHeight}px`;
+                        pane.style.right = "auto";
                         pane.style.bottom = "auto";
-                    }
-                    else if (typeof pos.y === 'number') {
-                        // Partial data: only vertical position
-                        const yEdge = pos.yEdge || 'top';
-                        pane.style.left = "auto";
-                        pane.style.right = "20px";
-                        if (yEdge === 'bottom') {
-                            pane.style.bottom = `${pos.y * currentViewportHeight}px`;
-                            pane.style.top = "auto";
-                        }
-                        else {
-                            pane.style.top = `${pos.y * currentViewportHeight}px`;
-                            pane.style.bottom = "auto";
-                        }
                     }
                     else {
                         // Fallback: use default position
@@ -2376,7 +2342,7 @@
                     clampPaneToViewport();
                 }
                 catch (err) {
-                    console.warn("Timekeeper failed to parse stored pane position:", err);
+                    logWarn("failed to parse stored pane position:", err);
                     pane.style.left = "0";
                     pane.style.top = "0";
                     pane.style.right = "auto";
@@ -2385,7 +2351,7 @@
                     clampPaneToViewport();
                 }
             }).catch(err => {
-                console.warn("Timekeeper failed to load pane position from IndexedDB:", err);
+                logWarn("failed to load pane position from IndexedDB:", err);
                 pane.style.left = "0";
                 pane.style.top = "0";
                 pane.style.right = "auto";
@@ -2401,55 +2367,25 @@
             // Calculate viewport dimensions (accounting for scrollbars)
             const viewportWidth = document.documentElement.clientWidth;
             const viewportHeight = document.documentElement.clientHeight;
-            // Extract current position values
-            const left = styleObj.left;
-            const top = styleObj.top;
-            const right = styleObj.right;
-            const bottom = styleObj.bottom;
-            // Calculate minimal ratios needed to restore position
-            // Only store the ratio for the active edge (left XOR right, top XOR bottom)
-            let x = null; // horizontal position ratio (left or right)
-            let y = null; // vertical position ratio (top or bottom)
-            let xEdge = 'left'; // which horizontal edge to use
-            let yEdge = 'top'; // which vertical edge to use
-            // Determine horizontal position
-            if (left && left !== "auto") {
-                const leftPx = parseFloat(left);
-                if (Number.isFinite(leftPx)) {
-                    x = Math.max(0, Math.min(1, leftPx / viewportWidth));
-                    xEdge = 'left';
-                }
-            }
-            else if (right && right !== "auto") {
-                const rightPx = parseFloat(right);
-                if (Number.isFinite(rightPx)) {
-                    x = Math.max(0, Math.min(1, rightPx / viewportWidth));
-                    xEdge = 'right';
-                }
-            }
-            // Determine vertical position
-            if (top && top !== "auto") {
-                const topPx = parseFloat(top);
-                if (Number.isFinite(topPx)) {
-                    y = Math.max(0, Math.min(1, topPx / viewportHeight));
-                    yEdge = 'top';
-                }
-            }
-            else if (bottom && bottom !== "auto") {
-                const bottomPx = parseFloat(bottom);
-                if (Number.isFinite(bottomPx)) {
-                    y = Math.max(0, Math.min(1, bottomPx / viewportHeight));
-                    yEdge = 'bottom';
-                }
-            }
-            // Store only minimal data: x/y ratios and which edges they represent
+            // Get current position
+            const rect = pane.getBoundingClientRect();
+            // Calculate ratios from left and top edges
+            // We store distance from left and top edges as ratios of viewport size
+            const x = Math.max(0, Math.min(1, rect.left / viewportWidth));
+            const y = Math.max(0, Math.min(1, rect.top / viewportHeight));
+            // Store only position ratios (no edge info)
             const positionData = {
-                x, // horizontal ratio (0-1)
-                y, // vertical ratio (0-1)
-                xEdge, // 'left' or 'right'
-                yEdge // 'top' or 'bottom'
+                x, // horizontal position ratio (0-1, from left edge)
+                y // vertical position ratio (0-1, from top edge)
             };
+            log(`Saving window position to IndexedDB: x=${x}, y=${y}`);
             saveGlobalSettings('windowPosition', positionData);
+            // Notify other tabs of the position change
+            channel.postMessage({
+                type: 'window_position_updated',
+                position: positionData,
+                timestamp: Date.now()
+            });
         }
         function isEdgePinned(value) {
             if (!value || value === "auto") {
