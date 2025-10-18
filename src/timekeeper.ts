@@ -28,7 +28,7 @@ declare const GM_info: {
         return parsed.pathname === prefix || parsed.pathname.startsWith(`${prefix}/`);
       });
     } catch (err) {
-      console.error("Timekeeper failed to parse URL for support check:", err);
+      log("Timekeeper failed to parse URL for support check:", err, 'error');
       return false;
     }
   }
@@ -145,7 +145,7 @@ declare const GM_info: {
       try {
         return player.getCurrentTime();
       } catch (err) {
-        logWarn("fallback: player.getCurrentTime failed, using video element.", err);
+        log("fallback: player.getCurrentTime failed, using video element.", err, 'warn');
       }
     }
     const video = getVideoElement();
@@ -159,7 +159,7 @@ declare const GM_info: {
         player.seekTo(seconds, allowSeekAhead);
         return true;
       } catch (err) {
-        logWarn("fallback: player.seekTo failed, using video element.", err);
+        log("fallback: player.seekTo failed, using video element.", err, 'warn');
       }
     }
     const video = getVideoElement();
@@ -176,7 +176,7 @@ declare const GM_info: {
       try {
         return player.getPlayerState();
       } catch (err) {
-        logWarn("fallback: player.getPlayerState failed, using video element.", err);
+        log("fallback: player.getPlayerState failed, using video element.", err, 'warn');
       }
     }
     const video = getVideoElement();
@@ -199,7 +199,7 @@ declare const GM_info: {
         player.seekToLiveHead();
         return true;
       } catch (err) {
-        logWarn("fallback: player.seekToLiveHead failed, using video element.", err);
+        log("fallback: player.seekToLiveHead failed, using video element.", err, 'warn');
       }
     }
     // TODO: Need a way to detect whether or not the video is a live stream before attempting this
@@ -219,7 +219,7 @@ declare const GM_info: {
       try {
         return player.getVideoData();
       } catch (err) {
-        logWarn("fallback: player.getVideoData failed, using video element.", err);
+        log("fallback: player.getVideoData failed, using video element.", err, 'warn');
       }
     }
     const video = getVideoElement();
@@ -237,7 +237,7 @@ declare const GM_info: {
       try {
         return player.getDuration();
       } catch (err) {
-        logWarn("fallback: player.getDuration failed, using video element.", err);
+        log("fallback: player.getDuration failed, using video element.", err, 'warn');
       }
     }
     const video = getVideoElement();
@@ -252,13 +252,32 @@ declare const GM_info: {
   const SHIFT_SKIP_KEY = "shiftClickTimeSkipSeconds";
   const DEFAULT_SHIFT_SKIP = 10;
 
-  // Logging function that prefixes all messages with [Timekeeper]
-  function log(message: string, ...args: any[]) {
-    console.log(`[Timekeeper] ${message}`, ...args);
-  }
+  // Unified logging function with log level support
+  type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-  function logWarn(message: string, ...args: any[]) {
-    console.warn(`[Timekeeper] ${message}`, ...args);
+  function log(message: string, ...args: any[]) {
+    // Check if last argument is a LogLevel
+    let logLevel: LogLevel = 'debug';
+    const consoleArgs = [...args];
+
+    if (args.length > 0 && typeof args[args.length - 1] === 'string' &&
+        ['debug', 'info', 'warn', 'error'].includes(args[args.length - 1])) {
+      logLevel = consoleArgs.pop() as LogLevel;
+    }
+
+    const version = GM_info.script.version;
+    const prefix = `[Timekeeper v${version}]`;
+
+    // Map LogLevel to console methods
+    const methodMap: Record<LogLevel, (...args: any[]) => void> = {
+      'debug': console.log,
+      'info': console.info,
+      'warn': console.warn,
+      'error': console.error
+    };
+
+    const consoleMethod = methodMap[logLevel];
+    consoleMethod(`${prefix} ${message}`, ...consoleArgs);
   }
 
   // Create a BroadcastChannel for cross-tab communication
@@ -481,7 +500,7 @@ declare const GM_info: {
       }
 
       const newTime = Math.max(0, currTime + increment);
-      console.log(`Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`);
+      log(`Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`);
       formatTime(timeLink, newTime);
       pendingSeekTime = newTime;
       if (seekTimeoutId) {
@@ -504,7 +523,7 @@ declare const GM_info: {
       debouncedSaveTimestamps();
     } else if (target.dataset.action === "clear") {
       event.preventDefault();
-      console.log('Timestamps changed: All timestamps cleared from UI');
+      log('Timestamps changed: All timestamps cleared from UI');
       list.textContent = "";
       updateSeekbarMarkers();
       updateScroll();
@@ -549,7 +568,7 @@ declare const GM_info: {
     record.onclick = () => {
       const currentTime = Math.floor(getCurrentTimeCompat());
       if (Number.isFinite(currentTime)) {
-        console.log(`Timestamps changed: Timestamp time set to current playback time ${currentTime}`);
+        log(`Timestamps changedset to current playback time ${currentTime}`);
         formatTime(anchor, currentTime);
         updateTimeDifferences();
         debouncedSaveTimestamps();
@@ -561,7 +580,7 @@ declare const GM_info: {
     commentInput.value = comment || "";
     commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
     commentInput.addEventListener("input", () => {
-      console.log('Timestamps changed: Comment modified');
+      log('Timestamps changed: Comment modified');
       debouncedSaveTimestamps();
     });
 
@@ -569,7 +588,7 @@ declare const GM_info: {
     del.style.cssText = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
     del.onclick = () => {
       if (li.dataset.deleteConfirmed === "true") {
-        console.log('Timestamps changed: Timestamp deleted');
+        log('Timestamps changed: Timestamp deleted');
         li.remove();
         updateTimeDifferences();
         updateSeekbarMarkers();
@@ -769,7 +788,7 @@ declare const GM_info: {
     updateTimeDifferences();
 
     updateSeekbarMarkers();
-    console.log('Timestamps changed: Timestamps sorted');
+    log('Timestamps changed: Timestamps sorted');
     debouncedSaveTimestamps(); // Save after sorting
   }
 
@@ -872,14 +891,14 @@ declare const GM_info: {
     if (currentTimestampsFromUI.length === 0) {
       // If there are no timestamps in the UI, don't clear the database
       // This preserves the timestamps in case they were accidentally cleared from the UI
-      console.log(`Timestamps changed: No timestamps in UI for ${videoId}; keeping database entry intact`);
+      log(`Timestamps changed: No timestamps in UI for ${videoId}; keeping database entry intact`);
       return;
     } else {
       // Save UI timestamps directly to IndexedDB
-      console.log(`Timestamps changed: Saving ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`);
+      log(`Timestamps changed: Saving ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`);
       saveToIndexedDB(videoId, currentTimestampsFromUI)
-        .then(() => console.log(`Successfully saved timestamps for ${videoId} to IndexedDB`))
-        .catch(err => console.error(`Failed to save timestamps for ${videoId} to IndexedDB:`, err));
+        .then(() => log(`Successfully saved timestamps for ${videoId} to IndexedDB`))
+        .catch(err => log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, 'error'));
       // Notify other tabs about the update
       channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
@@ -891,7 +910,7 @@ declare const GM_info: {
       clearTimeout(saveTimeoutId);
     }
     saveTimeoutId = setTimeout(() => {
-      console.log('Timestamps changed: Executing debounced save');
+      log('Timestamps changed: Executing debounced save');
       saveTimestamps();
       saveTimeoutId = null;
     }, 250);
@@ -918,9 +937,9 @@ declare const GM_info: {
         alert("Export cancelled by user.");
         return;
       }
-      console.log(`User confirmed export for ${videoType} video ID: ${videoId}`);
+      log(`User confirmed export for ${videoType} video ID: ${videoId}`);
     } else {
-      console.log(`Exporting timestamps for video ID: ${videoId}`);
+      log(`Exporting timestamps for video ID: ${videoId}`);
     }
 
     const videoDuration = Math.floor(getDurationCompat());
@@ -975,7 +994,7 @@ declare const GM_info: {
 
   function displayPaneError(message) {
     if (!pane || !list) {
-      console.error("Timekeeper error:", message);
+      log("Timekeeper error:", message, 'error');
       return;
     }
 
@@ -1083,7 +1102,7 @@ declare const GM_info: {
       }
 
       const { videoId } = validation;
-      console.log(`loadTimestamps for ${videoId}`);
+      log(`loadTimestamps for ${videoId}`);
 
       let finalTimestampsToDisplay = [];
 
@@ -1095,13 +1114,13 @@ declare const GM_info: {
             ...ts,
             guid: ts.guid || crypto.randomUUID()
           }));
-          console.log(`Loaded timestamps from IndexedDB for ${videoId}`);
+          log(`Loaded timestamps from IndexedDB for ${videoId}`);
         } else {
-          console.log(`No timestamps found in IndexedDB for ${videoId}`);
+          log(`No timestamps found in IndexedDB for ${videoId}`);
           // Attempt to load from localStorage as a fallback (for migration)
           const savedDataRaw = localStorage.getItem(`ytls-${videoId}`);
           if (savedDataRaw) {
-            console.log(`Found data in localStorage for ${videoId}, attempting to migrate.`);
+            log(`Found data in localStorage for ${videoId}, attempting to migrate.`);
             try {
               const parsedData = JSON.parse(savedDataRaw);
               if (parsedData && parsedData.video_id === videoId && Array.isArray(parsedData.timestamps)) {
@@ -1115,21 +1134,21 @@ declare const GM_info: {
                 if (finalTimestampsToDisplay.length > 0) {
                   saveToIndexedDB(videoId, finalTimestampsToDisplay)
                     .then(() => {
-                      console.log(`Successfully migrated localStorage data to IndexedDB for ${videoId}`);
+                      log(`Successfully migrated localStorage data to IndexedDB for ${videoId}`);
                       localStorage.removeItem(`ytls-${videoId}`); // Remove from localStorage after migration
                     })
-                    .catch(err => console.error(`Error migrating localStorage to IndexedDB for ${videoId}:`, err));
+                    .catch(err => log(`Error migrating localStorage to IndexedDB for ${videoId}:`, err, 'error'));
                 }
               } else {
-                console.warn(`localStorage data for ${videoId} is not in the expected format. Ignoring.`);
+                log(`localStorage data for ${videoId} is not in the expected format. Ignoring.`, 'warn');
               }
             } catch (e) {
-              console.error("Failed to parse localStorage data during migration:", e);
+              log("Failed to parse localStorage data during migration:", e, 'error');
             }
           }
         }
       } catch (dbError) {
-        console.error(`Failed to load timestamps from IndexedDB for ${videoId}:`, dbError);
+        log(`Failed to load timestamps from IndexedDB for ${videoId}:`, dbError, 'error');
         pane.classList.add("minimized");
         clearTimestampsDisplay();
         updateSeekbarMarkers();
@@ -1149,7 +1168,7 @@ declare const GM_info: {
         updateSeekbarMarkers(); // Ensure seekbar markers are cleared
       }
     } catch (err) {
-      console.error("Unexpected error while loading timestamps:", err);
+      log("Unexpected error while loading timestamps:", err, 'error');
       displayPaneError("Timekeeper encountered an unexpected error while loading timestamps. Check the console for details.");
     }
   }
@@ -1305,7 +1324,7 @@ declare const GM_info: {
     executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
       store.put({ key, value });
     }).catch(err => {
-      console.error(`Failed to save setting '${key}' to IndexedDB:`, err);
+      log(`Failed to save setting '${key}' to IndexedDB:`, err, 'error');
     });
   }
 
@@ -1315,7 +1334,7 @@ declare const GM_info: {
     }).then(result => {
       return (result as { value?: unknown } | undefined)?.value;
     }).catch(err => {
-      console.error(`Failed to load setting '${key}' from IndexedDB:`, err);
+      log(`Failed to load setting '${key}' from IndexedDB:`, err, 'error');
       return undefined;
     });
   }
@@ -1343,7 +1362,7 @@ declare const GM_info: {
         pane.classList.add("minimized");
       }
     }).catch(err => {
-      console.error("Failed to load minimized state:", err);
+      log("Failed to load minimized state:", err, 'error');
       // Default to minimized on error
       pane.classList.add("minimized");
     });
@@ -1351,7 +1370,7 @@ declare const GM_info: {
 
   function processImportedData(contentString) {
     if (!list) {
-      logWarn("UI is not initialized; cannot import timestamps.");
+      log("UI is not initialized; cannot import timestamps.", 'warn');
       return;
     }
     let processedSuccessfully = false;
@@ -1380,10 +1399,10 @@ declare const GM_info: {
           });
           processedSuccessfully = true;
         } else {
-          console.warn("Parsed JSON array, but items are not in the expected timestamp format. Trying as plain text.");
+          log("Parsed JSON array, but items are not in the expected timestamp format. Trying as plain text.", 'warn');
         }
       } else {
-        console.warn("Parsed JSON, but it's not an array. Trying as plain text.");
+        log("Parsed JSON, but it's not an array. Trying as plain text.", 'warn');
       }
     } catch (e) {
       // JSON parsing failed or was not the correct structure, proceed to plain text parsing
@@ -1449,7 +1468,7 @@ declare const GM_info: {
     }
 
     if (processedSuccessfully) {
-      console.log('Timestamps changed: Imported timestamps from file/clipboard');
+      log('Timestamps changed: Imported timestamps from file/clipboard');
       debouncedSaveTimestamps();
       updateSeekbarMarkers();
       updateScroll();
@@ -1688,7 +1707,7 @@ declare const GM_info: {
         this.textContent = "✅";
         setTimeout(() => { this.textContent = "📋"; }, 2000);
       }).catch(err => {
-        console.error("Failed to copy timestamps: ", err);
+        log("Failed to copy timestamps: ", err, 'error');
         this.textContent = "❌";
         setTimeout(() => { this.textContent = "📋"; }, 2000);
       });
@@ -1925,7 +1944,7 @@ declare const GM_info: {
               alert("Clipboard is empty.");
             }
           } catch (err) {
-            console.error("Failed to read from clipboard: ", err);
+            log("Failed to read from clipboard: ", err, 'error');
             alert("Failed to read from clipboard. Ensure you have granted permission.");
           }
         }, 300); // Match animation duration
@@ -1995,7 +2014,7 @@ declare const GM_info: {
             includeRestricted = true;
           } else {
             // User chose No or closed the modal
-            console.log(`User chose to exclude ${videoType ? videoType : 'restricted'} videos from export.`);
+            log(`User chose to exclude ${videoType ? videoType : 'restricted'} videos from export.`);
           }
         }
 
@@ -2013,10 +2032,10 @@ declare const GM_info: {
               const restrictedTypeInfo = [] as string[];
               if (isUnlisted) restrictedTypeInfo.push("Unlisted");
               if (isMembers) restrictedTypeInfo.push("Members-Only");
-              console.log(`Skipping export for restricted video ID: ${(videoData as any).video_id} (Type: ${restrictedTypeInfo.join('/')})`);
+              log(`Skipping export for restricted video ID: ${(videoData as any).video_id} (Type: ${restrictedTypeInfo.join('/')})`);
             }
           } else {
-            console.warn(`Skipping data for video_id ${videoData && (videoData as any).video_id ? (videoData as any).video_id : 'unknown'} during export due to unexpected format.`);
+            log(`Skipping data for video_id ${videoData && (videoData as any).video_id ? (videoData as any).video_id : 'unknown'} during export due to unexpected format.`, 'warn');
           }
         }
 
@@ -2030,7 +2049,7 @@ declare const GM_info: {
         a.click();
         URL.revokeObjectURL(url);
       } catch (err) {
-        console.error("Failed to export data:", err);
+        log("Failed to export data:", err, 'error');
         alert("Failed to export data: Could not read from database.");
       }
     };
@@ -2069,11 +2088,11 @@ declare const GM_info: {
                   }));
                   // Save to IndexedDB
                   const promise = saveToIndexedDB(videoId, timestampsWithGuids)
-                    .then(() => console.log(`Imported ${videoId} to IndexedDB`))
-                    .catch(err => console.error(`Failed to import ${videoId} to IndexedDB:`, err));
+                    .then(() => log(`Imported ${videoId} to IndexedDB`))
+                    .catch(err => log(`Failed to import ${videoId} to IndexedDB:`, err, 'error'));
                   importPromises.push(promise);
                 } else {
-                  console.warn(`Skipping key ${key} during import due to unexpected data format.`);
+                  log(`Skipping key ${key} during import due to unexpected data format.`, 'warn');
                 }
               }
             }
@@ -2082,11 +2101,11 @@ declare const GM_info: {
               handleUrlChange(); // Refresh the tool to reflect imported data
             }).catch(err => {
               alert("An error occurred during import to IndexedDB. Check console for details.");
-              console.error("Overall import error:", err);
+              log("Overall import error:", err, 'error');
             });
           } catch (e) {
             alert("Failed to import data. Please ensure the file is in the correct format.\n" + (e as Error).message);
-            console.error("Import error:", e);
+            log("Import error:", e, 'error');
           }
         };
 
@@ -2514,7 +2533,7 @@ declare const GM_info: {
           // Apply clamp and reposition after loading position
           clampPaneToViewport();
         } catch (err) {
-          logWarn("failed to parse stored pane position:", err);
+          log("failed to parse stored pane position:", err, 'warn');
           pane.style.left = "0";
           pane.style.top = "0";
           pane.style.right = "auto";
@@ -2523,7 +2542,7 @@ declare const GM_info: {
           clampPaneToViewport();
         }
       }).catch(err => {
-        logWarn("failed to load pane position from IndexedDB:", err);
+        log("failed to load pane position from IndexedDB:", err, 'warn');
         pane.style.left = "0";
         pane.style.top = "0";
         pane.style.right = "auto";
@@ -2829,9 +2848,9 @@ declare const GM_info: {
 
     const currentVideoId = getVideoId(); // Still useful for logging
     const pageTitle = document.title;
-    console.log("Page Title:", pageTitle);
-    console.log("Video ID:", currentVideoId);
-    console.log("Current URL:", window.location.href);
+    log("Page Title:", pageTitle);
+    log("Video ID:", currentVideoId);
+    log("Current URL:", window.location.href);
 
     clearTimestampsDisplay();
     updateSeekbarMarkers();
