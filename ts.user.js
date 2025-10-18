@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.0.3
+// @version      3.0.4
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -1283,8 +1283,13 @@
             yesButton.onmouseover = () => yesButton.style.background = "#45a049";
             yesButton.onmouseout = () => yesButton.style.background = "#4CAF50";
             yesButton.onclick = () => {
-                document.body.removeChild(modal);
-                resolve(true); // User chose to include
+                modal.classList.add("fade-out");
+                setTimeout(() => {
+                    if (document.body.contains(modal)) {
+                        document.body.removeChild(modal);
+                    }
+                    resolve(true); // User chose to include
+                }, 300); // Match animation duration
             };
             const noButton = document.createElement("button");
             noButton.textContent = "No, Exclude";
@@ -1292,8 +1297,13 @@
             noButton.onmouseover = () => noButton.style.background = "#e53935";
             noButton.onmouseout = () => noButton.style.background = "#f44336";
             noButton.onclick = () => {
-                document.body.removeChild(modal);
-                resolve(false); // User chose to exclude
+                modal.classList.add("fade-out");
+                setTimeout(() => {
+                    if (document.body.contains(modal)) {
+                        document.body.removeChild(modal);
+                    }
+                    resolve(false); // User chose to exclude
+                }, 300); // Match animation duration
             };
             buttonContainer.appendChild(yesButton);
             buttonContainer.appendChild(noButton);
@@ -1493,10 +1503,15 @@
         // Function to create and toggle the settings modal
         function toggleSettingsModal() {
             if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
-                // Modal exists and is visible, so close it
-                document.body.removeChild(settingsModalInstance);
-                settingsModalInstance = null;
-                document.removeEventListener('click', handleClickOutsideSettingsModal, true); // Remove click-outside listener
+                // Modal exists and is visible, so close it with fade-out
+                settingsModalInstance.classList.add("fade-out");
+                setTimeout(() => {
+                    if (document.body.contains(settingsModalInstance)) {
+                        document.body.removeChild(settingsModalInstance);
+                    }
+                    settingsModalInstance = null;
+                    document.removeEventListener('click', handleClickOutsideSettingsModal, true); // Remove click-outside listener
+                }, 300); // Match animation duration
                 return;
             }
             // Modal doesn't exist or isn't visible, so create and show it
@@ -1511,9 +1526,14 @@
                 { label: "📥 Import", title: "Import All Data", action: importBtn.onclick },
                 { label: "Close", title: "Close", action: () => {
                         if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
-                            document.body.removeChild(settingsModalInstance);
-                            settingsModalInstance = null;
-                            document.removeEventListener('click', handleClickOutsideSettingsModal, true);
+                            settingsModalInstance.classList.add("fade-out");
+                            setTimeout(() => {
+                                if (document.body.contains(settingsModalInstance)) {
+                                    document.body.removeChild(settingsModalInstance);
+                                }
+                                settingsModalInstance = null;
+                                document.removeEventListener('click', handleClickOutsideSettingsModal, true);
+                            }, 300); // Match animation duration
                         }
                     } }
             ];
@@ -1537,9 +1557,14 @@
             if (settingsModalInstance && !settingsModalInstance.contains(event.target)) {
                 // Clicked outside the modal
                 if (settingsModalInstance.parentNode === document.body) {
-                    document.body.removeChild(settingsModalInstance);
-                    settingsModalInstance = null;
-                    document.removeEventListener('click', handleClickOutsideSettingsModal, true);
+                    settingsModalInstance.classList.add("fade-out");
+                    setTimeout(() => {
+                        if (document.body.contains(settingsModalInstance)) {
+                            document.body.removeChild(settingsModalInstance);
+                        }
+                        settingsModalInstance = null;
+                        document.removeEventListener('click', handleClickOutsideSettingsModal, true);
+                    }, 300); // Match animation duration
                 }
             }
         }
@@ -1557,21 +1582,36 @@
             jsonButton.textContent = "JSON";
             jsonButton.classList.add("ytls-save-modal-button"); // Added class
             jsonButton.onclick = () => {
-                saveTimestampsAs("json");
-                document.body.removeChild(modal);
+                modal.classList.add("fade-out");
+                setTimeout(() => {
+                    saveTimestampsAs("json");
+                    if (document.body.contains(modal)) {
+                        document.body.removeChild(modal);
+                    }
+                }, 300); // Match animation duration
             };
             const textButton = document.createElement("button");
             textButton.textContent = "Plain Text";
             textButton.classList.add("ytls-save-modal-button"); // Added class
             textButton.onclick = () => {
-                saveTimestampsAs("text");
-                document.body.removeChild(modal);
+                modal.classList.add("fade-out");
+                setTimeout(() => {
+                    saveTimestampsAs("text");
+                    if (document.body.contains(modal)) {
+                        document.body.removeChild(modal);
+                    }
+                }, 300); // Match animation duration
             };
             const cancelButton = document.createElement("button");
             cancelButton.textContent = "Cancel";
             cancelButton.classList.add("ytls-save-modal-cancel-button"); // Added class
             cancelButton.onclick = () => {
-                document.body.removeChild(modal);
+                modal.classList.add("fade-out");
+                setTimeout(() => {
+                    if (document.body.contains(modal)) {
+                        document.body.removeChild(modal);
+                    }
+                }, 300); // Match animation duration
             };
             modal.appendChild(message);
             modal.appendChild(jsonButton);
@@ -1595,49 +1635,64 @@
             fromFileButton.textContent = "File";
             fromFileButton.style = "background:#555;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;margin-right:10px;";
             fromFileButton.onclick = () => {
-                document.body.removeChild(loadModal);
-                // Create a hidden file input element
-                const fileInput = document.createElement("input");
-                fileInput.type = "file";
-                fileInput.accept = ".json,.txt"; // Accept JSON and plain text files
-                fileInput.classList.add("ytls-hidden-file-input"); // Added class
-                fileInput.onchange = (event) => {
-                    const file = event.target.files?.[0];
-                    if (!file)
-                        return;
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                        const content = String(reader.result).trim();
-                        processImportedData(content);
+                loadModal.classList.add("fade-out");
+                setTimeout(() => {
+                    if (document.body.contains(loadModal)) {
+                        document.body.removeChild(loadModal);
+                    }
+                    // Create a hidden file input element
+                    const fileInput = document.createElement("input");
+                    fileInput.type = "file";
+                    fileInput.accept = ".json,.txt"; // Accept JSON and plain text files
+                    fileInput.classList.add("ytls-hidden-file-input"); // Added class
+                    fileInput.onchange = (event) => {
+                        const file = event.target.files?.[0];
+                        if (!file)
+                            return;
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            const content = String(reader.result).trim();
+                            processImportedData(content);
+                        };
+                        reader.readAsText(file);
                     };
-                    reader.readAsText(file);
-                };
-                fileInput.click();
+                    fileInput.click();
+                }, 300); // Match animation duration
             };
             const fromClipboardButton = document.createElement("button");
             fromClipboardButton.textContent = "Clipboard";
             fromClipboardButton.style = "background:#555;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;";
             fromClipboardButton.onclick = async () => {
-                document.body.removeChild(loadModal);
-                try {
-                    const clipboardText = await navigator.clipboard.readText();
-                    if (clipboardText) {
-                        processImportedData(clipboardText.trim());
+                loadModal.classList.add("fade-out");
+                setTimeout(async () => {
+                    if (document.body.contains(loadModal)) {
+                        document.body.removeChild(loadModal);
                     }
-                    else {
-                        alert("Clipboard is empty.");
+                    try {
+                        const clipboardText = await navigator.clipboard.readText();
+                        if (clipboardText) {
+                            processImportedData(clipboardText.trim());
+                        }
+                        else {
+                            alert("Clipboard is empty.");
+                        }
                     }
-                }
-                catch (err) {
-                    console.error("Failed to read from clipboard: ", err);
-                    alert("Failed to read from clipboard. Ensure you have granted permission.");
-                }
+                    catch (err) {
+                        console.error("Failed to read from clipboard: ", err);
+                        alert("Failed to read from clipboard. Ensure you have granted permission.");
+                    }
+                }, 300); // Match animation duration
             };
             const cancelLoadButton = document.createElement("button");
             cancelLoadButton.textContent = "Cancel";
             cancelLoadButton.style = "background:#444;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;margin-top:15px;display:block;width:100%;";
             cancelLoadButton.onclick = () => {
-                document.body.removeChild(loadModal);
+                loadModal.classList.add("fade-out");
+                setTimeout(() => {
+                    if (document.body.contains(loadModal)) {
+                        document.body.removeChild(loadModal);
+                    }
+                }, 300); // Match animation duration
             };
             loadModal.appendChild(loadMessage);
             loadModal.appendChild(fromFileButton);
@@ -2036,6 +2091,42 @@
 
       .ytls-hidden-file-input {
         display:none;
+      }
+
+      /* Fade-in animation for modals */
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      /* Fade-out animation for modals */
+      @keyframes fadeOut {
+        from {
+          opacity: 1;
+        }
+        to {
+          opacity: 0;
+        }
+      }
+
+      /* Apply fade-in to modals when they appear */
+      #ytls-restricted-export-confirm-modal,
+      #ytls-settings-modal,
+      #ytls-save-modal,
+      #ytls-load-modal {
+        animation: fadeIn 0.3s ease-in-out;
+      }
+
+      /* Apply fade-out class to modals when they disappear */
+      #ytls-restricted-export-confirm-modal.fade-out,
+      #ytls-settings-modal.fade-out,
+      #ytls-save-modal.fade-out,
+      #ytls-load-modal.fade-out {
+        animation: fadeOut 0.3s ease-in-out forwards;
       }
     `;
         // Helper function to ensure pane is fully clamped within viewport
