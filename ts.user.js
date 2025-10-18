@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.1.0
+// @version      3.1.2
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -2210,35 +2210,27 @@
             const viewportHeight = document.documentElement.clientHeight;
             const paneWidth = rect.width;
             const paneHeight = rect.height;
-            let needsAdjustment = false;
             // Clamp left
             if (rect.left < 0) {
                 pane.style.left = "0";
                 pane.style.right = "auto";
-                needsAdjustment = true;
             }
             // Clamp right
             if (rect.right > viewportWidth) {
                 const adjustedLeft = Math.max(0, viewportWidth - paneWidth);
                 pane.style.left = `${adjustedLeft}px`;
                 pane.style.right = "auto";
-                needsAdjustment = true;
             }
             // Clamp top
             if (rect.top < 0) {
                 pane.style.top = "0";
                 pane.style.bottom = "auto";
-                needsAdjustment = true;
             }
             // Clamp bottom
             if (rect.bottom > viewportHeight) {
                 const adjustedTop = Math.max(0, viewportHeight - paneHeight);
                 pane.style.top = `${adjustedTop}px`;
                 pane.style.bottom = "auto";
-                needsAdjustment = true;
-            }
-            if (needsAdjustment) {
-                savePanePosition();
             }
         }
         // Helper function to snap pane to nearest edge, accounting for scrollbars
@@ -2281,7 +2273,6 @@
             }
             // Final safety check to ensure pane is fully on screen
             clampPaneToViewport();
-            savePanePosition();
         }
         minimizeBtn.onclick = () => {
             if (!dragOccurredSinceLastMouseDown) { // Check the flag before toggling
@@ -2291,6 +2282,8 @@
                 setTimeout(() => {
                     clampPaneToViewport();
                     snapPaneToNearestEdge();
+                    // Save position after minimize toggle
+                    savePanePosition();
                 }, 250);
             }
         };
@@ -2307,41 +2300,156 @@
             if (!pane)
                 return;
             loadGlobalSettings('windowPosition').then(value => {
-                if (!value)
+                if (!value) {
+                    // Default to 0,0 if no position stored
+                    pane.style.left = "0";
+                    pane.style.top = "0";
+                    pane.style.right = "auto";
+                    pane.style.bottom = "auto";
+                    // Apply clamp and reposition after loading default
+                    clampPaneToViewport();
                     return;
+                }
                 try {
                     const pos = value;
-                    const { left, top, right, bottom } = pos || {};
-                    if (typeof left === "string") {
-                        pane.style.left = left;
+                    const currentViewportWidth = document.documentElement.clientWidth;
+                    const currentViewportHeight = document.documentElement.clientHeight;
+                    // Restore from minimal data format: x/y ratios with edge indicators
+                    if (typeof pos.x === 'number' && typeof pos.y === 'number') {
+                        const xEdge = pos.xEdge || 'left';
+                        const yEdge = pos.yEdge || 'top';
+                        // Apply horizontal position
+                        if (xEdge === 'right') {
+                            pane.style.right = `${pos.x * currentViewportWidth}px`;
+                            pane.style.left = "auto";
+                        }
+                        else {
+                            pane.style.left = `${pos.x * currentViewportWidth}px`;
+                            pane.style.right = "auto";
+                        }
+                        // Apply vertical position
+                        if (yEdge === 'bottom') {
+                            pane.style.bottom = `${pos.y * currentViewportHeight}px`;
+                            pane.style.top = "auto";
+                        }
+                        else {
+                            pane.style.top = `${pos.y * currentViewportHeight}px`;
+                            pane.style.bottom = "auto";
+                        }
                     }
-                    if (typeof top === "string") {
-                        pane.style.top = top;
+                    else if (typeof pos.x === 'number') {
+                        // Partial data: only horizontal position
+                        const xEdge = pos.xEdge || 'left';
+                        if (xEdge === 'right') {
+                            pane.style.right = `${pos.x * currentViewportWidth}px`;
+                            pane.style.left = "auto";
+                        }
+                        else {
+                            pane.style.left = `${pos.x * currentViewportWidth}px`;
+                            pane.style.right = "auto";
+                        }
+                        pane.style.top = "20px";
+                        pane.style.bottom = "auto";
                     }
-                    if (typeof right === "string") {
-                        pane.style.right = right;
+                    else if (typeof pos.y === 'number') {
+                        // Partial data: only vertical position
+                        const yEdge = pos.yEdge || 'top';
+                        pane.style.left = "auto";
+                        pane.style.right = "20px";
+                        if (yEdge === 'bottom') {
+                            pane.style.bottom = `${pos.y * currentViewportHeight}px`;
+                            pane.style.top = "auto";
+                        }
+                        else {
+                            pane.style.top = `${pos.y * currentViewportHeight}px`;
+                            pane.style.bottom = "auto";
+                        }
                     }
-                    if (typeof bottom === "string") {
-                        pane.style.bottom = bottom;
+                    else {
+                        // Fallback: use default position
+                        pane.style.left = "0";
+                        pane.style.top = "0";
+                        pane.style.right = "auto";
+                        pane.style.bottom = "auto";
                     }
+                    // Apply clamp and reposition after loading position
+                    clampPaneToViewport();
                 }
                 catch (err) {
                     console.warn("Timekeeper failed to parse stored pane position:", err);
+                    pane.style.left = "0";
+                    pane.style.top = "0";
+                    pane.style.right = "auto";
+                    pane.style.bottom = "auto";
+                    // Apply clamp and reposition after error
+                    clampPaneToViewport();
                 }
             }).catch(err => {
                 console.warn("Timekeeper failed to load pane position from IndexedDB:", err);
+                pane.style.left = "0";
+                pane.style.top = "0";
+                pane.style.right = "auto";
+                pane.style.bottom = "auto";
+                // Apply clamp and reposition after error
+                clampPaneToViewport();
             });
         }
         function savePanePosition() {
             if (!pane)
                 return;
             const styleObj = pane.style;
-            saveGlobalSettings('windowPosition', {
-                left: styleObj.left || "",
-                top: styleObj.top || "",
-                right: styleObj.right || "",
-                bottom: styleObj.bottom || ""
-            });
+            // Calculate viewport dimensions (accounting for scrollbars)
+            const viewportWidth = document.documentElement.clientWidth;
+            const viewportHeight = document.documentElement.clientHeight;
+            // Extract current position values
+            const left = styleObj.left;
+            const top = styleObj.top;
+            const right = styleObj.right;
+            const bottom = styleObj.bottom;
+            // Calculate minimal ratios needed to restore position
+            // Only store the ratio for the active edge (left XOR right, top XOR bottom)
+            let x = null; // horizontal position ratio (left or right)
+            let y = null; // vertical position ratio (top or bottom)
+            let xEdge = 'left'; // which horizontal edge to use
+            let yEdge = 'top'; // which vertical edge to use
+            // Determine horizontal position
+            if (left && left !== "auto") {
+                const leftPx = parseFloat(left);
+                if (Number.isFinite(leftPx)) {
+                    x = Math.max(0, Math.min(1, leftPx / viewportWidth));
+                    xEdge = 'left';
+                }
+            }
+            else if (right && right !== "auto") {
+                const rightPx = parseFloat(right);
+                if (Number.isFinite(rightPx)) {
+                    x = Math.max(0, Math.min(1, rightPx / viewportWidth));
+                    xEdge = 'right';
+                }
+            }
+            // Determine vertical position
+            if (top && top !== "auto") {
+                const topPx = parseFloat(top);
+                if (Number.isFinite(topPx)) {
+                    y = Math.max(0, Math.min(1, topPx / viewportHeight));
+                    yEdge = 'top';
+                }
+            }
+            else if (bottom && bottom !== "auto") {
+                const bottomPx = parseFloat(bottom);
+                if (Number.isFinite(bottomPx)) {
+                    y = Math.max(0, Math.min(1, bottomPx / viewportHeight));
+                    yEdge = 'bottom';
+                }
+            }
+            // Store only minimal data: x/y ratios and which edges they represent
+            const positionData = {
+                x, // horizontal ratio (0-1)
+                y, // vertical ratio (0-1)
+                xEdge, // 'left' or 'right'
+                yEdge // 'top' or 'bottom'
+            };
+            saveGlobalSettings('windowPosition', positionData);
         }
         function isEdgePinned(value) {
             if (!value || value === "auto") {
@@ -2426,7 +2534,6 @@
                 pane.style.top = `${adjustedTop}px`;
                 pane.style.bottom = "auto";
             }
-            savePanePosition();
             lastViewportWidth = window.innerWidth;
             lastViewportHeight = window.innerHeight;
         }
@@ -2492,6 +2599,8 @@
             }, 50);
             // Snap to nearest edge using the helper function
             snapPaneToNearestEdge();
+            // Save position after manual drag completes
+            savePanePosition();
         });
         // Prevent text selection during drag
         pane.addEventListener("dragstart", (e) => e.preventDefault());
