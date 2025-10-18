@@ -2462,8 +2462,6 @@ declare const GM_info: {
         setTimeout(() => {
           clampPaneToViewport();
           snapPaneToNearestEdge();
-          // Save position after minimize toggle
-          savePanePosition();
         }, 250);
       }
     };
@@ -2659,8 +2657,10 @@ declare const GM_info: {
     pane.style.position = "fixed";
     pane.style.bottom = "0";
     pane.style.right = "0";
-    pane.style.transition = "all 0.2s ease";
+    pane.style.transition = "none"; // Disable transition during initial position restore
     loadPanePosition();
+    // Re-enable transition after initial position is loaded
+    pane.style.transition = "all 0.2s ease";
     // Ensure initial position is clamped to viewport
     setTimeout(() => clampPaneToViewport(), 10);
 
@@ -2731,18 +2731,29 @@ declare const GM_info: {
 
       // Snap to nearest edge using the helper function
       snapPaneToNearestEdge();
-      // Save position after manual drag completes
-      savePanePosition();
+      // Save position after edge snapping animation completes (0.2s transition)
+      setTimeout(() => {
+        savePanePosition();
+      }, 200);
     });
 
     // Prevent text selection during drag
     pane.addEventListener("dragstart", (e) => e.preventDefault());
 
     // Ensure the timestamps window is fully onscreen after resizing
+    let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
     window.addEventListener("resize", () => {
-      adjustPanePositionForViewportChange();
-      clampPaneToViewport(); // Also clamp to ensure full visibility after resize
-      snapPaneToNearestEdge(); // Reapply snapping logic after resize
+      // Debounce position save - only save after resize is finished
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+      }
+      resizeTimeout = setTimeout(() => {
+        adjustPanePositionForViewportChange();
+        clampPaneToViewport(); // Also clamp to ensure full visibility after resize
+        snapPaneToNearestEdge(); // Reapply snapping logic after resize
+        savePanePosition(); // Save position after resize completes
+        resizeTimeout = null;
+      }, 200);
     });
 
     header.appendChild(minimizeBtn); // Add minimize button to the header first
