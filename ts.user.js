@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.0.2
+// @version      3.0.3
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -2311,12 +2311,13 @@
             const paneRect = pane.getBoundingClientRect();
             const paneWidth = paneRect.width;
             const paneHeight = paneRect.height;
-            const windowWidth = window.innerWidth;
-            const windowHeight = window.innerHeight;
-            // Clamp x to keep pane fully on screen horizontally
-            x = Math.max(0, Math.min(x, windowWidth - paneWidth));
-            // Clamp y to keep pane fully on screen vertically
-            y = Math.max(0, Math.min(y, windowHeight - paneHeight));
+            // Use document.documentElement.clientWidth/Height to account for scrollbars
+            const viewportWidth = document.documentElement.clientWidth;
+            const viewportHeight = document.documentElement.clientHeight;
+            // Clamp x to keep pane fully on screen horizontally, accounting for scrollbars
+            x = Math.max(0, Math.min(x, viewportWidth - paneWidth));
+            // Clamp y to keep pane fully on screen vertically, accounting for scrollbars
+            y = Math.max(0, Math.min(y, viewportHeight - paneHeight));
             pane.style.left = `${x}px`;
             pane.style.top = `${y}px`;
             pane.style.right = "auto";
