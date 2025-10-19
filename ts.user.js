@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.1.7
+// @version      3.1.9
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -51,6 +51,7 @@
     let lastViewportWidth = window.innerWidth;
     let lastViewportHeight = window.innerHeight;
     let pendingStoredViewport = null;
+    let isLoadingTimestamps = false; // Track if timestamps are currently loading
     // Wait for YouTube interface to load completely
     async function waitForYouTubeReady() {
         // Wait for the main video element and controls to be present
@@ -323,6 +324,60 @@
             list.removeChild(list.firstChild);
         }
     }
+    function setLoadingState(loading) {
+        if (!pane || !list)
+            return;
+        isLoadingTimestamps = loading;
+        if (loading) {
+            // Hide the pane during loading
+            pane.style.display = "none";
+        }
+        else {
+            // Show the pane when loading is done
+            pane.style.display = "";
+            // Update CT display now that loading is done
+            if (timeDisplay) {
+                const video = getVideoElement();
+                const playerInstance = getActivePlayer();
+                if (video || playerInstance) {
+                    const currentSeconds = Math.max(0, Math.floor(getCurrentTimeCompat()));
+                    const h = Math.floor(currentSeconds / 3600);
+                    const m = Math.floor(currentSeconds / 60) % 60;
+                    const s = currentSeconds % 60;
+                    const { isLive } = getVideoDataCompat() || { isLive: false };
+                    const timestamps = list ? Array.from(list.children).map(li => {
+                        const timeLink = li.querySelector('a[data-time]');
+                        return timeLink ? parseFloat(timeLink.getAttribute('data-time')) : 0;
+                    }) : [];
+                    let timestampDisplay = "";
+                    if (timestamps.length > 0) {
+                        if (isLive) {
+                            const currentTimeMinutes = Math.max(1, currentSeconds / 60);
+                            const liveTimestamps = timestamps.filter(time => time <= currentSeconds);
+                            if (liveTimestamps.length > 0) {
+                                const timestampsPerMin = (liveTimestamps.length / currentTimeMinutes).toFixed(2);
+                                if (parseFloat(timestampsPerMin) > 0) {
+                                    timestampDisplay = ` (${timestampsPerMin}/min)`;
+                                }
+                            }
+                        }
+                        else {
+                            const durationSeconds = getDurationCompat();
+                            const validDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
+                                ? durationSeconds
+                                : (video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0);
+                            const totalMinutes = Math.max(1, validDuration / 60);
+                            const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(1);
+                            if (parseFloat(timestampsPerMin) > 0) {
+                                timestampDisplay = ` (${timestampsPerMin}/min)`;
+                            }
+                        }
+                    }
+                    timeDisplay.textContent = `CT: ${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+                }
+            }
+        }
+    }
     // Helper function to format timestamps based on total duration
     function formatTimeString(seconds, videoDuration = seconds) {
         const h = Math.floor(seconds / 3600);
@@ -367,7 +422,7 @@
     let seekTimeoutId = null;
     let pendingSeekTime = null;
     function handleClick(event) {
-        if (!list) {
+        if (!list || isLoadingTimestamps) {
             return;
         }
         const target = event.target instanceof HTMLElement ? event.target : null;
@@ -623,7 +678,7 @@
         });
     }
     function sortTimestampsAndUpdateDisplay() {
-        if (!list || list.querySelector('.ytls-error-message')) {
+        if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
             return;
         }
         const items = getTimestampItems();
@@ -1339,6 +1394,10 @@
         minimizeBtn.classList.add("ytls-minimize-button");
         minimizeBtn.id = "ytls-minimize";
         function updateTime() {
+            // Skip updates during loading
+            if (isLoadingTimestamps) {
+                return;
+            }
             const video = getVideoElement();
             const playerInstance = getActivePlayer();
             if (!video && !playerInstance) {
@@ -1387,7 +1446,7 @@
         btns.id = "ytls-buttons";
         // Define handlers for main buttons
         const handleAddTimestamp = () => {
-            if (!list || list.querySelector('.ytls-error-message')) {
+            if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
                 return;
             }
             // Use configuredOffset if available, otherwise default to 0
@@ -1402,7 +1461,7 @@
             }
         };
         const handleCopyTimestamps = function (e) {
-            if (!list || list.querySelector('.ytls-error-message')) {
+            if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
                 this.textContent = "❌";
                 setTimeout(() => { this.textContent = "📋"; }, 2000);
                 return;
@@ -1828,6 +1887,7 @@
         padding: 0;
         margin: 0;
         user-select: none; /* Prevent text selection in timestamp list */
+        position: relative; /* Enable absolute positioning for loading message */
       }
       #ytls-pane li {
         display: flex;
@@ -2089,7 +2149,6 @@
         function snapPaneToNearestEdge() {
             if (!pane || !document.body.contains(pane))
                 return;
-            pane.style.transition = "all 0.2s ease";
             const rect = pane.getBoundingClientRect();
             // Use document.documentElement.clientWidth/Height to account for scrollbars
             const viewportWidth = document.documentElement.clientWidth;
@@ -2320,8 +2379,6 @@
         pane.style.right = "0";
         pane.style.transition = "none"; // Disable transition during initial position restore
         loadPanePosition();
-        // Re-enable transition after initial position is loaded
-        pane.style.transition = "all 0.2s ease";
         // Ensure initial position is clamped to viewport
         setTimeout(() => clampPaneToViewport(), 10);
         let isDragging = false;
@@ -2455,13 +2512,28 @@
         await loadTimestamps();
         // Ensure seekbar markers are updated after timestamps are loaded
         updateSeekbarMarkers();
+        // Set loading state to false after timestamps are loaded
+        setLoadingState(false);
+        log("Timestamps loaded and UI unlocked for video:", currentVideoId);
         // Display the pane after loading timestamps
         displayPane();
         // Setup video event listeners for highlighting and URL updates
         setupVideoEventListeners();
     }
-    window.addEventListener("yt-navigate-finish", handleUrlChange);
-    // Initial call to handle the current URL
-    await handleUrlChange();
+    // Listen for navigation start and lock UI with loading state
+    window.addEventListener("yt-navigate-start", () => {
+        log("Navigation started (yt-navigate-start event fired)");
+        if (isSupportedUrl() && pane && list) {
+            log("Locking UI and showing loading state for navigation");
+            setLoadingState(true);
+        }
+    });
+    // Listen for navigation completion and load timestamps when navigation finishes
+    window.addEventListener("yt-navigate-finish", () => {
+        log("Navigation finished (yt-navigate-finish event fired)");
+        handleUrlChange();
+    });
+    // Timekeeper initialization will occur on first yt-navigate-finish event
+    log("Timekeeper initialized and waiting for navigation events");
 })();
 
