@@ -9,6 +9,8 @@ declare const GM_info: {
   };
 };
 
+import { PANE_STYLES } from "./styles";
+
 (async function () {
   'use strict';
 
@@ -39,13 +41,11 @@ declare const GM_info: {
   let btns: HTMLDivElement | null = null;
   let timeDisplay: HTMLSpanElement | null = null;
   let style: HTMLStyleElement | null = null;
-  let minimizeBtn: HTMLButtonElement | null = null;
   let versionDisplay: HTMLSpanElement | null = null;
   let timeUpdateIntervalId: ReturnType<typeof setInterval> | null = null;
-  let lastViewportWidth = window.innerWidth;
-  let lastViewportHeight = window.innerHeight;
-  let pendingStoredViewport: { width: number; height: number } | null = null;
   let isLoadingTimestamps = false; // Track if timestamps are currently loading
+  const TIMESTAMP_DELETE_CLASS = "ytls-timestamp-pending-delete";
+  const TIMESTAMP_HIGHLIGHT_CLASS = "ytls-timestamp-highlight";
 
   // Wait for YouTube interface to load completely
   async function waitForYouTubeReady() {
@@ -262,7 +262,7 @@ declare const GM_info: {
     const consoleArgs = [...args];
 
     if (args.length > 0 && typeof args[args.length - 1] === 'string' &&
-        ['debug', 'info', 'warn', 'error'].includes(args[args.length - 1])) {
+      ['debug', 'info', 'warn', 'error'].includes(args[args.length - 1])) {
       logLevel = consoleArgs.pop() as LogLevel;
     }
 
@@ -290,13 +290,24 @@ declare const GM_info: {
     if (!isSupportedUrl() || !list || !pane) {
       return;
     }
-    if (event.data && event.data.type === 'timestamps_updated' && event.data.videoId === getVideoId()) {
-      log('Debouncing timestamp load due to external update for video:', event.data.videoId);
-      clearTimeout(loadTimeoutId); // Clear existing load timeout
-      loadTimeoutId = setTimeout(() => {
-        log('Reloading timestamps due to external update for video:', event.data.videoId);
-        loadTimestamps();
-      }, 500); // Set new timeout to load after 500ms
+    if (event.data) {
+      if (event.data.type === 'timestamps_updated' && event.data.videoId === getVideoId()) {
+        log('Debouncing timestamp load due to external update for video:', event.data.videoId);
+        clearTimeout(loadTimeoutId);
+        loadTimeoutId = setTimeout(() => {
+          log('Reloading timestamps due to external update for video:', event.data.videoId);
+          loadTimestamps();
+        }, 500);
+      } else if (event.data.type === 'window_position_updated' && pane) {
+        const pos = event.data.position;
+        if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
+          pane.style.left = `${Math.max(0, pos.x)}px`;
+          pane.style.top = `${Math.max(0, pos.y)}px`;
+          pane.style.right = "auto";
+          pane.style.bottom = "auto";
+          clampPaneToViewport();
+        }
+      }
     }
   };
 
@@ -366,8 +377,8 @@ declare const GM_info: {
 
     if (loading) {
       // Fade out the pane during loading
-      pane.classList.add("fade-out");
-      pane.classList.remove("fade-in");
+      pane.classList.add("ytls-fade-out");
+      pane.classList.remove("ytls-fade-in");
       // Hide after fade completes
       setTimeout(() => {
         pane.style.display = "none";
@@ -376,8 +387,8 @@ declare const GM_info: {
       // Show the pane when loading is done
       pane.style.display = "";
       // Fade in after showing
-      pane.classList.remove("fade-out");
-      pane.classList.add("fade-in");
+      pane.classList.remove("ytls-fade-out");
+      pane.classList.add("ytls-fade-in");
 
       // Update CT display now that loading is done
       if (timeDisplay) {
@@ -494,12 +505,12 @@ declare const GM_info: {
       const clickedLi = target.closest('li') as HTMLLIElement | null;
       if (clickedLi) {
         getTimestampItems().forEach(item => {
-          if (item.style.background !== "darkred") {
-            item.style.background = "rgba(255, 255, 255, 0.05)";
+          if (!item.classList.contains(TIMESTAMP_DELETE_CLASS)) {
+            item.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
           }
         });
-        if (clickedLi.style.background !== "darkred") {
-          clickedLi.style.background = "rgba(0, 128, 255, 0.2)";
+        if (!clickedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
+          clickedLi.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
         }
       }
     } else if (target.dataset.increment) {
@@ -612,7 +623,8 @@ declare const GM_info: {
         debouncedSaveTimestamps();
       } else {
         li.dataset.deleteConfirmed = "true";
-        li.style.background = "darkred";
+        li.classList.add(TIMESTAMP_DELETE_CLASS);
+        li.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
 
         // Add a click listener to cancel delete if clicking anywhere except the delete button
         const cancelDeleteOnClick = (event: Event) => {
@@ -620,7 +632,7 @@ declare const GM_info: {
           // Only cancel if clicking on something that's not the delete button itself
           if (target !== del) {
             li.dataset.deleteConfirmed = "false";
-            li.style.background = "rgba(255, 255, 255, 0.05)";
+            li.classList.remove(TIMESTAMP_DELETE_CLASS);
             li.removeEventListener("click", cancelDeleteOnClick, true);
             document.removeEventListener("click", cancelDeleteOnClick, true);
           }
@@ -633,7 +645,7 @@ declare const GM_info: {
         setTimeout(() => {
           if (li.dataset.deleteConfirmed === "true") {
             li.dataset.deleteConfirmed = "false";
-            li.style.background = "rgba(255, 255, 255, 0.05)";
+            li.classList.remove(TIMESTAMP_DELETE_CLASS);
           }
           // Clean up listeners even if timeout expires
           li.removeEventListener("click", cancelDeleteOnClick, true);
@@ -648,8 +660,6 @@ declare const GM_info: {
 
     timeRow.append(minus, record, plus, anchor, timeDiff, del);
     li.append(timeRow, commentInput);
-    li.style.cssText = "display:flex;flex-direction:column;gap:5px;padding:5px;background:rgba(255,255,255,0.05);border-radius:3px;";
-
     const newTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
     let inserted = false;
     const existingItems = getTimestampItems();
@@ -992,7 +1002,6 @@ declare const GM_info: {
       return;
     }
 
-    pane.classList.remove("minimized");
     clearTimestampsDisplay();
 
     const errorItem = document.createElement("li");
@@ -1009,6 +1018,38 @@ declare const GM_info: {
 
   function removeSeekbarMarkers() {
     document.querySelectorAll(".ytls-marker").forEach(marker => marker.remove());
+  }
+
+  function clampPaneToViewport() {
+    if (!pane || !document.body.contains(pane)) return;
+
+    const rect = pane.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    const paneWidth = rect.width;
+    const paneHeight = rect.height;
+
+    if (rect.left < 0) {
+      pane.style.left = "0";
+      pane.style.right = "auto";
+    }
+
+    if (rect.right > viewportWidth) {
+      const adjustedLeft = Math.max(0, viewportWidth - paneWidth);
+      pane.style.left = `${adjustedLeft}px`;
+      pane.style.right = "auto";
+    }
+
+    if (rect.top < 0) {
+      pane.style.top = "0";
+      pane.style.bottom = "auto";
+    }
+
+    if (rect.bottom > viewportHeight) {
+      const adjustedTop = Math.max(0, viewportHeight - paneHeight);
+      pane.style.top = `${adjustedTop}px`;
+      pane.style.bottom = "auto";
+    }
   }
 
   function removeAllEventListeners() {
@@ -1045,6 +1086,8 @@ declare const GM_info: {
   }
 
   function unloadTimekeeper() {
+    removeSeekbarMarkers();
+
     if (saveTimeoutId) {
       clearTimeout(saveTimeoutId);
       saveTimeoutId = null;
@@ -1089,12 +1132,9 @@ declare const GM_info: {
     btns = null;
     timeDisplay = null;
     style = null;
-    minimizeBtn = null;
     versionDisplay = null;
-    pendingStoredViewport = null;
 
     lastValidatedPlayer = null;
-    removeSeekbarMarkers();
   }
 
   async function validatePlayerAndVideoId() {
@@ -1190,7 +1230,6 @@ declare const GM_info: {
         }
       } catch (dbError) {
         log(`Failed to load timestamps from IndexedDB for ${videoId}:`, dbError, 'error');
-        pane.classList.add("minimized");
         clearTimestampsDisplay();
         updateSeekbarMarkers();
         return;
@@ -1267,14 +1306,13 @@ declare const GM_info: {
 
       // Highlight the nearest timestamp
       getTimestampItems().forEach(li => {
-        // Skip resetting the background if it's marked for deletion (dark red)
-        if (li.style.background !== "darkred") {
-          li.style.background = "rgba(255, 255, 255, 0.05)"; // Reset background
+        if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
+          li.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
         }
       });
 
-      if (nearestTimestamp && nearestTimestamp.style.background !== "darkred") {
-        nearestTimestamp.style.background = "rgba(0, 128, 255, 0.2)"; // Highlight nearest timestamp
+      if (nearestTimestamp && !nearestTimestamp.classList.contains(TIMESTAMP_DELETE_CLASS)) {
+        nearestTimestamp.classList.add(TIMESTAMP_HIGHLIGHT_CLASS); // Highlight nearest timestamp
         nearestTimestamp.scrollIntoView({ behavior: "smooth", block: "center" }); // Scroll to it
       }
     };
@@ -1393,32 +1431,32 @@ declare const GM_info: {
     });
   }
 
-  function saveMinimizedState() {
+  function saveUIVisibilityState() {
     if (!pane) return;
 
-    const isMinimized = pane.classList.contains("minimized");
-    saveGlobalSettings('isMinimized', isMinimized);
+    const isVisible = pane.style.display !== "none";
+    saveGlobalSettings('uiVisible', isVisible);
   }
 
-  function loadMinimizedState() {
+  function loadUIVisibilityState() {
     if (!pane) return;
 
-    loadGlobalSettings('isMinimized').then(value => {
-      const isMinimized = value as boolean | undefined;
-      if (typeof isMinimized === 'boolean') {
-        if (isMinimized) {
-          pane.classList.add("minimized");
+    loadGlobalSettings('uiVisible').then(value => {
+      const isVisible = value as boolean | undefined;
+      if (typeof isVisible === 'boolean') {
+        if (isVisible) {
+          pane.style.display = "flex";
         } else {
-          pane.classList.remove("minimized");
+          pane.style.display = "none";
         }
       } else {
-        // Default to minimized if not found
-        pane.classList.add("minimized");
+        // Default to visible if not found
+        pane.style.display = "flex";
       }
     }).catch(err => {
-      log("Failed to load minimized state:", err, 'error');
-      // Default to minimized on error
-      pane.classList.add("minimized");
+      log("Failed to load UI visibility state:", err, 'error');
+      // Default to visible on error
+      pane.style.display = "flex";
     });
   }
 
@@ -1538,7 +1576,7 @@ declare const GM_info: {
       return;
     }
 
-    // Remove any stray minimized icons before creating a new pane
+    // Remove any stray panes before creating a new one
     document.querySelectorAll("#ytls-pane").forEach(el => el.remove());
 
     pane = document.createElement("div");
@@ -1547,7 +1585,6 @@ declare const GM_info: {
     btns = document.createElement("div");
     timeDisplay = document.createElement("span");
     style = document.createElement("style");
-    minimizeBtn = document.createElement("button");
     versionDisplay = document.createElement("span");
 
     // Add event listeners to `list` after it is initialized
@@ -1559,27 +1596,21 @@ declare const GM_info: {
       isMouseOverTimestamps = false;
     });
 
-    pane.id = "ytls-pane";
-    pane.classList.add("minimized");
-    header.style = "display:flex;justify-content:space-between;align-items:center;padding:5px;nowrap;";
+  pane.id = "ytls-pane";
+  header.id = "ytls-pane-header";
 
     const scriptVersion = GM_info.script.version; // Get script version
     versionDisplay.textContent = `v${scriptVersion}`;
-    versionDisplay.style = "font-size:12px; color: #aaa; margin-left: auto; padding-right: 5px; cursor: default"; // Style for version
     versionDisplay.classList.add("ytls-version-display"); // Add class for CSS targeting
 
     timeDisplay.id = "ytls-current-time";
     timeDisplay.textContent = "CT: ";
-    timeDisplay.style = "color:white;font-size:14px;cursor:pointer;"; // Add pointer cursor
 
     // Enable clicking on the current timestamp to jump to the latest point in the live stream
     timeDisplay.onclick = () => {
       seekToLiveHeadCompat();
     };
 
-    minimizeBtn.textContent = "▶️";
-    minimizeBtn.classList.add("ytls-minimize-button");
-    minimizeBtn.id = "ytls-minimize";
     function updateTime() {
       // Skip updates during loading
       if (isLoadingTimestamps) {
@@ -1729,7 +1760,7 @@ declare const GM_info: {
       button.classList.add("ytls-main-button");
       if (config.label === "📋") {
         // For copy button, bind to an event handler that includes the event object
-        button.onclick = function(e) { config.action.call(this, e); };
+        button.onclick = function (e) { config.action.call(this, e); };
       } else {
         button.onclick = config.action;
       }
@@ -1753,7 +1784,8 @@ declare const GM_info: {
     function toggleSettingsModal() {
       if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
         // Modal exists and is visible, so close it with fade-out
-        settingsModalInstance.classList.add("fade-out");
+        settingsModalInstance.classList.remove("ytls-fade-in");
+        settingsModalInstance.classList.add("ytls-fade-out");
         setTimeout(() => {
           if (document.body.contains(settingsModalInstance)) {
             document.body.removeChild(settingsModalInstance);
@@ -1767,6 +1799,8 @@ declare const GM_info: {
       // Modal doesn't exist or isn't visible, so create and show it
       settingsModalInstance = document.createElement("div");
       settingsModalInstance.id = "ytls-settings-modal";
+      settingsModalInstance.classList.remove("ytls-fade-out");
+      settingsModalInstance.classList.add("ytls-fade-in");
 
       const settingsContent = document.createElement("div");
       settingsContent.id = "ytls-settings-content";
@@ -1776,18 +1810,21 @@ declare const GM_info: {
         { label: "📂 Load", title: "Load", action: loadBtn.onclick },
         { label: "📤 Export", title: "Export All Data", action: exportBtn.onclick },
         { label: "📥 Import", title: "Import All Data", action: importBtn.onclick },
-        { label: "Close", title: "Close", action: () => {
+        {
+          label: "Close", title: "Close", action: () => {
             if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
-                settingsModalInstance.classList.add("fade-out");
-                setTimeout(() => {
-                  if (document.body.contains(settingsModalInstance)) {
-                    document.body.removeChild(settingsModalInstance);
-                  }
-                  settingsModalInstance = null;
-                  document.removeEventListener('click', handleClickOutsideSettingsModal, true);
-                }, 300); // Match animation duration
+              settingsModalInstance.classList.remove("ytls-fade-in");
+              settingsModalInstance.classList.add("ytls-fade-out");
+              setTimeout(() => {
+                if (document.body.contains(settingsModalInstance)) {
+                  document.body.removeChild(settingsModalInstance);
+                }
+                settingsModalInstance = null;
+                document.removeEventListener('click', handleClickOutsideSettingsModal, true);
+              }, 300); // Match animation duration
             }
-        }}
+          }
+        }
       ];
 
       buttonConfigs.forEach(({ label, title, action }) => {
@@ -1814,14 +1851,15 @@ declare const GM_info: {
       if (settingsModalInstance && !settingsModalInstance.contains(event.target)) {
         // Clicked outside the modal
         if (settingsModalInstance.parentNode === document.body) {
-            settingsModalInstance.classList.add("fade-out");
-            setTimeout(() => {
-              if (document.body.contains(settingsModalInstance)) {
-                document.body.removeChild(settingsModalInstance);
-              }
-              settingsModalInstance = null;
-              document.removeEventListener('click', handleClickOutsideSettingsModal, true);
-            }, 300); // Match animation duration
+          settingsModalInstance.classList.remove("ytls-fade-in");
+          settingsModalInstance.classList.add("ytls-fade-out");
+          setTimeout(() => {
+            if (document.body.contains(settingsModalInstance)) {
+              document.body.removeChild(settingsModalInstance);
+            }
+            settingsModalInstance = null;
+            document.removeEventListener('click', handleClickOutsideSettingsModal, true);
+          }, 300); // Match animation duration
         }
       }
     }
@@ -1831,9 +1869,12 @@ declare const GM_info: {
     saveBtn.textContent = "💾 Save";
     saveBtn.classList.add("ytls-file-operation-button");
     saveBtn.onclick = () => {
+
       // Create a styled modal for the save format choice
       const modal = document.createElement("div");
       modal.id = "ytls-save-modal"; // Added ID
+      modal.classList.remove("ytls-fade-out");
+      modal.classList.add("ytls-fade-in");
 
       const message = document.createElement("p");
       message.textContent = "Save as:";
@@ -1842,7 +1883,8 @@ declare const GM_info: {
       jsonButton.textContent = "JSON";
       jsonButton.classList.add("ytls-save-modal-button"); // Added class
       jsonButton.onclick = () => {
-        modal.classList.add("fade-out");
+        modal.classList.remove("ytls-fade-in");
+        modal.classList.add("ytls-fade-out");
         setTimeout(() => {
           saveTimestampsAs("json");
           if (document.body.contains(modal)) {
@@ -1855,7 +1897,8 @@ declare const GM_info: {
       textButton.textContent = "Plain Text";
       textButton.classList.add("ytls-save-modal-button"); // Added class
       textButton.onclick = () => {
-        modal.classList.add("fade-out");
+        modal.classList.remove("ytls-fade-in");
+        modal.classList.add("ytls-fade-out");
         setTimeout(() => {
           saveTimestampsAs("text");
           if (document.body.contains(modal)) {
@@ -1868,7 +1911,8 @@ declare const GM_info: {
       cancelButton.textContent = "Cancel";
       cancelButton.classList.add("ytls-save-modal-cancel-button"); // Added class
       cancelButton.onclick = () => {
-        modal.classList.add("fade-out");
+        modal.classList.remove("ytls-fade-in");
+        modal.classList.add("ytls-fade-out");
         setTimeout(() => {
           if (document.body.contains(modal)) {
             document.body.removeChild(modal);
@@ -1891,17 +1935,18 @@ declare const GM_info: {
       // Create a modal for choosing load source
       const loadModal = document.createElement("div");
       loadModal.id = "ytls-load-modal"; // Added ID
-      loadModal.style = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#333;padding:20px;border-radius:10px;z-index:10001;color:white;text-align:center;width:300px;box-shadow:0 0 10px rgba(0,0,0,0.5);";
+      loadModal.classList.remove("ytls-fade-out");
+      loadModal.classList.add("ytls-fade-in");
 
       const loadMessage = document.createElement("p");
       loadMessage.textContent = "Load from:";
-      loadMessage.style = "margin-bottom:15px;font-size:16px;";
 
       const fromFileButton = document.createElement("button");
       fromFileButton.textContent = "File";
-      fromFileButton.style = "background:#555;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;margin-right:10px;";
+  fromFileButton.classList.add("ytls-save-modal-button");
       fromFileButton.onclick = () => {
-        loadModal.classList.add("fade-out");
+        loadModal.classList.remove("ytls-fade-in");
+        loadModal.classList.add("ytls-fade-out");
         setTimeout(() => {
           if (document.body.contains(loadModal)) {
             document.body.removeChild(loadModal);
@@ -1929,9 +1974,10 @@ declare const GM_info: {
 
       const fromClipboardButton = document.createElement("button");
       fromClipboardButton.textContent = "Clipboard";
-      fromClipboardButton.style = "background:#555;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;";
+  fromClipboardButton.classList.add("ytls-save-modal-button");
       fromClipboardButton.onclick = async () => {
-        loadModal.classList.add("fade-out");
+        loadModal.classList.remove("ytls-fade-in");
+        loadModal.classList.add("ytls-fade-out");
         setTimeout(async () => {
           if (document.body.contains(loadModal)) {
             document.body.removeChild(loadModal);
@@ -1952,9 +1998,10 @@ declare const GM_info: {
 
       const cancelLoadButton = document.createElement("button");
       cancelLoadButton.textContent = "Cancel";
-      cancelLoadButton.style = "background:#444;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;margin-top:15px;display:block;width:100%;";
+  cancelLoadButton.classList.add("ytls-save-modal-cancel-button");
       cancelLoadButton.onclick = () => {
-        loadModal.classList.add("fade-out");
+        loadModal.classList.remove("ytls-fade-in");
+        loadModal.classList.add("ytls-fade-out");
         setTimeout(() => {
           if (document.body.contains(loadModal)) {
             document.body.removeChild(loadModal);
@@ -2064,383 +2111,7 @@ declare const GM_info: {
       fileInput.click();
     };
 
-    style.textContent = `
-      #ytls-pane {
-        background: rgba(0, 0, 0, 0.8);
-        text-align: left;
-        position: fixed;
-        bottom: 0;
-        right: 0;
-        padding: 5px 10px 10px 10px;
-        border-radius: 12px; /* Add rounded corners */
-        border: 1px solid rgba(85, 85, 85, 0.8); /* Add a thin grey border */
-        opacity: 0.9;
-        z-index: 5000;
-        font-family: Arial, sans-serif;
-        width: 300px;
-        user-select: none; /* Prevent text selection in pane */
-      }
-      #ytls-pane.minimized {
-        width: 3em; /* Size relative to the icon */
-        height: 3em; /* Size relative to the icon */
-        overflow: hidden;
-        background: rgba(0, 0, 0, 0.8);
-        padding: 0;
-        border-radius: 1em; /* Fully rounded corners */
-        border: 1px solid grey; /* Add a thin grey border */
-        display: flex;
-        justify-content: center; /* Center the content horizontally */
-        align-items: center; /* Center the content vertically */
-      }
-      #ytls-pane.minimized #ytls-content {
-        display: none;
-      }
-      #ytls-pane.minimized #ytls-minimize {
-        display: block;
-        font-size: 1.5em; /* Adjust font size for better visibility */
-        background: transparent;
-        border: none;
-        color: white;
-        cursor: pointer;
-      }
-      #ytls-pane.minimized #ytls-current-time,
-      #ytls-pane.minimized .ytls-version-display {
-        display: none;
-      }
-      #ytls-pane:hover {
-        opacity: 1;
-      }
-      #ytls-pane ul {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        user-select: none; /* Prevent text selection in timestamp list */
-        position: relative; /* Enable absolute positioning for loading message */
-      }
-      #ytls-pane li {
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-        margin: 5px 0;
-        background: rgba(255, 255, 255, 0.05);
-        padding: 5px;
-        border-radius: 3px;
-        user-select: none; /* Prevent text selection in timestamp items */
-      }
-      #ytls-pane .time-row {
-        display: flex;
-        gap: 5px;
-        align-items: center;
-      }
-      #ytls-pane .time-row a {
-        flex-grow: 1; /* Allow the timestamp text to take up available space */
-        max-width: 100%; /* Constrain the width to the parent container */
-        text-align: left; /* Align the text to the left */
-        overflow: hidden; /* Prevent overflow */
-        text-overflow: ellipsis; /* Add ellipsis for long text */
-        white-space: nowrap; /* Prevent wrapping */
-      }
-      #ytls-pane .ytls-marker {
-        position: absolute;
-        height: 100%;
-        width: 2px;
-        background-color: #ff0000;
-        cursor: pointer;
-      }
-      #ytls-pane .ytls-marker.end {
-        background-color: #00ff00;
-      }
-      #ytls-pane .ytls-ts-bar {
-        position: absolute;
-        height: 100%;
-        background-color: rgba(255, 255, 0, 0.3);
-        cursor: pointer;
-      }
-      #ytls-pane span,
-      #ytls-pane a,
-      #ytls-pane input {
-        background: none;
-        color: white;
-        font-family: inherit;
-        font-size: 14px;
-        text-decoration: none;
-        border: none;
-        outline: none;
-      }
-      #ytls-buttons {
-        display: flex;
-        gap: 5px;
-        justify-content: space-between;
-        margin-top: 10px;
-      }
-      #ytls-buttons button:hover {
-        background: rgba(255, 255, 255, 0.2);
-      }
-
-      /* Styles for main control buttons */
-      .ytls-main-button {
-        background: #555;
-        color: white;
-        font-size: 24px;
-        border: none;
-        border-radius: 5px;
-        padding: 5px;
-        cursor: pointer;
-      }
-      .ytls-main-button:hover {
-        background: #777; /* Example hover effect */
-      }
-
-      /* Style for the minimize button */
-      .ytls-minimize-button {
-        background: transparent;
-        border: none;
-        color: white;
-        cursor: pointer;
-        font-size: 16px;
-        padding: 0px;
-      }
-
-      /* Styles for settings modal */
-      #ytls-settings-modal {
-        position:fixed;
-        top:50%;
-        left:50%;
-        transform:translate(-50%, -50%);
-        background:#333;
-        padding:20px;
-        border-radius:10px;
-        z-index:10000;
-        color:white;
-        text-align:center;
-        width:300px;
-        box-shadow:0 0 10px rgba(0,0,0,0.5);
-      }
-      #ytls-settings-content {
-        display:flex;
-        flex-direction:column;
-        gap:10px;
-        align-items:center;
-      }
-
-      /* Styles for buttons in the settings modal */
-      .ytls-settings-modal-button {
-        width: 100%;
-        height: 50px;
-        background: #555;
-        color: white;
-        border: none;
-        border-radius: 5px;
-        cursor: pointer;
-        font-size: 16px;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin-bottom: 5px; /* Add some spacing if needed */
-      }
-      .ytls-settings-modal-button:hover {
-        background: #777; /* Example hover effect */
-      }
-
-      /* Style for the save format choice modal */
-      #ytls-save-modal {
-        position:fixed;
-        top:50%;
-        left:50%;
-        transform:translate(-50%, -50%);
-        background:#333;
-        padding:20px;
-        border-radius:10px;
-        z-index:10000;
-        color:white;
-        text-align:center;
-        width:300px;
-        box-shadow:0 0 10px rgba(0,0,0,0.5);
-      }
-      #ytls-save-modal p {
-        margin-bottom:15px;
-        font-size:16px;
-      }
-      .ytls-save-modal-button {
-        background:#555;
-        color:white;
-        padding:10px 20px;
-        border:none;
-        border-radius:5px;
-        cursor:pointer;
-        margin-right:10px; /* Applied to both JSON and Text buttons, last one will have extra margin if not overridden */
-      }
-      .ytls-save-modal-button:last-of-type { /* Remove margin from the last button of this type in the modal */
-        margin-right:0;
-      }
-      .ytls-save-modal-cancel-button {
-        background:#444;
-        color:white;
-        padding:10px 20px;
-        border:none;
-        border-radius:5px;
-        cursor:pointer;
-        margin-top:15px;
-        display:block;
-        width:100%;
-      }
-
-      /* Styles for file operation buttons (Save, Load, Export, Import) if they were to be displayed directly */
-      /* Note: These buttons (saveBtn, loadBtn, etc.) are not directly added to the UI with these styles. */
-      /* Their onclick handlers are used by the settings modal buttons which use .ytls-settings-modal-button. */
-      .ytls-file-operation-button {
-        background: #555;
-        color: white;
-        font-size: 12px;
-        padding: 5px 10px;
-        border: none;
-        border-radius: 5px;
-        cursor: pointer;
-      }
-      .ytls-file-operation-button:hover {
-        background: #777; /* Example hover effect */
-      }
-
-      .ytls-hidden-file-input {
-        display:none;
-      }
-
-      /* Fade-in and fade-out classes for pane visibility transitions */
-      #ytls-pane.fade-in {
-        animation: fadeIn 0.3s ease-in-out forwards;
-      }
-
-      #ytls-pane.fade-out {
-        animation: fadeOut 0.3s ease-in-out forwards;
-      }
-
-      /* Fade-in animation for modals */
-      @keyframes fadeIn {
-        from {
-          opacity: 0;
-        }
-        to {
-          opacity: 1;
-        }
-      }
-
-      /* Fade-out animation for modals */
-      @keyframes fadeOut {
-        from {
-          opacity: 1;
-        }
-        to {
-          opacity: 0;
-        }
-      }
-
-      /* Apply fade-in to modals when they appear */
-      #ytls-restricted-export-confirm-modal,
-      #ytls-settings-modal,
-      #ytls-save-modal,
-      #ytls-load-modal {
-        animation: fadeIn 0.3s ease-in-out;
-      }
-
-      /* Apply fade-out class to modals when they disappear */
-      #ytls-restricted-export-confirm-modal.fade-out,
-      #ytls-settings-modal.fade-out,
-      #ytls-save-modal.fade-out,
-      #ytls-load-modal.fade-out {
-        animation: fadeOut 0.3s ease-in-out forwards;
-      }
-    `;
-
-    // Helper function to ensure pane is fully clamped within viewport
-    function clampPaneToViewport() {
-      if (!pane || !document.body.contains(pane)) return;
-
-      const rect = pane.getBoundingClientRect();
-      const viewportWidth = document.documentElement.clientWidth;
-      const viewportHeight = document.documentElement.clientHeight;
-      const paneWidth = rect.width;
-      const paneHeight = rect.height;
-
-      // Clamp left
-      if (rect.left < 0) {
-        pane.style.left = "0";
-        pane.style.right = "auto";
-      }
-
-      // Clamp right
-      if (rect.right > viewportWidth) {
-        const adjustedLeft = Math.max(0, viewportWidth - paneWidth);
-        pane.style.left = `${adjustedLeft}px`;
-        pane.style.right = "auto";
-      }
-
-      // Clamp top
-      if (rect.top < 0) {
-        pane.style.top = "0";
-        pane.style.bottom = "auto";
-      }
-
-      // Clamp bottom
-      if (rect.bottom > viewportHeight) {
-        const adjustedTop = Math.max(0, viewportHeight - paneHeight);
-        pane.style.top = `${adjustedTop}px`;
-        pane.style.bottom = "auto";
-      }
-    }
-
-    // Helper function to snap pane to nearest edge, accounting for scrollbars
-    function snapPaneToNearestEdge() {
-      if (!pane || !document.body.contains(pane)) return;
-
-      const rect = pane.getBoundingClientRect();
-      // Use document.documentElement.clientWidth/Height to account for scrollbars
-      const viewportWidth = document.documentElement.clientWidth;
-      const viewportHeight = document.documentElement.clientHeight;
-      const paneWidth = rect.width;
-      const paneHeight = rect.height;
-
-      // Calculate distances to edges
-      const distanceToLeft = rect.left;
-      const distanceToRight = viewportWidth - rect.right;
-      const distanceToTop = rect.top;
-      const distanceToBottom = viewportHeight - rect.bottom;
-
-      // Find the closest edge
-      const minDistance = Math.min(distanceToLeft, distanceToRight, distanceToTop, distanceToBottom);
-
-      if (minDistance === distanceToLeft) {
-        pane.style.left = "0";
-        pane.style.right = "auto";
-      } else if (minDistance === distanceToRight) {
-        // Ensure right snap doesn't push pane off-screen, accounting for scrollbars
-        const rightPosition = Math.max(0, viewportWidth - paneWidth);
-        pane.style.left = `${rightPosition}px`;
-        pane.style.right = "auto";
-      } else if (minDistance === distanceToTop) {
-        pane.style.top = "0";
-        pane.style.bottom = "auto";
-      } else if (minDistance === distanceToBottom) {
-        // Ensure bottom snap doesn't push pane off-screen, accounting for scrollbars
-        const bottomPosition = Math.max(0, viewportHeight - paneHeight);
-        pane.style.top = `${bottomPosition}px`;
-        pane.style.bottom = "auto";
-      }
-
-      // Final safety check to ensure pane is fully on screen
-      clampPaneToViewport();
-    }
-
-    minimizeBtn.onclick = () => {
-      if (!dragOccurredSinceLastMouseDown) { // Check the flag before toggling
-        pane.classList.toggle("minimized");
-        saveMinimizedState(); // Save the new minimized state
-        // Wait for CSS transition to complete (0.2s), then clamp to ensure full visibility
-        setTimeout(() => {
-          clampPaneToViewport();
-          snapPaneToNearestEdge();
-        }, 250);
-      }
-    };
+    style.textContent = PANE_STYLES;
 
     list.onclick = (e) => {
       handleClick(e);
@@ -2454,180 +2125,40 @@ declare const GM_info: {
       if (!pane) return;
       log('Loading window position from IndexedDB');
       loadGlobalSettings('windowPosition').then(value => {
-        if (!value) {
-          // Default to 0,0 if no position stored
-          log('No window position found in IndexedDB, using default position (0,0)');
-          pane.style.left = "0";
-          pane.style.top = "0";
+        if (value && typeof (value as any).x === 'number' && typeof (value as any).y === 'number') {
+          const pos = value as { x: number; y: number };
+          pane.style.left = `${pos.x}px`;
+          pane.style.top = `${pos.y}px`;
           pane.style.right = "auto";
           pane.style.bottom = "auto";
-          // Apply clamp and reposition after loading default
-          clampPaneToViewport();
-          return;
+        } else {
+          log('No window position found in IndexedDB, leaving default position');
         }
-        try {
-          const pos = value as Record<string, unknown>;
-          const currentViewportWidth = document.documentElement.clientWidth;
-          const currentViewportHeight = document.documentElement.clientHeight;
-
-          log(`Loaded window position from IndexedDB: x=${pos.x}, y=${pos.y}`);
-
-          // Restore from x/y ratios (measured from top-left)
-          if (typeof pos.x === 'number' && typeof pos.y === 'number') {
-            pane.style.left = `${(pos.x as number) * currentViewportWidth}px`;
-            pane.style.top = `${(pos.y as number) * currentViewportHeight}px`;
-            pane.style.right = "auto";
-            pane.style.bottom = "auto";
-          } else {
-            // Fallback: use default position
-            pane.style.left = "0";
-            pane.style.top = "0";
-            pane.style.right = "auto";
-            pane.style.bottom = "auto";
-          }
-          // Apply clamp and reposition after loading position
-          clampPaneToViewport();
-        } catch (err) {
-          log("failed to parse stored pane position:", err, 'warn');
-          pane.style.left = "0";
-          pane.style.top = "0";
-          pane.style.right = "auto";
-          pane.style.bottom = "auto";
-          // Apply clamp and reposition after error
-          clampPaneToViewport();
-        }
+        clampPaneToViewport();
       }).catch(err => {
         log("failed to load pane position from IndexedDB:", err, 'warn');
-        pane.style.left = "0";
-        pane.style.top = "0";
-        pane.style.right = "auto";
-        pane.style.bottom = "auto";
-        // Apply clamp and reposition after error
         clampPaneToViewport();
       });
     }
     function savePanePosition() {
       if (!pane) return;
-      const styleObj = pane.style;
 
-      // Calculate viewport dimensions (accounting for scrollbars)
-      const viewportWidth = document.documentElement.clientWidth;
-      const viewportHeight = document.documentElement.clientHeight;
-
-      // Get current position
       const rect = pane.getBoundingClientRect();
-
-      // Calculate ratios from left and top edges
-      // We store distance from left and top edges as ratios of viewport size
-      const x = Math.max(0, Math.min(1, rect.left / viewportWidth));
-      const y = Math.max(0, Math.min(1, rect.top / viewportHeight));
-
-      // Store only position ratios (no edge info)
       const positionData = {
-        x,  // horizontal position ratio (0-1, from left edge)
-        y   // vertical position ratio (0-1, from top edge)
+        x: Math.max(0, Math.round(rect.left)),
+        y: Math.max(0, Math.round(rect.top))
       };
 
-      log(`Saving window position to IndexedDB: x=${x}, y=${y}`);
+      log(`Saving window position to IndexedDB: x=${positionData.x}, y=${positionData.y}`);
       saveGlobalSettings('windowPosition', positionData);
 
-      // Notify other tabs of the position change
       channel.postMessage({
         type: 'window_position_updated',
         position: positionData,
         timestamp: Date.now()
       });
     }
-
-    function isEdgePinned(value) {
-      if (!value || value === "auto") {
-        return false;
-      }
-      const parsed = parseFloat(value);
-      return Number.isFinite(parsed) && Math.abs(parsed) < 0.5;
-    }
-
-    function adjustPanePositionForViewportChange() {
-      if (!pane || !document.body.contains(pane)) {
-        lastViewportWidth = window.innerWidth;
-        lastViewportHeight = window.innerHeight;
-        return;
-      }
-
-      const rect = pane.getBoundingClientRect();
-      const windowWidth = window.innerWidth;
-      const windowHeight = window.innerHeight;
-      const paneWidth = rect.width;
-      const paneHeight = rect.height;
-
-      const pinnedLeft = isEdgePinned(pane.style.left);
-      const pinnedRight = isEdgePinned(pane.style.right);
-      const pinnedTop = isEdgePinned(pane.style.top);
-      const pinnedBottom = isEdgePinned(pane.style.bottom);
-
-      if (paneWidth >= windowWidth) {
-        pane.style.left = "0";
-        pane.style.right = "auto";
-      } else if (pinnedLeft && !pinnedRight) {
-        pane.style.left = "0";
-        pane.style.right = "auto";
-      } else if (pinnedRight && !pinnedLeft) {
-        pane.style.right = "0";
-        pane.style.left = "auto";
-      } else {
-        const prevAvailableWidth = Math.max(1, lastViewportWidth - paneWidth);
-        const clampedLeft = Math.max(0, Math.min(rect.left, prevAvailableWidth));
-        const ratioX = prevAvailableWidth > 0 ? clampedLeft / prevAvailableWidth : 0;
-        const newAvailableWidth = Math.max(0, windowWidth - paneWidth);
-        const newLeft = ratioX * newAvailableWidth;
-        pane.style.left = `${newLeft}px`;
-        pane.style.right = "auto";
-      }
-
-      if (paneHeight >= windowHeight) {
-        pane.style.top = "0";
-        pane.style.bottom = "auto";
-      } else if (pinnedTop && !pinnedBottom) {
-        pane.style.top = "0";
-        pane.style.bottom = "auto";
-      } else if (pinnedBottom && !pinnedTop) {
-        pane.style.bottom = "0";
-        pane.style.top = "auto";
-      } else {
-        const prevAvailableHeight = Math.max(1, lastViewportHeight - paneHeight);
-        const clampedTop = Math.max(0, Math.min(rect.top, prevAvailableHeight));
-        const ratioY = prevAvailableHeight > 0 ? clampedTop / prevAvailableHeight : 0;
-        const newAvailableHeight = Math.max(0, windowHeight - paneHeight);
-        const newTop = ratioY * newAvailableHeight;
-        pane.style.top = `${newTop}px`;
-        pane.style.bottom = "auto";
-      }
-
-      const finalRect = pane.getBoundingClientRect();
-      if (finalRect.left < 0) {
-        pane.style.left = "0";
-        pane.style.right = "auto";
-      }
-      if (finalRect.top < 0) {
-        pane.style.top = "0";
-        pane.style.bottom = "auto";
-      }
-      if (finalRect.right > windowWidth) {
-        const adjustedLeft = Math.max(0, windowWidth - finalRect.width);
-        pane.style.left = `${adjustedLeft}px`;
-        pane.style.right = "auto";
-      }
-      if (finalRect.bottom > windowHeight) {
-        const adjustedTop = Math.max(0, windowHeight - finalRect.height);
-        pane.style.top = `${adjustedTop}px`;
-        pane.style.bottom = "auto";
-      }
-
-      lastViewportWidth = window.innerWidth;
-      lastViewportHeight = window.innerHeight;
-    }
-
-    // Enable dragging and edge snapping for the pane
+    // Enable dragging for the pane
     pane.style.position = "fixed";
     pane.style.bottom = "0";
     pane.style.right = "0";
@@ -2650,10 +2181,8 @@ declare const GM_info: {
         return;
       }
 
-      // Allow dragging from the minimize button in both minimized and maximized states
-      const isMinimizeButton = target === minimizeBtn || minimizeBtn.contains(target);
-
-      if (!isMinimizeButton && window.getComputedStyle(target).cursor === 'pointer') {
+      // Allow dragging from the header region
+      if (target !== header && !header.contains(target) && window.getComputedStyle(target).cursor === 'pointer') {
         return;
       }
 
@@ -2701,9 +2230,8 @@ declare const GM_info: {
         dragOccurredSinceLastMouseDown = false; // Reset the flag after a short delay
       }, 50);
 
-      // Snap to nearest edge using the helper function
-      snapPaneToNearestEdge();
-      // Save position after edge snapping animation completes (0.2s transition)
+      // Ensure the pane remains fully visible and persist its position
+      clampPaneToViewport();
       setTimeout(() => {
         savePanePosition();
       }, 200);
@@ -2720,16 +2248,13 @@ declare const GM_info: {
         clearTimeout(resizeTimeout);
       }
       resizeTimeout = setTimeout(() => {
-        adjustPanePositionForViewportChange();
-        clampPaneToViewport(); // Also clamp to ensure full visibility after resize
-        snapPaneToNearestEdge(); // Reapply snapping logic after resize
-        savePanePosition(); // Save position after resize completes
+        clampPaneToViewport();
+        savePanePosition();
         resizeTimeout = null;
       }, 200);
     });
 
-    header.appendChild(minimizeBtn); // Add minimize button to the header first
-    header.appendChild(timeDisplay); // Then add timeDisplay
+    header.appendChild(timeDisplay); // Add timeDisplay
     header.appendChild(versionDisplay); // Add versionDisplay to header
 
     const content = document.createElement("div"); content.id = "ytls-content";
@@ -2742,17 +2267,8 @@ declare const GM_info: {
   async function displayPane() {
     if (!pane) return;
 
-    // Load the global minimized state BEFORE appending to DOM
-    await loadMinimizedState();
-
-    if (pendingStoredViewport) {
-      lastViewportWidth = pendingStoredViewport.width;
-      lastViewportHeight = pendingStoredViewport.height;
-      pendingStoredViewport = null;
-    } else {
-      lastViewportWidth = window.innerWidth;
-      lastViewportHeight = window.innerHeight;
-    }
+    // Load the global UI visibility state BEFORE appending to DOM
+    await loadUIVisibilityState();
 
     // Now append the pane with the correct minimized state already applied
     document.body.appendChild(pane);
@@ -2776,10 +2292,24 @@ declare const GM_info: {
 
     button.addEventListener("click", () => {
       if (!pane) return;
-      // Toggle minimized state
-      pane.classList.toggle("minimized");
-      // Save the new minimized state
-      saveMinimizedState();
+      // Toggle UI visibility
+      const isCurrentlyHidden = pane.style.display === "none";
+
+      if (isCurrentlyHidden) {
+        // Show the UI
+        pane.style.display = "flex";
+        pane.classList.remove("ytls-fade-out");
+        pane.classList.add("ytls-fade-in");
+      } else {
+        // Hide the UI
+        pane.classList.remove("ytls-fade-in");
+        pane.classList.add("ytls-fade-out");
+        setTimeout(() => {
+          pane.style.display = "none";
+        }, 300);
+      }
+
+      saveUIVisibilityState();
     });
 
     // Insert before other buttons (insert at the beginning of right-controls)
@@ -2797,7 +2327,7 @@ declare const GM_info: {
     await waitForYouTubeReady();
     await initializePaneIfNeeded();
 
-    // Remove any stray minimized icons or duplicate panes before proceeding
+    // Remove any duplicate panes before proceeding
     document.querySelectorAll("#ytls-pane").forEach((el, idx) => {
       if (idx > 0) el.remove();
     });
@@ -2822,7 +2352,7 @@ declare const GM_info: {
     setLoadingState(false);
     log("Timestamps loaded and UI unlocked for video:", currentVideoId);
 
-    // Display the pane after loading timestamps (with correct minimized state)
+    // Display the pane after loading timestamps (with correct visibility state)
     await displayPane();
 
     // Add button to player controls
@@ -2846,10 +2376,25 @@ declare const GM_info: {
     if (e.ctrlKey && e.altKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
       if (!pane) return;
       e.preventDefault();
-      // Toggle minimized state
-      pane.classList.toggle("minimized");
-      // Save the new minimized state
-      saveMinimizedState();
+
+      // Toggle UI visibility
+      const isCurrentlyHidden = pane.style.display === "none";
+
+      if (isCurrentlyHidden) {
+        // Show the UI
+        pane.style.display = "flex";
+        pane.classList.remove("ytls-fade-out");
+        pane.classList.add("ytls-fade-in");
+      } else {
+        // Hide the UI
+        pane.classList.remove("ytls-fade-in");
+        pane.classList.add("ytls-fade-out");
+        setTimeout(() => {
+          pane.style.display = "none";
+        }, 300);
+      }
+
+      saveUIVisibilityState();
       log("Timekeeper UI toggled via keyboard shortcut (Ctrl+Alt+Shift+T)");
     }
   };
