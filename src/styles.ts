@@ -5,7 +5,8 @@ export const PANE_STYLES = `
     position: fixed;
     bottom: 0;
     right: 0;
-    padding: 5px 10px 10px 10px;
+    padding: 0;
+    margin: 0;
     border-radius: 12px; /* Add rounded corners */
     border: 1px solid rgba(85, 85, 85, 0.8); /* Add a thin grey border */
     opacity: 0.9;
@@ -14,7 +15,6 @@ export const PANE_STYLES = `
     width: 300px;
     user-select: none; /* Prevent text selection in pane */
     transition: all 0.2s ease-in-out;
-    position: relative;
     display: flex;
     flex-direction: column;
   }
@@ -27,19 +27,23 @@ export const PANE_STYLES = `
     margin: 0;
     user-select: none; /* Prevent text selection in timestamp list */
     position: relative; /* Enable absolute positioning for loading message */
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
   }
   #ytls-pane li {
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    margin: 5px 0;
-    background: rgba(255, 255, 255, 0.05);
-    padding: 5px;
-    border-radius: 3px;
+    padding: 8px 12px;
+    margin: 0;
+    border: none;
+    border-top: 1px solid rgba(85, 85, 85, 0.8);
     user-select: none; /* Prevent text selection in timestamp items */
+    box-sizing: border-box;
+  }
+  #ytls-pane li:first-child {
+    border-top: none;
   }
   #ytls-pane li.ytls-timestamp-highlight {
-    background: rgba(0, 128, 255, 0.2);
+    background: rgb(31, 37, 29);
   }
   #ytls-pane li.ytls-timestamp-pending-delete {
     background: rgba(128, 0, 0, 0.8);
@@ -79,7 +83,7 @@ export const PANE_STYLES = `
     display: flex;
     gap: 5px;
     justify-content: space-between;
-    margin-top: 10px;
+    padding: 10px;
   }
   #ytls-buttons button:hover {
     background: rgba(255, 255, 255, 0.2);
@@ -87,7 +91,7 @@ export const PANE_STYLES = `
 
   /* Styles for main control buttons */
   .ytls-main-button {
-    background: #555;
+    background: rgb(39, 39, 39);
     color: white;
     font-size: 24px;
     border: none;
@@ -96,7 +100,7 @@ export const PANE_STYLES = `
     cursor: pointer;
   }
   .ytls-main-button:hover {
-    background: #777; /* Example hover effect */
+    background: rgb(63, 63, 63);
   }
 
   /* Pane header and utility styles */
@@ -104,12 +108,15 @@ export const PANE_STYLES = `
     display:flex;
     justify-content:space-between;
     align-items:center;
-    padding:5px;
+    padding: 10px 16px;
     white-space:nowrap;
     cursor:default;
+    border-radius: 12px 12px 0px 0px;
+    border: none;
+    background:rgb(33, 33, 33);
   }
   #ytls-pane .ytls-version-display {
-    font-size:12px;
+    font-size:14px;
     color:#666;
     margin-left:auto;
     padding-right:5px;

@@ -485,6 +485,8 @@ import { PANE_STYLES } from "./styles";
   // Debounce state for seeking
   let seekTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let pendingSeekTime: number | null = null;
+  let manualHighlightGuid: string | null = null;
+  let manualHighlightTargetTime = 0;
 
   function handleClick(event: MouseEvent | TouchEvent) {
     if (!list || isLoadingTimestamps) {
@@ -511,6 +513,9 @@ import { PANE_STYLES } from "./styles";
         });
         if (!clickedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
           clickedLi.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
+          manualHighlightGuid = clickedLi.dataset.guid ?? null;
+          manualHighlightTargetTime = Number.isFinite(newTime) ? newTime : manualHighlightTargetTime;
+          clickedLi.scrollIntoView({ behavior: "smooth", block: "center" });
         }
       }
     } else if (target.dataset.increment) {
@@ -1278,42 +1283,64 @@ import { PANE_STYLES } from "./styles";
     // Handler for timeupdate: highlight nearest timestamp
     const handleTimeUpdate = () => {
       if (!list) return;
-      if (isMouseOverTimestamps) return; // Skip auto-scrolling if the mouse is over the timestamps window
+      const skipAutoScroll = isMouseOverTimestamps; // Avoid scrolling while user interacts with the list
 
       const currentTime = Math.floor(getCurrentTimeCompat());
       if (!Number.isFinite(currentTime)) return;
 
-      let nearestTimestamp: HTMLLIElement | null = null;
-      let smallestDifference = Infinity;
+      const items = getTimestampItems();
+      if (items.length === 0) {
+        return;
+      }
 
-      // Find the nearest timestamp
-      getTimestampItems().forEach(li => {
-        const timeLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
-        const timeValue = timeLink?.dataset.time;
-        if (!timeValue) {
-          return;
-        }
-        const timestamp = Number.parseInt(timeValue, 10);
-        if (!Number.isFinite(timestamp)) {
-          return;
-        }
-        const difference = Math.abs(currentTime - timestamp);
-        if (difference < smallestDifference) {
-          smallestDifference = difference;
-          nearestTimestamp = li;
-        }
-      });
+      let selectedLi: HTMLLIElement | null = null;
 
-      // Highlight the nearest timestamp
-      getTimestampItems().forEach(li => {
+      if (manualHighlightGuid) {
+        const manualLi = items.find(li => li.dataset.guid === manualHighlightGuid) ?? null;
+        if (manualLi) {
+          if (Math.abs(currentTime - manualHighlightTargetTime) <= 1) {
+            manualHighlightGuid = null;
+            manualHighlightTargetTime = 0;
+          } else {
+            selectedLi = manualLi;
+          }
+        } else {
+          manualHighlightGuid = null;
+          manualHighlightTargetTime = 0;
+        }
+      }
+
+      if (!selectedLi) {
+        let smallestDifference = Infinity;
+        for (const li of items) {
+          const timeLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
+          const timeValue = timeLink?.dataset.time;
+          if (!timeValue) {
+            continue;
+          }
+          const timestamp = Number.parseInt(timeValue, 10);
+          if (!Number.isFinite(timestamp)) {
+            continue;
+          }
+          const difference = Math.abs(currentTime - timestamp);
+          if (difference < smallestDifference) {
+            smallestDifference = difference;
+            selectedLi = li;
+          }
+        }
+      }
+
+      items.forEach(li => {
         if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
           li.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
         }
       });
 
-      if (nearestTimestamp && !nearestTimestamp.classList.contains(TIMESTAMP_DELETE_CLASS)) {
-        nearestTimestamp.classList.add(TIMESTAMP_HIGHLIGHT_CLASS); // Highlight nearest timestamp
-        nearestTimestamp.scrollIntoView({ behavior: "smooth", block: "center" }); // Scroll to it
+      if (selectedLi && !selectedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
+        selectedLi.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
+        if (!manualHighlightGuid && !skipAutoScroll) {
+          selectedLi.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
       }
     };
 

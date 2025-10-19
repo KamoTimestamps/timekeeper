@@ -25,7 +25,8 @@ const PANE_STYLES = `
     position: fixed;
     bottom: 0;
     right: 0;
-    padding: 5px 10px 10px 10px;
+    padding: 0;
+    margin: 0;
     border-radius: 12px; /* Add rounded corners */
     border: 1px solid rgba(85, 85, 85, 0.8); /* Add a thin grey border */
     opacity: 0.9;
@@ -34,7 +35,6 @@ const PANE_STYLES = `
     width: 300px;
     user-select: none; /* Prevent text selection in pane */
     transition: all 0.2s ease-in-out;
-    position: relative;
     display: flex;
     flex-direction: column;
   }
@@ -47,19 +47,23 @@ const PANE_STYLES = `
     margin: 0;
     user-select: none; /* Prevent text selection in timestamp list */
     position: relative; /* Enable absolute positioning for loading message */
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
   }
   #ytls-pane li {
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    margin: 5px 0;
-    background: rgba(255, 255, 255, 0.05);
-    padding: 5px;
-    border-radius: 3px;
+    padding: 8px 12px;
+    margin: 0;
+    border: none;
+    border-top: 1px solid rgba(85, 85, 85, 0.8);
     user-select: none; /* Prevent text selection in timestamp items */
+    box-sizing: border-box;
+  }
+  #ytls-pane li:first-child {
+    border-top: none;
   }
   #ytls-pane li.ytls-timestamp-highlight {
-    background: rgba(0, 128, 255, 0.2);
+    background: rgb(31, 37, 29);
   }
   #ytls-pane li.ytls-timestamp-pending-delete {
     background: rgba(128, 0, 0, 0.8);
@@ -99,7 +103,7 @@ const PANE_STYLES = `
     display: flex;
     gap: 5px;
     justify-content: space-between;
-    margin-top: 10px;
+    padding: 10px;
   }
   #ytls-buttons button:hover {
     background: rgba(255, 255, 255, 0.2);
@@ -107,7 +111,7 @@ const PANE_STYLES = `
 
   /* Styles for main control buttons */
   .ytls-main-button {
-    background: #555;
+    background: rgb(39, 39, 39);
     color: white;
     font-size: 24px;
     border: none;
@@ -116,7 +120,7 @@ const PANE_STYLES = `
     cursor: pointer;
   }
   .ytls-main-button:hover {
-    background: #777; /* Example hover effect */
+    background: rgb(63, 63, 63);
   }
 
   /* Pane header and utility styles */
@@ -124,12 +128,15 @@ const PANE_STYLES = `
     display:flex;
     justify-content:space-between;
     align-items:center;
-    padding:5px;
+    padding: 10px 16px;
     white-space:nowrap;
     cursor:default;
+    border-radius: 12px 12px 0px 0px;
+    border: none;
+    background:rgb(33, 33, 33);
   }
   #ytls-pane .ytls-version-display {
-    font-size:12px;
+    font-size:14px;
     color:#666;
     margin-left:auto;
     padding-right:5px;
@@ -695,6 +702,8 @@ const PANE_STYLES = `
     // Debounce state for seeking
     let seekTimeoutId = null;
     let pendingSeekTime = null;
+    let manualHighlightGuid = null;
+    let manualHighlightTargetTime = 0;
     function handleClick(event) {
         if (!list || isLoadingTimestamps) {
             return;
@@ -718,6 +727,9 @@ const PANE_STYLES = `
                 });
                 if (!clickedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
                     clickedLi.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
+                    manualHighlightGuid = clickedLi.dataset.guid ?? null;
+                    manualHighlightTargetTime = Number.isFinite(newTime) ? newTime : manualHighlightTargetTime;
+                    clickedLi.scrollIntoView({ behavior: "smooth", block: "center" });
                 }
             }
         }
@@ -1413,39 +1425,60 @@ const PANE_STYLES = `
         const handleTimeUpdate = () => {
             if (!list)
                 return;
-            if (isMouseOverTimestamps)
-                return; // Skip auto-scrolling if the mouse is over the timestamps window
+            const skipAutoScroll = isMouseOverTimestamps; // Avoid scrolling while user interacts with the list
             const currentTime = Math.floor(getCurrentTimeCompat());
             if (!Number.isFinite(currentTime))
                 return;
-            let nearestTimestamp = null;
-            let smallestDifference = Infinity;
-            // Find the nearest timestamp
-            getTimestampItems().forEach(li => {
-                const timeLink = li.querySelector('a[data-time]');
-                const timeValue = timeLink?.dataset.time;
-                if (!timeValue) {
-                    return;
+            const items = getTimestampItems();
+            if (items.length === 0) {
+                return;
+            }
+            let selectedLi = null;
+            if (manualHighlightGuid) {
+                const manualLi = items.find(li => li.dataset.guid === manualHighlightGuid) ?? null;
+                if (manualLi) {
+                    if (Math.abs(currentTime - manualHighlightTargetTime) <= 1) {
+                        manualHighlightGuid = null;
+                        manualHighlightTargetTime = 0;
+                    }
+                    else {
+                        selectedLi = manualLi;
+                    }
                 }
-                const timestamp = Number.parseInt(timeValue, 10);
-                if (!Number.isFinite(timestamp)) {
-                    return;
+                else {
+                    manualHighlightGuid = null;
+                    manualHighlightTargetTime = 0;
                 }
-                const difference = Math.abs(currentTime - timestamp);
-                if (difference < smallestDifference) {
-                    smallestDifference = difference;
-                    nearestTimestamp = li;
+            }
+            if (!selectedLi) {
+                let smallestDifference = Infinity;
+                for (const li of items) {
+                    const timeLink = li.querySelector('a[data-time]');
+                    const timeValue = timeLink?.dataset.time;
+                    if (!timeValue) {
+                        continue;
+                    }
+                    const timestamp = Number.parseInt(timeValue, 10);
+                    if (!Number.isFinite(timestamp)) {
+                        continue;
+                    }
+                    const difference = Math.abs(currentTime - timestamp);
+                    if (difference < smallestDifference) {
+                        smallestDifference = difference;
+                        selectedLi = li;
+                    }
                 }
-            });
-            // Highlight the nearest timestamp
-            getTimestampItems().forEach(li => {
+            }
+            items.forEach(li => {
                 if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
                     li.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
                 }
             });
-            if (nearestTimestamp && !nearestTimestamp.classList.contains(TIMESTAMP_DELETE_CLASS)) {
-                nearestTimestamp.classList.add(TIMESTAMP_HIGHLIGHT_CLASS); // Highlight nearest timestamp
-                nearestTimestamp.scrollIntoView({ behavior: "smooth", block: "center" }); // Scroll to it
+            if (selectedLi && !selectedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
+                selectedLi.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
+                if (!manualHighlightGuid && !skipAutoScroll) {
+                    selectedLi.scrollIntoView({ behavior: "smooth", block: "center" });
+                }
             }
         };
         // Handler for pause: no URL updates (removed)
