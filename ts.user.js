@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.2.3
+// @version      3.2.5
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -34,7 +34,6 @@ const PANE_STYLES = `
     font-family: Arial, sans-serif;
     width: 300px;
     user-select: none; /* Prevent text selection in pane */
-    transition: all 0.2s ease-in-out;
     display: flex;
     flex-direction: column;
   }
@@ -243,6 +242,34 @@ const PANE_STYLES = `
     display:none;
   }
 
+  #ytls-header-button {
+    align-items:center;
+    background:transparent;
+    border:none;
+    color:var(--yt-spec-text-primary, currentColor);
+    cursor:pointer;
+    display:inline-flex;
+    font-size:20px;
+    height:40px;
+    margin-left:6px;
+    padding:0 6px;
+    text-decoration:none;
+  }
+  #ytls-header-button:hover {
+    color:var(--yt-spec-call-to-action, #3ea6ff);
+  }
+  #ytls-header-button:focus-visible {
+    outline:2px solid var(--yt-spec-call-to-action, #3ea6ff);
+    outline-offset:2px;
+  }
+  #ytls-header-button img {
+    display:block;
+    height:32px;
+    max-width:48px;
+    pointer-events:none;
+    width:auto;
+  }
+
   /* Shared fade animations for pane and modals */
   .ytls-fade-in {
     animation: fadeIn 0.3s ease-in-out forwards;
@@ -306,6 +333,8 @@ const PANE_STYLES = `
     let isLoadingTimestamps = false; // Track if timestamps are currently loading
     const TIMESTAMP_DELETE_CLASS = "ytls-timestamp-pending-delete";
     const TIMESTAMP_HIGHLIGHT_CLASS = "ytls-timestamp-highlight";
+    const HEADER_ICON_DEFAULT_URL = "https://yt3.googleusercontent.com/1b9cHGQWdeCzya7-QkAG18VsB7SyxuBw-oiC8720me90rUbthnPIeVgnbhHGKSB3Tgw9aVfMqw=s64-k-nd";
+    const HEADER_ICON_HOVER_URL = "https://yt3.googleusercontent.com/ur8o0c0jbCJaAkWMwCWWfuytT0FII2Z87G0P-_pEb6DiG9feOQ8iXLG5yRxl4fhXwWJVHo5R-qk=s64-c-k-nd";
     // Wait for YouTube interface to load completely
     async function waitForYouTubeReady() {
         // Wait for the main video element and controls to be present
@@ -545,6 +574,10 @@ const PANE_STYLES = `
                     pane.style.top = `${Math.max(0, pos.y)}px`;
                     pane.style.right = "auto";
                     pane.style.bottom = "auto";
+                    lastSavedPanePosition = {
+                        x: Math.max(0, Math.round(pos.x)),
+                        y: Math.max(0, Math.round(pos.y))
+                    };
                     clampPaneToViewport();
                 }
             }
@@ -568,6 +601,10 @@ const PANE_STYLES = `
     let settingsModalInstance = null; // To keep a reference to the settings modal
     let settingsCogButtonElement = null; // To keep a reference to the settings cog button
     let currentLoadedVideoId = null; // Track the currently loaded video to prevent duplicate loads
+    let visibilityAnimationTimeoutId = null;
+    let headerButtonImage = null;
+    let isHeaderButtonHovered = false;
+    let lastSavedPanePosition = null;
     // Event listener references for cleanup to prevent memory leaks
     let documentMousemoveHandler = null;
     let documentMouseupHandler = null;
@@ -654,10 +691,11 @@ const PANE_STYLES = `
                             }
                         }
                     }
-                    timeDisplay.textContent = `CT: ${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+                    timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
                 }
             }
         }
+        syncToggleButtons();
     }
     // Helper function to format timestamps based on total duration
     function formatTimeString(seconds, videoDuration = seconds) {
@@ -813,7 +851,8 @@ const PANE_STYLES = `
         commentInput.value = comment || "";
         commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
         commentInput.addEventListener("input", () => {
-            log('Timestamps changed: Comment modified');
+            // This is too noisy to be enabled pretty much ever.
+            // log('Timestamps changed: Comment modified');
             debouncedSaveTimestamps();
         });
         del.textContent = "🗑️";
@@ -1262,6 +1301,10 @@ const PANE_STYLES = `
             clearInterval(timeUpdateIntervalId);
             timeUpdateIntervalId = null;
         }
+        if (visibilityAnimationTimeoutId) {
+            clearTimeout(visibilityAnimationTimeoutId);
+            visibilityAnimationTimeoutId = null;
+        }
         // Remove all event listeners to prevent memory leaks
         removeAllEventListeners();
         // Close the BroadcastChannel to prevent memory leaks
@@ -1276,11 +1319,13 @@ const PANE_STYLES = `
         if (pane && pane.parentNode) {
             pane.remove();
         }
-        // Remove player button
-        const playerButton = document.getElementById("ytls-player-button");
-        if (playerButton && playerButton.parentNode) {
-            playerButton.remove();
+        const headerButton = document.getElementById("ytls-header-button");
+        if (headerButton && headerButton.parentNode) {
+            headerButton.remove();
         }
+        headerButtonImage = null;
+        isHeaderButtonHovered = false;
+        lastSavedPanePosition = null;
         clearTimestampsDisplay();
         pane = null;
         header = null;
@@ -1584,6 +1629,20 @@ const PANE_STYLES = `
         const isVisible = pane.style.display !== "none";
         saveGlobalSettings('uiVisible', isVisible);
     }
+    function syncToggleButtons(visibilityOverride) {
+        const isVisible = typeof visibilityOverride === "boolean"
+            ? visibilityOverride
+            : (!!pane && pane.style.display !== "none");
+        const headerButton = document.getElementById("ytls-header-button");
+        if (headerButton instanceof HTMLButtonElement) {
+            headerButton.setAttribute("aria-pressed", String(isVisible));
+        }
+        if (headerButtonImage && !isHeaderButtonHovered) {
+            if (headerButtonImage.src !== HEADER_ICON_DEFAULT_URL) {
+                headerButtonImage.src = HEADER_ICON_DEFAULT_URL;
+            }
+        }
+    }
     function loadUIVisibilityState() {
         if (!pane)
             return;
@@ -1596,16 +1655,48 @@ const PANE_STYLES = `
                 else {
                     pane.style.display = "none";
                 }
+                syncToggleButtons(isVisible);
             }
             else {
                 // Default to visible if not found
                 pane.style.display = "flex";
+                syncToggleButtons(true);
             }
         }).catch(err => {
             log("Failed to load UI visibility state:", err, 'error');
             // Default to visible on error
             pane.style.display = "flex";
+            syncToggleButtons(true);
         });
+    }
+    function togglePaneVisibility(force) {
+        if (!pane)
+            return;
+        if (visibilityAnimationTimeoutId) {
+            clearTimeout(visibilityAnimationTimeoutId);
+            visibilityAnimationTimeoutId = null;
+        }
+        const isHidden = pane.style.display === "none";
+        const shouldShow = typeof force === "boolean" ? force : isHidden;
+        if (shouldShow) {
+            pane.style.display = "flex";
+            pane.classList.remove("ytls-fade-out");
+            pane.classList.add("ytls-fade-in");
+            syncToggleButtons(true);
+            saveUIVisibilityState();
+        }
+        else {
+            pane.classList.remove("ytls-fade-in");
+            pane.classList.add("ytls-fade-out");
+            syncToggleButtons(false);
+            visibilityAnimationTimeoutId = setTimeout(() => {
+                if (!pane)
+                    return;
+                pane.style.display = "none";
+                saveUIVisibilityState();
+                visibilityAnimationTimeoutId = null;
+            }, 300);
+        }
     }
     function processImportedData(contentString) {
         if (!list) {
@@ -1741,11 +1832,19 @@ const PANE_STYLES = `
         });
         pane.id = "ytls-pane";
         header.id = "ytls-pane-header";
+        header.addEventListener("dblclick", (event) => {
+            const target = event.target instanceof HTMLElement ? event.target : null;
+            if (target && (target.closest("a") || target.closest("button") || target.closest("#ytls-current-time") || target.closest(".ytls-version-display"))) {
+                return;
+            }
+            event.preventDefault();
+            togglePaneVisibility(false);
+        });
         const scriptVersion = GM_info.script.version; // Get script version
         versionDisplay.textContent = `v${scriptVersion}`;
         versionDisplay.classList.add("ytls-version-display"); // Add class for CSS targeting
         timeDisplay.id = "ytls-current-time";
-        timeDisplay.textContent = "CT: ";
+        timeDisplay.textContent = "⏳";
         // Enable clicking on the current timestamp to jump to the latest point in the live stream
         timeDisplay.onclick = () => {
             seekToLiveHeadCompat();
@@ -1793,7 +1892,7 @@ const PANE_STYLES = `
                     }
                 }
             }
-            timeDisplay.textContent = `CT: ${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+            timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
         }
         updateTime();
         if (timeUpdateIntervalId) {
@@ -2227,14 +2326,33 @@ const PANE_STYLES = `
                     pane.style.top = `${pos.y}px`;
                     pane.style.right = "auto";
                     pane.style.bottom = "auto";
+                    lastSavedPanePosition = {
+                        x: Math.max(0, Math.round(pos.x)),
+                        y: Math.max(0, Math.round(pos.y))
+                    };
                 }
                 else {
                     log('No window position found in IndexedDB, leaving default position');
+                    lastSavedPanePosition = null;
                 }
                 clampPaneToViewport();
+                const rect = pane.getBoundingClientRect();
+                if (rect.width || rect.height) {
+                    lastSavedPanePosition = {
+                        x: Math.max(0, Math.round(rect.left)),
+                        y: Math.max(0, Math.round(rect.top))
+                    };
+                }
             }).catch(err => {
                 log("failed to load pane position from IndexedDB:", err, 'warn');
                 clampPaneToViewport();
+                const rect = pane.getBoundingClientRect();
+                if (rect.width || rect.height) {
+                    lastSavedPanePosition = {
+                        x: Math.max(0, Math.round(rect.left)),
+                        y: Math.max(0, Math.round(rect.top))
+                    };
+                }
             });
         }
         function savePanePosition() {
@@ -2245,6 +2363,13 @@ const PANE_STYLES = `
                 x: Math.max(0, Math.round(rect.left)),
                 y: Math.max(0, Math.round(rect.top))
             };
+            if (lastSavedPanePosition &&
+                lastSavedPanePosition.x === positionData.x &&
+                lastSavedPanePosition.y === positionData.y) {
+                log('Skipping window position save; position unchanged');
+                return;
+            }
+            lastSavedPanePosition = { ...positionData };
             log(`Saving window position to IndexedDB: x=${positionData.x}, y=${positionData.y}`);
             saveGlobalSettings('windowPosition', positionData);
             channel.postMessage({
@@ -2309,13 +2434,16 @@ const PANE_STYLES = `
             if (!isDragging)
                 return;
             isDragging = false;
+            const didDrag = dragOccurredSinceLastMouseDown;
             setTimeout(() => {
                 dragOccurredSinceLastMouseDown = false; // Reset the flag after a short delay
             }, 50);
             // Ensure the pane remains fully visible and persist its position
             clampPaneToViewport();
             setTimeout(() => {
-                savePanePosition();
+                if (didDrag) {
+                    savePanePosition();
+                }
             }, 200);
         });
         // Prevent text selection during drag
@@ -2349,45 +2477,49 @@ const PANE_STYLES = `
         // Now append the pane with the correct minimized state already applied
         document.body.appendChild(pane);
     }
-    function addPlayerButton() {
-        // Find the YouTube player controls container
-        const rightControls = document.querySelector(".ytp-right-controls");
-        if (!rightControls)
+    function addHeaderButton(attempt = 0) {
+        // Avoid creating duplicates
+        if (document.getElementById("ytls-header-button")) {
+            syncToggleButtons();
             return;
-        // Check if button already exists
-        if (document.getElementById("ytls-player-button"))
+        }
+        const logoElement = document.querySelector("#logo");
+        if (!logoElement || !logoElement.parentElement) {
+            if (attempt < 10) {
+                setTimeout(() => addHeaderButton(attempt + 1), 300);
+            }
             return;
-        // Create the button
-        const button = document.createElement("button");
-        button.id = "ytls-player-button";
-        button.className = "ytp-button";
-        button.title = "Toggle Timekeeper UI";
-        button.textContent = "⏱️";
-        button.style.cssText = "font-size: 18px; padding: 0 5px; background: none; border: none; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; height: 36px;";
-        button.addEventListener("click", () => {
-            if (!pane)
+        }
+        const headerButton = document.createElement("button");
+        headerButton.id = "ytls-header-button";
+        headerButton.type = "button";
+        headerButton.className = "ytls-header-button";
+        headerButton.title = "Toggle Timekeeper UI";
+        headerButton.setAttribute("aria-label", "Toggle Timekeeper UI");
+        const headerIcon = document.createElement("img");
+        headerIcon.src = HEADER_ICON_DEFAULT_URL;
+        headerIcon.alt = "";
+        headerIcon.decoding = "async";
+        headerButton.appendChild(headerIcon);
+        headerButtonImage = headerIcon;
+        headerButton.addEventListener("mouseenter", () => {
+            if (!headerButtonImage)
                 return;
-            // Toggle UI visibility
-            const isCurrentlyHidden = pane.style.display === "none";
-            if (isCurrentlyHidden) {
-                // Show the UI
-                pane.style.display = "flex";
-                pane.classList.remove("ytls-fade-out");
-                pane.classList.add("ytls-fade-in");
-            }
-            else {
-                // Hide the UI
-                pane.classList.remove("ytls-fade-in");
-                pane.classList.add("ytls-fade-out");
-                setTimeout(() => {
-                    pane.style.display = "none";
-                }, 300);
-            }
-            saveUIVisibilityState();
+            isHeaderButtonHovered = true;
+            headerButtonImage.src = HEADER_ICON_HOVER_URL;
         });
-        // Insert before other buttons (insert at the beginning of right-controls)
-        rightControls.insertBefore(button, rightControls.firstChild);
-        log("Timekeeper player button added to YouTube controls");
+        headerButton.addEventListener("mouseleave", () => {
+            if (!headerButtonImage)
+                return;
+            isHeaderButtonHovered = false;
+            syncToggleButtons();
+        });
+        headerButton.addEventListener("click", () => {
+            togglePaneVisibility();
+        });
+        logoElement.insertAdjacentElement("afterend", headerButton);
+        syncToggleButtons();
+        log("Timekeeper header button added next to YouTube logo");
     }
     // Add a function to handle URL changes
     async function handleUrlChange() {
@@ -2419,8 +2551,7 @@ const PANE_STYLES = `
         log("Timestamps loaded and UI unlocked for video:", currentVideoId);
         // Display the pane after loading timestamps (with correct visibility state)
         await displayPane();
-        // Add button to player controls
-        addPlayerButton();
+        addHeaderButton();
         // Setup video event listeners for highlighting and URL updates
         setupVideoEventListeners();
     }
@@ -2435,26 +2566,8 @@ const PANE_STYLES = `
     // Keyboard shortcut: Ctrl+Alt+Shift+T to toggle Timekeeper UI
     keydownHandler = (e) => {
         if (e.ctrlKey && e.altKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
-            if (!pane)
-                return;
             e.preventDefault();
-            // Toggle UI visibility
-            const isCurrentlyHidden = pane.style.display === "none";
-            if (isCurrentlyHidden) {
-                // Show the UI
-                pane.style.display = "flex";
-                pane.classList.remove("ytls-fade-out");
-                pane.classList.add("ytls-fade-in");
-            }
-            else {
-                // Hide the UI
-                pane.classList.remove("ytls-fade-in");
-                pane.classList.add("ytls-fade-out");
-                setTimeout(() => {
-                    pane.style.display = "none";
-                }, 300);
-            }
-            saveUIVisibilityState();
+            togglePaneVisibility();
             log("Timekeeper UI toggled via keyboard shortcut (Ctrl+Alt+Shift+T)");
         }
     };

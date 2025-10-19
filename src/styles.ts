@@ -14,7 +14,6 @@ export const PANE_STYLES = `
     font-family: Arial, sans-serif;
     width: 300px;
     user-select: none; /* Prevent text selection in pane */
-    transition: all 0.2s ease-in-out;
     display: flex;
     flex-direction: column;
   }
@@ -221,6 +220,34 @@ export const PANE_STYLES = `
 
   .ytls-hidden-file-input {
     display:none;
+  }
+
+  #ytls-header-button {
+    align-items:center;
+    background:transparent;
+    border:none;
+    color:var(--yt-spec-text-primary, currentColor);
+    cursor:pointer;
+    display:inline-flex;
+    font-size:20px;
+    height:40px;
+    margin-left:6px;
+    padding:0 6px;
+    text-decoration:none;
+  }
+  #ytls-header-button:hover {
+    color:var(--yt-spec-call-to-action, #3ea6ff);
+  }
+  #ytls-header-button:focus-visible {
+    outline:2px solid var(--yt-spec-call-to-action, #3ea6ff);
+    outline-offset:2px;
+  }
+  #ytls-header-button img {
+    display:block;
+    height:32px;
+    max-width:48px;
+    pointer-events:none;
+    width:auto;
   }
 
   /* Shared fade animations for pane and modals */
