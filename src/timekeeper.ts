@@ -327,6 +327,7 @@ declare const GM_info: {
   let windowResizeHandler: (() => void) | null = null;
   let videoTimeupdateHandler: (() => void) | null = null;
   let videoPauseHandler: (() => void) | null = null;
+  let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
   type TimestampRecord = {
     start: number;
@@ -1020,6 +1021,10 @@ declare const GM_info: {
       document.removeEventListener("mouseup", documentMouseupHandler);
       documentMouseupHandler = null;
     }
+    if (keydownHandler) {
+      document.removeEventListener("keydown", keydownHandler);
+      keydownHandler = null;
+    }
     if (windowResizeHandler) {
       window.removeEventListener("resize", windowResizeHandler);
       windowResizeHandler = null;
@@ -1069,6 +1074,12 @@ declare const GM_info: {
 
     if (pane && pane.parentNode) {
       pane.remove();
+    }
+
+    // Remove player button
+    const playerButton = document.getElementById("ytls-player-button");
+    if (playerButton && playerButton.parentNode) {
+      playerButton.remove();
     }
 
     clearTimestampsDisplay();
@@ -2747,6 +2758,35 @@ declare const GM_info: {
     document.body.appendChild(pane);
   }
 
+  function addPlayerButton() {
+    // Find the YouTube player controls container
+    const rightControls = document.querySelector(".ytp-right-controls");
+    if (!rightControls) return;
+
+    // Check if button already exists
+    if (document.getElementById("ytls-player-button")) return;
+
+    // Create the button
+    const button = document.createElement("button");
+    button.id = "ytls-player-button";
+    button.className = "ytp-button";
+    button.title = "Toggle Timekeeper UI";
+    button.textContent = "⏱️";
+    button.style.cssText = "font-size: 18px; padding: 0 5px; background: none; border: none; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; height: 36px;";
+
+    button.addEventListener("click", () => {
+      if (!pane) return;
+      // Toggle minimized state
+      pane.classList.toggle("minimized");
+      // Save the new minimized state
+      saveMinimizedState();
+    });
+
+    // Insert before other buttons (insert at the beginning of right-controls)
+    rightControls.insertBefore(button, rightControls.firstChild);
+    log("Timekeeper player button added to YouTube controls");
+  }
+
   // Add a function to handle URL changes
   async function handleUrlChange() {
     if (!isSupportedUrl()) {
@@ -2785,6 +2825,9 @@ declare const GM_info: {
     // Display the pane after loading timestamps (with correct minimized state)
     await displayPane();
 
+    // Add button to player controls
+    addPlayerButton();
+
     // Setup video event listeners for highlighting and URL updates
     setupVideoEventListeners();
   }
@@ -2797,6 +2840,20 @@ declare const GM_info: {
       setLoadingState(true);
     }
   });
+
+  // Keyboard shortcut: Ctrl+Alt+Shift+T to toggle Timekeeper UI
+  keydownHandler = (e: KeyboardEvent) => {
+    if (e.ctrlKey && e.altKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
+      if (!pane) return;
+      e.preventDefault();
+      // Toggle minimized state
+      pane.classList.toggle("minimized");
+      // Save the new minimized state
+      saveMinimizedState();
+      log("Timekeeper UI toggled via keyboard shortcut (Ctrl+Alt+Shift+T)");
+    }
+  };
+  document.addEventListener("keydown", keydownHandler);
 
   // Listen for navigation completion and load timestamps when navigation finishes
   window.addEventListener("yt-navigate-finish", () => {

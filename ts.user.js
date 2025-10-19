@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.2.0
+// @version      3.2.1
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -308,6 +308,7 @@
     let windowResizeHandler = null;
     let videoTimeupdateHandler = null;
     let videoPauseHandler = null;
+    let keydownHandler = null;
     function getTimestampItems() {
         if (!list) {
             return [];
@@ -929,6 +930,10 @@
             document.removeEventListener("mouseup", documentMouseupHandler);
             documentMouseupHandler = null;
         }
+        if (keydownHandler) {
+            document.removeEventListener("keydown", keydownHandler);
+            keydownHandler = null;
+        }
         if (windowResizeHandler) {
             window.removeEventListener("resize", windowResizeHandler);
             windowResizeHandler = null;
@@ -972,6 +977,11 @@
         currentLoadedVideoId = null;
         if (pane && pane.parentNode) {
             pane.remove();
+        }
+        // Remove player button
+        const playerButton = document.getElementById("ytls-player-button");
+        if (playerButton && playerButton.parentNode) {
+            playerButton.remove();
         }
         clearTimestampsDisplay();
         pane = null;
@@ -2532,6 +2542,33 @@
         // Now append the pane with the correct minimized state already applied
         document.body.appendChild(pane);
     }
+    function addPlayerButton() {
+        // Find the YouTube player controls container
+        const rightControls = document.querySelector(".ytp-right-controls");
+        if (!rightControls)
+            return;
+        // Check if button already exists
+        if (document.getElementById("ytls-player-button"))
+            return;
+        // Create the button
+        const button = document.createElement("button");
+        button.id = "ytls-player-button";
+        button.className = "ytp-button";
+        button.title = "Toggle Timekeeper UI";
+        button.textContent = "⏱️";
+        button.style.cssText = "font-size: 18px; padding: 0 5px; background: none; border: none; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; height: 36px;";
+        button.addEventListener("click", () => {
+            if (!pane)
+                return;
+            // Toggle minimized state
+            pane.classList.toggle("minimized");
+            // Save the new minimized state
+            saveMinimizedState();
+        });
+        // Insert before other buttons (insert at the beginning of right-controls)
+        rightControls.insertBefore(button, rightControls.firstChild);
+        log("Timekeeper player button added to YouTube controls");
+    }
     // Add a function to handle URL changes
     async function handleUrlChange() {
         if (!isSupportedUrl()) {
@@ -2562,6 +2599,8 @@
         log("Timestamps loaded and UI unlocked for video:", currentVideoId);
         // Display the pane after loading timestamps (with correct minimized state)
         await displayPane();
+        // Add button to player controls
+        addPlayerButton();
         // Setup video event listeners for highlighting and URL updates
         setupVideoEventListeners();
     }
@@ -2573,6 +2612,20 @@
             setLoadingState(true);
         }
     });
+    // Keyboard shortcut: Ctrl+Alt+Shift+T to toggle Timekeeper UI
+    keydownHandler = (e) => {
+        if (e.ctrlKey && e.altKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
+            if (!pane)
+                return;
+            e.preventDefault();
+            // Toggle minimized state
+            pane.classList.toggle("minimized");
+            // Save the new minimized state
+            saveMinimizedState();
+            log("Timekeeper UI toggled via keyboard shortcut (Ctrl+Alt+Shift+T)");
+        }
+    };
+    document.addEventListener("keydown", keydownHandler);
     // Listen for navigation completion and load timestamps when navigation finishes
     window.addEventListener("yt-navigate-finish", () => {
         log("Navigation finished (yt-navigate-finish event fired)");
