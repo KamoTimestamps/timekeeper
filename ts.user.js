@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.1.9
+// @version      3.2.0
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -302,6 +302,12 @@
     let settingsModalInstance = null; // To keep a reference to the settings modal
     let settingsCogButtonElement = null; // To keep a reference to the settings cog button
     let currentLoadedVideoId = null; // Track the currently loaded video to prevent duplicate loads
+    // Event listener references for cleanup to prevent memory leaks
+    let documentMousemoveHandler = null;
+    let documentMouseupHandler = null;
+    let windowResizeHandler = null;
+    let videoTimeupdateHandler = null;
+    let videoPauseHandler = null;
     function getTimestampItems() {
         if (!list) {
             return [];
@@ -329,12 +335,20 @@
             return;
         isLoadingTimestamps = loading;
         if (loading) {
-            // Hide the pane during loading
-            pane.style.display = "none";
+            // Fade out the pane during loading
+            pane.classList.add("fade-out");
+            pane.classList.remove("fade-in");
+            // Hide after fade completes
+            setTimeout(() => {
+                pane.style.display = "none";
+            }, 300);
         }
         else {
             // Show the pane when loading is done
             pane.style.display = "";
+            // Fade in after showing
+            pane.classList.remove("fade-out");
+            pane.classList.add("fade-in");
             // Update CT display now that loading is done
             if (timeDisplay) {
                 const video = getVideoElement();
@@ -810,20 +824,12 @@
             .filter(isTimestampRecord);
         // Sort timestamps from UI just in case, though they should generally be in order.
         currentTimestampsFromUI.sort((a, b) => a.start - b.start);
-        if (currentTimestampsFromUI.length === 0) {
-            // If there are no timestamps in the UI, don't clear the database
-            // This preserves the timestamps in case they were accidentally cleared from the UI
-            log(`Timestamps changed: No timestamps in UI for ${videoId}; keeping database entry intact`);
-            return;
-        }
-        else {
-            // Save UI timestamps directly to IndexedDB
-            saveToIndexedDB(videoId, currentTimestampsFromUI)
-                .then(() => log(`Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`))
-                .catch(err => log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, 'error'));
-            // Notify other tabs about the update
-            channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
-        }
+        // Save UI timestamps (including empty array if all timestamps were deleted)
+        saveToIndexedDB(videoId, currentTimestampsFromUI)
+            .then(() => log(`Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`))
+            .catch(err => log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, 'error'));
+        // Notify other tabs about the update
+        channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
     // Debounced save function that waits after last change before saving
     function debouncedSaveTimestamps() {
@@ -834,7 +840,7 @@
             log('Timestamps changed: Executing debounced save');
             saveTimestamps();
             saveTimeoutId = null;
-        }, 1000);
+        }, 500);
     }
     async function saveTimestampsAs(format) {
         if (!list)
@@ -913,6 +919,33 @@
     function removeSeekbarMarkers() {
         document.querySelectorAll(".ytls-marker").forEach(marker => marker.remove());
     }
+    function removeAllEventListeners() {
+        // Remove document listeners
+        if (documentMousemoveHandler) {
+            document.removeEventListener("mousemove", documentMousemoveHandler);
+            documentMousemoveHandler = null;
+        }
+        if (documentMouseupHandler) {
+            document.removeEventListener("mouseup", documentMouseupHandler);
+            documentMouseupHandler = null;
+        }
+        if (windowResizeHandler) {
+            window.removeEventListener("resize", windowResizeHandler);
+            windowResizeHandler = null;
+        }
+        // Remove video listeners
+        const video = getVideoElement();
+        if (video) {
+            if (videoTimeupdateHandler) {
+                video.removeEventListener("timeupdate", videoTimeupdateHandler);
+                videoTimeupdateHandler = null;
+            }
+            if (videoPauseHandler) {
+                video.removeEventListener("pause", videoPauseHandler);
+                videoPauseHandler = null;
+            }
+        }
+    }
     function unloadTimekeeper() {
         if (saveTimeoutId) {
             clearTimeout(saveTimeoutId);
@@ -926,6 +959,10 @@
             clearInterval(timeUpdateIntervalId);
             timeUpdateIntervalId = null;
         }
+        // Remove all event listeners to prevent memory leaks
+        removeAllEventListeners();
+        // Close the BroadcastChannel to prevent memory leaks
+        channel.close();
         if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
             document.body.removeChild(settingsModalInstance);
         }
@@ -1124,6 +1161,9 @@
         const handlePause = () => {
             // URL updates disabled
         };
+        // Store handlers for cleanup
+        videoTimeupdateHandler = handleTimeUpdate;
+        videoPauseHandler = handlePause;
         video.addEventListener("timeupdate", handleTimeUpdate);
         video.addEventListener("pause", handlePause);
     }
@@ -2077,6 +2117,15 @@
         display:none;
       }
 
+      /* Fade-in and fade-out classes for pane visibility transitions */
+      #ytls-pane.fade-in {
+        animation: fadeIn 0.3s ease-in-out forwards;
+      }
+
+      #ytls-pane.fade-out {
+        animation: fadeOut 0.3s ease-in-out forwards;
+      }
+
       /* Fade-in animation for modals */
       @keyframes fadeIn {
         from {
@@ -2404,7 +2453,7 @@
             offsetY = e.clientY - pane.getBoundingClientRect().top;
             pane.style.transition = "none";
         });
-        document.addEventListener("mousemove", (e) => {
+        document.addEventListener("mousemove", documentMousemoveHandler = (e) => {
             if (!isDragging)
                 return;
             dragOccurredSinceLastMouseDown = true; // Set flag if mouse moves while dragging
@@ -2426,7 +2475,7 @@
             pane.style.right = "auto";
             pane.style.bottom = "auto";
         });
-        document.addEventListener("mouseup", () => {
+        document.addEventListener("mouseup", documentMouseupHandler = () => {
             if (!isDragging)
                 return;
             isDragging = false;
@@ -2444,7 +2493,7 @@
         pane.addEventListener("dragstart", (e) => e.preventDefault());
         // Ensure the timestamps window is fully onscreen after resizing
         let resizeTimeout = null;
-        window.addEventListener("resize", () => {
+        window.addEventListener("resize", windowResizeHandler = () => {
             // Debounce position save - only save after resize is finished
             if (resizeTimeout) {
                 clearTimeout(resizeTimeout);
@@ -2466,12 +2515,11 @@
         pane.append(header, content, style); // Append header, then content, then style to the pane
     }
     // Append the pane to the DOM and set up final UI
-    function displayPane() {
+    async function displayPane() {
         if (!pane)
             return;
-        document.body.appendChild(pane);
-        // Load the global minimized state
-        loadMinimizedState();
+        // Load the global minimized state BEFORE appending to DOM
+        await loadMinimizedState();
         if (pendingStoredViewport) {
             lastViewportWidth = pendingStoredViewport.width;
             lastViewportHeight = pendingStoredViewport.height;
@@ -2481,6 +2529,8 @@
             lastViewportWidth = window.innerWidth;
             lastViewportHeight = window.innerHeight;
         }
+        // Now append the pane with the correct minimized state already applied
+        document.body.appendChild(pane);
     }
     // Add a function to handle URL changes
     async function handleUrlChange() {
@@ -2500,11 +2550,6 @@
         log("Page Title:", pageTitle);
         log("Video ID:", currentVideoId);
         log("Current URL:", window.location.href);
-        // Skip loading if the video ID hasn't changed (prevents double-loading on initial page load)
-        if (currentVideoId === currentLoadedVideoId) {
-            log("Video ID unchanged, skipping timestamp load");
-            return;
-        }
         currentLoadedVideoId = currentVideoId;
         clearTimestampsDisplay();
         updateSeekbarMarkers();
@@ -2515,8 +2560,8 @@
         // Set loading state to false after timestamps are loaded
         setLoadingState(false);
         log("Timestamps loaded and UI unlocked for video:", currentVideoId);
-        // Display the pane after loading timestamps
-        displayPane();
+        // Display the pane after loading timestamps (with correct minimized state)
+        await displayPane();
         // Setup video event listeners for highlighting and URL updates
         setupVideoEventListeners();
     }
