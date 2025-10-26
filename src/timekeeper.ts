@@ -584,34 +584,12 @@ import { PANE_STYLES } from "./styles";
     }
   }
 
-  // Get the maximum timestamp value from the list
-  function getLatestTimestamp(): number {
-    const items = getTimestampItems();
-    let maxTime = 0;
-    for (const li of items) {
-      const timeLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
-      const timeValue = timeLink?.dataset.time;
-      if (timeValue) {
-        const time = Number.parseInt(timeValue, 10);
-        if (Number.isFinite(time) && time > maxTime) {
-          maxTime = time;
-        }
-      }
-    }
-    return maxTime;
-  }
-
   // Update existing calls to formatTimeString to pass video duration
   function formatTime(anchor: HTMLAnchorElement, timeInSeconds: number) {
     const video = document.querySelector<HTMLVideoElement>("video");
     const rawDuration = video?.duration;
     const videoDuration = rawDuration && Number.isFinite(rawDuration) ? Math.floor(rawDuration) : 0;
-
-    // Use the latest timestamp for padding calculation, fall back to video duration
-    const latestTimestamp = getLatestTimestamp();
-    const durationForPadding = latestTimestamp > 0 ? latestTimestamp : videoDuration;
-
-    anchor.textContent = formatTimeString(timeInSeconds, durationForPadding);
+    anchor.textContent = formatTimeString(timeInSeconds, videoDuration);
     anchor.dataset.time = String(timeInSeconds);
     anchor.href = buildYouTubeUrlWithTimestamp(timeInSeconds, window.location.href);
   }
