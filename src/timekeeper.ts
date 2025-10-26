@@ -699,11 +699,11 @@ import { PANE_STYLES } from "./styles";
 
     // Setup indent gutter - displays in left margin without affecting layout
     const indentGutter = document.createElement("div");
-    indentGutter.style.cssText = "position:absolute;left:0;top:0;width:20px;height:100%;display:flex;align-items:center;justify-content:center;";
+    indentGutter.style.cssText = "position:absolute;left:0;top:0;width:20px;height:100%;display:flex;align-items:center;justify-content:center;cursor:pointer;";
+    indentGutter.title = "Click to toggle indent";
 
     const indentToggle = document.createElement("span");
-    indentToggle.style.cssText = "cursor:pointer;display:none;color:#999;font-size:12px;";
-    indentToggle.title = "Toggle indent";
+    indentToggle.style.cssText = "color:#999;font-size:12px;pointer-events:none;display:none;";
 
     // Helper function to update arrow icon based on current indent state
     const updateArrowIcon = () => {
@@ -711,7 +711,8 @@ import { PANE_STYLES } from "./styles";
       indentToggle.textContent = currentIndent === 1 ? "◀" : "▶";
     };
 
-    indentToggle.onclick = (e) => {
+    // Handle indent toggle on entire gutter click
+    const handleIndentToggle = (e: Event) => {
       e.stopPropagation();
       const currentIndent = extractIndentLevel(commentInput.value);
       const cleanComment = removeIndentMarker(commentInput.value);
@@ -732,6 +733,7 @@ import { PANE_STYLES } from "./styles";
       debouncedSaveTimestamps();
     };
 
+    indentGutter.onclick = handleIndentToggle;
     indentGutter.append(indentToggle);
 
     // Add padding to li for gutter space
