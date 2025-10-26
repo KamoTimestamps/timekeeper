@@ -1524,10 +1524,13 @@ import { PANE_STYLES } from "./styles";
           if (!Number.isFinite(timestamp)) {
             continue;
           }
-          const difference = Math.abs(currentTime - timestamp);
-          if (difference < smallestDifference) {
-            smallestDifference = difference;
-            selectedLi = li;
+          // Only highlight timestamps that are at or before the current playhead time
+          if (currentTime >= timestamp) {
+            const difference = currentTime - timestamp;
+            if (difference < smallestDifference) {
+              smallestDifference = difference;
+              selectedLi = li;
+            }
           }
         }
       }
