@@ -46,8 +46,8 @@ import { PANE_STYLES } from "./styles";
   let isLoadingTimestamps = false; // Track if timestamps are currently loading
   const TIMESTAMP_DELETE_CLASS = "ytls-timestamp-pending-delete";
   const TIMESTAMP_HIGHLIGHT_CLASS = "ytls-timestamp-highlight";
-  const HEADER_ICON_DEFAULT_URL = "https://yt3.googleusercontent.com/1b9cHGQWdeCzya7-QkAG18VsB7SyxuBw-oiC8720me90rUbthnPIeVgnbhHGKSB3Tgw9aVfMqw=s64-k-nd";
-  const HEADER_ICON_HOVER_URL = "https://yt3.googleusercontent.com/ur8o0c0jbCJaAkWMwCWWfuytT0FII2Z87G0P-_pEb6DiG9feOQ8iXLG5yRxl4fhXwWJVHo5R-qk=s64-c-k-nd";
+  const HEADER_ICON_DEFAULT_URL = "https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_64px_Indexed.png";
+  const HEADER_ICON_HOVER_URL = "https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_Eyebrow_64px_Indexed.png";
 
   // Wait for YouTube interface to load completely
   async function waitForYouTubeReady() {
