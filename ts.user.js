@@ -640,6 +640,26 @@ const PANE_STYLES = `
     function removeIndentMarker(commentText) {
         return commentText.replace(/^[├└]─\s/, "");
     }
+    /**
+     * Determine the appropriate indent marker for a timestamp based on its position in the list.
+     * @param itemIndex - The index of the timestamp to evaluate
+     * @returns The marker to use when indenting: "├─ " (branch) or "└─ " (corner)
+     */
+    function determineIndentMarkerForIndex(itemIndex) {
+        const items = getTimestampItems();
+        // If it's the final item or no next item exists, use └─ (corner)
+        if (itemIndex >= items.length - 1) {
+            return "└─ ";
+        }
+        // Check if next item is indented
+        const nextCommentInput = items[itemIndex + 1].querySelector('input');
+        if (!nextCommentInput) {
+            return "└─ ";
+        }
+        const nextIsIndented = extractIndentLevel(nextCommentInput.value) === 1;
+        // Use ├─ (branch) if next is indented, └─ (corner) if unindented
+        return nextIsIndented ? "├─ " : "└─ ";
+    }
     function updateIndentMarkers() {
         if (!list)
             return;
@@ -666,12 +686,8 @@ const PANE_STYLES = `
                     const nextCommentInput = items[index + 1].querySelector('input');
                     if (nextCommentInput) {
                         const nextIsIndented = extractIndentLevel(nextCommentInput.value) === 1;
-                        const nextMarker = nextCommentInput.value.startsWith("└─") ? "└─" :
-                            (nextCommentInput.value.startsWith("├─") ? "├─" : "");
-                        // Use └─ (corner) only if next item is unindented
-                        // Never use └─ if next item already has └─ (prevents consecutive corners)
-                        // Otherwise default to ├─ (branch)
-                        isLastInSeries = !nextIsIndented && nextMarker !== "└─";
+                        // Use └─ (corner) only if next item is unindented, otherwise ├─ (branch)
+                        isLastInSeries = !nextIsIndented;
                     }
                 }
                 else {
@@ -983,56 +999,14 @@ const PANE_STYLES = `
             const currentIndent = extractIndentLevel(commentInput.value);
             const cleanComment = removeIndentMarker(commentInput.value);
             const newIndent = currentIndent === 0 ? 1 : 0;
-            // Determine marker based on context
+            // Determine marker based on list context when indenting
             let marker = "";
             if (newIndent === 1) {
-                // Check if we're between unindented and indented timestamp
                 const items = getTimestampItems();
                 const currentIndex = items.indexOf(li);
-                const prevCommentInput = currentIndex > 0 ? items[currentIndex - 1].querySelector('input') : null;
-                const prevIsIndented = currentIndex > 0 ?
-                    extractIndentLevel(prevCommentInput?.value ?? "") === 1 :
-                    false;
-                const prevHasCorner = prevCommentInput?.value.startsWith("└─ ") ?? false;
-                const nextIsIndented = currentIndex < items.length - 1 ?
-                    extractIndentLevel(items[currentIndex + 1].querySelector('input')?.value ?? "") === 1 :
-                    false;
-                // If indenting after a └─ timestamp, use └─ for current
-                if (prevHasCorner) {
-                    marker = "└─ ";
-                }
-                else if ((!prevIsIndented || currentIndex === 0) && nextIsIndented) {
-                    // Between unindented and indented, use ├─
-                    marker = "├─ ";
-                }
-                else {
-                    // Otherwise use placeholder isLast=true, will be recalculated during save
-                    marker = getIndentMarker(true, true);
-                }
-            }
-            else {
-                marker = "";
+                marker = determineIndentMarkerForIndex(currentIndex);
             }
             commentInput.value = `${marker}${cleanComment}`;
-            // Reevaluate the previous timestamp's marker (if not already handled by └─ case)
-            const items = getTimestampItems();
-            const currentIndex = items.indexOf(li);
-            if (currentIndex > 0) {
-                const prevLi = items[currentIndex - 1];
-                const prevCommentInput = prevLi.querySelector('input');
-                if (prevCommentInput) {
-                    const prevIsIndented = extractIndentLevel(prevCommentInput.value) === 1;
-                    const prevHasCorner = prevCommentInput.value.startsWith("└─ ");
-                    if (prevIsIndented && !prevHasCorner) {
-                        // Previous is indented with ├─, change to └─ when current is unindented
-                        if (newIndent === 0) {
-                            const prevCleanComment = removeIndentMarker(prevCommentInput.value);
-                            const prevMarker = getIndentMarker(true, true); // └─ for previous
-                            prevCommentInput.value = `${prevMarker}${prevCleanComment}`;
-                        }
-                    }
-                }
-            }
             // Immediately update arrow icon
             updateArrowIcon();
             debouncedSaveTimestamps();
