@@ -697,6 +697,64 @@ import { PANE_STYLES } from "./styles";
 
     timeRow.className = "time-row";
 
+    // Setup indent gutter - displays in left margin without affecting layout
+    const indentGutter = document.createElement("div");
+    indentGutter.style.cssText = "position:absolute;left:0;top:0;width:20px;height:100%;display:flex;align-items:center;justify-content:center;";
+
+    const indentToggle = document.createElement("span");
+    indentToggle.style.cssText = "cursor:pointer;display:none;color:#999;font-size:12px;";
+    indentToggle.title = "Toggle indent";
+
+    // Helper function to update arrow icon based on current indent state
+    const updateArrowIcon = () => {
+      const currentIndent = extractIndentLevel(commentInput.value);
+      indentToggle.textContent = currentIndent === 1 ? "◀" : "▶";
+    };
+
+    indentToggle.onclick = (e) => {
+      e.stopPropagation();
+      const currentIndent = extractIndentLevel(commentInput.value);
+      const cleanComment = removeIndentMarker(commentInput.value);
+      const newIndent = currentIndent === 0 ? 1 : 0;
+
+      // Determine marker based on list context when indenting
+      let marker = "";
+      if (newIndent === 1) {
+        const items = getTimestampItems();
+        const currentIndex = items.indexOf(li);
+        marker = determineIndentMarkerForIndex(currentIndex);
+      }
+
+      commentInput.value = `${marker}${cleanComment}`;
+
+      // Immediately update arrow icon
+      updateArrowIcon();
+      debouncedSaveTimestamps();
+    };
+
+    indentGutter.append(indentToggle);
+
+    // Add padding to li for gutter space
+    li.style.cssText = "position:relative;padding-left:20px;";
+
+    li.addEventListener("mouseenter", () => {
+      // Update arrow direction based on current indent state
+      updateArrowIcon();
+      indentToggle.style.display = "inline";
+    });
+
+    li.addEventListener("mouseleave", () => {
+      indentToggle.style.display = "none";
+    });
+
+    commentInput.value = comment || "";
+    commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
+    commentInput.addEventListener("input", () => {
+      // This is too noisy to be enabled pretty much ever.
+      // log('Timestamps changed: Comment modified');
+      debouncedSaveTimestamps();
+    });
+
     minus.textContent = "➖";
     minus.dataset.increment = "-1";
     minus.style.cursor = "pointer";
@@ -720,14 +778,6 @@ import { PANE_STYLES } from "./styles";
     };
 
     formatTime(anchor, sanitizedStart);
-
-    commentInput.value = comment || "";
-    commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
-    commentInput.addEventListener("input", () => {
-      // This is too noisy to be enabled pretty much ever.
-      // log('Timestamps changed: Comment modified');
-      debouncedSaveTimestamps();
-    });
 
     del.textContent = "🗑️";
     del.style.cssText = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
@@ -776,50 +826,9 @@ import { PANE_STYLES } from "./styles";
     timeDiff.style.color = "#888";
     timeDiff.style.marginLeft = "5px";
 
-    // Setup single indent toggle arrow (shows ◀ when indented, ▶ when not indented)
-    const indentToggle = document.createElement("span");
-    indentToggle.style.cssText = "cursor:pointer;display:none;margin-right:4px;color:#999;font-size:12px;";
-    indentToggle.title = "Toggle indent";
+    timeRow.append(minus, record, plus, anchor, timeDiff, del);
+    li.append(indentGutter, timeRow, commentInput);
 
-    // Helper function to update arrow icon based on current indent state
-    const updateArrowIcon = () => {
-      const currentIndent = extractIndentLevel(commentInput.value);
-      indentToggle.textContent = currentIndent === 1 ? "◀" : "▶";
-    };
-
-    indentToggle.onclick = (e) => {
-      e.stopPropagation();
-      const currentIndent = extractIndentLevel(commentInput.value);
-      const cleanComment = removeIndentMarker(commentInput.value);
-      const newIndent = currentIndent === 0 ? 1 : 0;
-
-      // Determine marker based on list context when indenting
-      let marker = "";
-      if (newIndent === 1) {
-        const items = getTimestampItems();
-        const currentIndex = items.indexOf(li);
-        marker = determineIndentMarkerForIndex(currentIndex);
-      }
-
-      commentInput.value = `${marker}${cleanComment}`;
-
-      // Immediately update arrow icon
-      updateArrowIcon();
-      debouncedSaveTimestamps();
-    };
-
-    li.addEventListener("mouseenter", () => {
-      // Update arrow direction based on current indent state
-      updateArrowIcon();
-      indentToggle.style.display = "inline";
-    });
-
-    li.addEventListener("mouseleave", () => {
-      indentToggle.style.display = "none";
-    });
-
-    timeRow.append(indentToggle, minus, record, plus, anchor, timeDiff, del);
-    li.append(timeRow, commentInput);
     const newTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
     let inserted = false;
     const existingItems = getTimestampItems();
