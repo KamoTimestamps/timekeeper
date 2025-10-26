@@ -760,15 +760,35 @@ import { PANE_STYLES } from "./styles";
     minus.textContent = "➖";
     minus.dataset.increment = "-1";
     minus.style.cursor = "pointer";
+    minus.style.margin = "0px";
+    minus.addEventListener("mouseenter", () => {
+      minus.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
+    });
+    minus.addEventListener("mouseleave", () => {
+      minus.style.textShadow = "none";
+    });
 
     plus.textContent = "➕";
     plus.dataset.increment = "1";
     plus.style.cursor = "pointer";
+    plus.style.margin = "0px";
+    plus.addEventListener("mouseenter", () => {
+      plus.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
+    });
+    plus.addEventListener("mouseleave", () => {
+      plus.style.textShadow = "none";
+    });
 
     record.textContent = "⏺️";
     record.style.cursor = "pointer";
-    record.style.margin = "0 5px";
+    record.style.margin = "0px";
     record.title = "Set to current playback time";
+    record.addEventListener("mouseenter", () => {
+      record.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
+    });
+    record.addEventListener("mouseleave", () => {
+      record.style.textShadow = "none";
+    });
     record.onclick = () => {
       const currentTime = Math.floor(getCurrentTimeCompat());
       if (Number.isFinite(currentTime)) {
@@ -783,6 +803,12 @@ import { PANE_STYLES } from "./styles";
 
     del.textContent = "🗑️";
     del.style.cssText = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
+    del.addEventListener("mouseenter", () => {
+      del.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(255, 100, 100, 0.6)";
+    });
+    del.addEventListener("mouseleave", () => {
+      del.style.textShadow = "none";
+    });
     del.onclick = () => {
       if (li.dataset.deleteConfirmed === "true") {
         log('Timestamps changed: Timestamp deleted');
