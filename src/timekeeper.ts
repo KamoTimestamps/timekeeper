@@ -844,13 +844,36 @@ import { PANE_STYLES } from "./styles";
         li.classList.add(TIMESTAMP_DELETE_CLASS);
         li.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
 
+        // Helper function to cancel delete and restore previous state
+        const doCancelDelete = () => {
+          li.dataset.deleteConfirmed = "false";
+          li.classList.remove(TIMESTAMP_DELETE_CLASS);
+          // Restore highlight if the item should be highlighted
+          const currentTime = getCurrentTimeCompat();
+          const itemTime = Number.parseInt(li.querySelector<HTMLAnchorElement>('a[data-time]')?.dataset.time ?? "0", 10);
+          if (Number.isFinite(currentTime) && Number.isFinite(itemTime) && currentTime >= itemTime) {
+            li.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
+          }
+        };
+
         // Add a click listener to cancel delete if clicking anywhere except the delete button
         const cancelDeleteOnClick = (event: Event) => {
           const target = event.target as Element;
           // Only cancel if clicking on something that's not the delete button itself
           if (target !== del) {
-            li.dataset.deleteConfirmed = "false";
-            li.classList.remove(TIMESTAMP_DELETE_CLASS);
+            doCancelDelete();
+            li.removeEventListener("click", cancelDeleteOnClick, true);
+            document.removeEventListener("click", cancelDeleteOnClick, true);
+          }
+        };
+
+        // Cancel delete if cursor leaves the full timestamp UI (the list)
+        const cancelDeleteOnMouseLeave = () => {
+          if (li.dataset.deleteConfirmed === "true") {
+            doCancelDelete();
+            if (list) {
+              list.removeEventListener("mouseleave", cancelDeleteOnMouseLeave);
+            }
             li.removeEventListener("click", cancelDeleteOnClick, true);
             document.removeEventListener("click", cancelDeleteOnClick, true);
           }
@@ -859,15 +882,20 @@ import { PANE_STYLES } from "./styles";
         // Add listeners for this timestamp's li and the document
         li.addEventListener("click", cancelDeleteOnClick, true);
         document.addEventListener("click", cancelDeleteOnClick, true);
+        if (list) {
+          list.addEventListener("mouseleave", cancelDeleteOnMouseLeave);
+        }
 
         setTimeout(() => {
           if (li.dataset.deleteConfirmed === "true") {
-            li.dataset.deleteConfirmed = "false";
-            li.classList.remove(TIMESTAMP_DELETE_CLASS);
+            doCancelDelete();
           }
           // Clean up listeners even if timeout expires
           li.removeEventListener("click", cancelDeleteOnClick, true);
           document.removeEventListener("click", cancelDeleteOnClick, true);
+          if (list) {
+            list.removeEventListener("mouseleave", cancelDeleteOnMouseLeave);
+          }
         }, 5000);
       }
     };
