@@ -628,6 +628,67 @@ const PANE_STYLES = `
         }
         return Array.from(list.querySelectorAll('li'));
     }
+    function getIndentMarker(isIndented, isLast) {
+        if (!isIndented)
+            return "";
+        return isLast ? "└─ " : "├─ ";
+    }
+    function extractIndentLevel(commentText) {
+        // Check if comment starts with indent marker (├─ or └─)
+        return (commentText.startsWith("├─ ") || commentText.startsWith("└─ ")) ? 1 : 0;
+    }
+    function removeIndentMarker(commentText) {
+        return commentText.replace(/^[├└]─\s/, "");
+    }
+    function updateIndentMarkers() {
+        if (!list)
+            return;
+        const items = getTimestampItems();
+        // Update markers based on the next item's indent state
+        // We need to iterate multiple times to handle cascading changes
+        let changed = true;
+        let iterations = 0;
+        const maxIterations = items.length; // Prevent infinite loops
+        while (changed && iterations < maxIterations) {
+            changed = false;
+            iterations++;
+            items.forEach((item, index) => {
+                const commentInput = item.querySelector('input');
+                if (!commentInput)
+                    return;
+                const isIndented = extractIndentLevel(commentInput.value) === 1;
+                if (!isIndented)
+                    return; // Skip non-indented items
+                // Determine the marker based on what comes next
+                // Default to ├─ (branch), only use └─ if next item is unindented or if this is the final item
+                let isLastInSeries = false;
+                if (index < items.length - 1) {
+                    const nextCommentInput = items[index + 1].querySelector('input');
+                    if (nextCommentInput) {
+                        const nextIsIndented = extractIndentLevel(nextCommentInput.value) === 1;
+                        const nextMarker = nextCommentInput.value.startsWith("└─") ? "└─" :
+                            (nextCommentInput.value.startsWith("├─") ? "├─" : "");
+                        // Use └─ (corner) only if next item is unindented
+                        // Never use └─ if next item already has └─ (prevents consecutive corners)
+                        // Otherwise default to ├─ (branch)
+                        isLastInSeries = !nextIsIndented && nextMarker !== "└─";
+                    }
+                }
+                else {
+                    // Final item in list: treat as if followed by unindented, so use └─
+                    isLastInSeries = true;
+                }
+                const cleanComment = removeIndentMarker(commentInput.value);
+                const marker = getIndentMarker(true, isLastInSeries);
+                const newValue = `${marker}${cleanComment}`;
+                // If the marker changed, track that we made a change
+                if (commentInput.value !== newValue) {
+                    commentInput.value = newValue;
+                    changed = true;
+                }
+            });
+        }
+    }
     function getTimestampSuffix() {
         const now = new Date();
         return now.getUTCFullYear() +
@@ -908,7 +969,83 @@ const PANE_STYLES = `
         timeDiff.className = "time-diff";
         timeDiff.style.color = "#888";
         timeDiff.style.marginLeft = "5px";
-        timeRow.append(minus, record, plus, anchor, timeDiff, del);
+        // Setup single indent toggle arrow (shows ◀ when indented, ▶ when not indented)
+        const indentToggle = document.createElement("span");
+        indentToggle.style.cssText = "cursor:pointer;display:none;margin-right:4px;color:#999;font-size:12px;";
+        indentToggle.title = "Toggle indent";
+        // Helper function to update arrow icon based on current indent state
+        const updateArrowIcon = () => {
+            const currentIndent = extractIndentLevel(commentInput.value);
+            indentToggle.textContent = currentIndent === 1 ? "◀" : "▶";
+        };
+        indentToggle.onclick = (e) => {
+            e.stopPropagation();
+            const currentIndent = extractIndentLevel(commentInput.value);
+            const cleanComment = removeIndentMarker(commentInput.value);
+            const newIndent = currentIndent === 0 ? 1 : 0;
+            // Determine marker based on context
+            let marker = "";
+            if (newIndent === 1) {
+                // Check if we're between unindented and indented timestamp
+                const items = getTimestampItems();
+                const currentIndex = items.indexOf(li);
+                const prevCommentInput = currentIndex > 0 ? items[currentIndex - 1].querySelector('input') : null;
+                const prevIsIndented = currentIndex > 0 ?
+                    extractIndentLevel(prevCommentInput?.value ?? "") === 1 :
+                    false;
+                const prevHasCorner = prevCommentInput?.value.startsWith("└─ ") ?? false;
+                const nextIsIndented = currentIndex < items.length - 1 ?
+                    extractIndentLevel(items[currentIndex + 1].querySelector('input')?.value ?? "") === 1 :
+                    false;
+                // If indenting after a └─ timestamp, use └─ for current
+                if (prevHasCorner) {
+                    marker = "└─ ";
+                }
+                else if ((!prevIsIndented || currentIndex === 0) && nextIsIndented) {
+                    // Between unindented and indented, use ├─
+                    marker = "├─ ";
+                }
+                else {
+                    // Otherwise use placeholder isLast=true, will be recalculated during save
+                    marker = getIndentMarker(true, true);
+                }
+            }
+            else {
+                marker = "";
+            }
+            commentInput.value = `${marker}${cleanComment}`;
+            // Reevaluate the previous timestamp's marker (if not already handled by └─ case)
+            const items = getTimestampItems();
+            const currentIndex = items.indexOf(li);
+            if (currentIndex > 0) {
+                const prevLi = items[currentIndex - 1];
+                const prevCommentInput = prevLi.querySelector('input');
+                if (prevCommentInput) {
+                    const prevIsIndented = extractIndentLevel(prevCommentInput.value) === 1;
+                    const prevHasCorner = prevCommentInput.value.startsWith("└─ ");
+                    if (prevIsIndented && !prevHasCorner) {
+                        // Previous is indented with ├─, change to └─ when current is unindented
+                        if (newIndent === 0) {
+                            const prevCleanComment = removeIndentMarker(prevCommentInput.value);
+                            const prevMarker = getIndentMarker(true, true); // └─ for previous
+                            prevCommentInput.value = `${prevMarker}${prevCleanComment}`;
+                        }
+                    }
+                }
+            }
+            // Immediately update arrow icon
+            updateArrowIcon();
+            debouncedSaveTimestamps();
+        };
+        li.addEventListener("mouseenter", () => {
+            // Update arrow direction based on current indent state
+            updateArrowIcon();
+            indentToggle.style.display = "inline";
+        });
+        li.addEventListener("mouseleave", () => {
+            indentToggle.style.display = "none";
+        });
+        timeRow.append(indentToggle, minus, record, plus, anchor, timeDiff, del);
         li.append(timeRow, commentInput);
         const newTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
         let inserted = false;
@@ -1049,6 +1186,7 @@ const PANE_STYLES = `
         });
         // Update all time differences
         updateTimeDifferences();
+        updateIndentMarkers();
         updateSeekbarMarkers();
         log('Timestamps changed: Timestamps sorted');
         debouncedSaveTimestamps(); // Save after sorting
@@ -1120,6 +1258,8 @@ const PANE_STYLES = `
         if (list.querySelector('.ytls-error-message')) {
             return; // Skip saving when displaying an error message
         }
+        // Update all indent markers to ensure proper tree structure (├─ for branch, └─ for end)
+        updateIndentMarkers();
         const videoId = getVideoId();
         if (!videoId)
             return;
@@ -1442,9 +1582,10 @@ const PANE_STYLES = `
                 finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
                 clearTimestampsDisplay();
                 finalTimestampsToDisplay.forEach(ts => {
-                    // Pass the GUID when loading timestamps
+                    // Pass the GUID when loading timestamps (indent is now embedded in comment)
                     addTimestamp(ts.start, ts.comment, true, ts.guid);
                 });
+                updateIndentMarkers();
                 updateSeekbarMarkers();
             }
             else {
@@ -1811,6 +1952,7 @@ const PANE_STYLES = `
         }
         if (processedSuccessfully) {
             log('Timestamps changed: Imported timestamps from file/clipboard');
+            updateIndentMarkers();
             debouncedSaveTimestamps();
             updateSeekbarMarkers();
             updateScroll();
