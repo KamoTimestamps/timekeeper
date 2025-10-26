@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.3.1
+// @version      3.3.3
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -815,12 +815,31 @@ const PANE_STYLES = `
             return `https://www.youtube.com/watch?v=${vid}&t=${timeInSeconds}s`;
         }
     }
+    // Get the maximum timestamp value from the list
+    function getLatestTimestamp() {
+        const items = getTimestampItems();
+        let maxTime = 0;
+        for (const li of items) {
+            const timeLink = li.querySelector('a[data-time]');
+            const timeValue = timeLink?.dataset.time;
+            if (timeValue) {
+                const time = Number.parseInt(timeValue, 10);
+                if (Number.isFinite(time) && time > maxTime) {
+                    maxTime = time;
+                }
+            }
+        }
+        return maxTime;
+    }
     // Update existing calls to formatTimeString to pass video duration
     function formatTime(anchor, timeInSeconds) {
         const video = document.querySelector("video");
         const rawDuration = video?.duration;
         const videoDuration = rawDuration && Number.isFinite(rawDuration) ? Math.floor(rawDuration) : 0;
-        anchor.textContent = formatTimeString(timeInSeconds, videoDuration);
+        // Use the latest timestamp for padding calculation, fall back to video duration
+        const latestTimestamp = getLatestTimestamp();
+        const durationForPadding = latestTimestamp > 0 ? latestTimestamp : videoDuration;
+        anchor.textContent = formatTimeString(timeInSeconds, durationForPadding);
         anchor.dataset.time = String(timeInSeconds);
         anchor.href = buildYouTubeUrlWithTimestamp(timeInSeconds, window.location.href);
     }
@@ -1665,10 +1684,13 @@ const PANE_STYLES = `
                     if (!Number.isFinite(timestamp)) {
                         continue;
                     }
-                    const difference = Math.abs(currentTime - timestamp);
-                    if (difference < smallestDifference) {
-                        smallestDifference = difference;
-                        selectedLi = li;
+                    // Only highlight timestamps that are at or before the current playhead time
+                    if (currentTime >= timestamp) {
+                        const difference = currentTime - timestamp;
+                        if (difference < smallestDifference) {
+                            smallestDifference = difference;
+                            selectedLi = li;
+                        }
                     }
                 }
             }
