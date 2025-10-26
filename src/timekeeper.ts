@@ -171,8 +171,6 @@ import { PANE_STYLES } from "./styles";
     if (player && typeof player.seekTo === "function") {
       try {
         player.seekTo(seconds, allowSeekAhead);
-        // Highlight and scroll to nearest timestamp after seeking
-        highlightNearestTimestamp(seconds, true);
         return true;
       } catch (err) {
         log("fallback: player.seekTo failed, using video element.", err, 'warn');
@@ -181,8 +179,6 @@ import { PANE_STYLES } from "./styles";
     const video = getVideoElement();
     if (video) {
       video.currentTime = seconds;
-      // Highlight and scroll to nearest timestamp after seeking
-      highlightNearestTimestamp(seconds, true);
       return true;
     }
     return false;
@@ -603,6 +599,7 @@ import { PANE_STYLES } from "./styles";
   let pendingSeekTime: number | null = null;
   let manualHighlightGuid: string | null = null;
   let manualHighlightTargetTime = 0;
+  let cursorLeftUITime: number | null = null; // Track when cursor left the UI
 
   // Find and highlight the nearest timestamp at or before the given time
   function highlightNearestTimestamp(currentTime: number, shouldScroll = false) {
@@ -628,13 +625,10 @@ import { PANE_STYLES } from "./styles";
       if (!Number.isFinite(timestamp)) {
         continue;
       }
-      // Only consider timestamps at or before current time
-      if (currentTime >= timestamp) {
-        const difference = currentTime - timestamp;
-        if (difference < smallestDifference) {
-          smallestDifference = difference;
-          nearestLi = li;
-        }
+      const difference = Math.abs(currentTime - timestamp);
+      if (difference < smallestDifference) {
+        smallestDifference = difference;
+        nearestLi = li;
       }
     }
 
@@ -1570,7 +1564,16 @@ import { PANE_STYLES } from "./styles";
     // Handler for timeupdate: highlight nearest timestamp
     const handleTimeUpdate = () => {
       if (!list) return;
-      const skipAutoScroll = isMouseOverTimestamps; // Avoid scrolling while user interacts with the list
+
+      // Check if we're within 5 seconds of cursor leaving the UI
+      const now = Date.now();
+      const timeSinceLeavingUI = cursorLeftUITime ? now - cursorLeftUITime : Infinity;
+      const isWithin5SecsOfLeaving = timeSinceLeavingUI < 5000;
+
+      // Skip auto-scroll if:
+      // 1. Cursor is currently over the UI, OR
+      // 2. Cursor left less than 5 seconds ago
+      const skipAutoScroll = isMouseOverTimestamps || isWithin5SecsOfLeaving;
 
       const currentTime = Math.floor(getCurrentTimeCompat());
       if (!Number.isFinite(currentTime)) return;
@@ -1597,7 +1600,7 @@ import { PANE_STYLES } from "./styles";
         }
       }
 
-      // Only automatically highlight nearest timestamp when cursor is NOT over the timestamps UI
+      // Only automatically highlight nearest timestamp when not skipping auto-scroll
       if (!selectedLi && !skipAutoScroll) {
         selectedLi = highlightNearestTimestamp(currentTime, false) ?? null;
       }
@@ -1610,22 +1613,55 @@ import { PANE_STYLES } from "./styles";
 
       if (selectedLi && !selectedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
         selectedLi.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
-        if (!manualHighlightGuid && !skipAutoScroll) {
+        // Only scroll into view when not skipping auto-scroll
+        if (!skipAutoScroll) {
           selectedLi.scrollIntoView({ behavior: "smooth", block: "center" });
         }
       }
     };
 
-    // Handler for pause: no URL updates (removed)
-    const handlePause = () => {
-      // URL updates disabled
+    // Helper function to update URL t parameter
+    const updateUrlTimeParam = (seconds: number | null) => {
+      try {
+        const url = new URL(window.location.href);
+        if (seconds !== null && Number.isFinite(seconds)) {
+          url.searchParams.set('t', `${Math.floor(seconds)}s`);
+        } else {
+          url.searchParams.delete('t');
+        }
+        window.history.replaceState({}, '', url.toString());
+      } catch (err) {
+        // Silently fail if URL manipulation doesn't work
+      }
     };
 
-    // Handler for seeking: highlight nearest timestamp immediately when user seeks
-    const handleSeeking = () => {
+    // Handler for pause: add t parameter with current time
+    const handlePause = () => {
       const currentTime = Math.floor(getCurrentTimeCompat());
       if (Number.isFinite(currentTime)) {
-        // Highlight immediately on seek, regardless of mouse position
+        updateUrlTimeParam(currentTime);
+      }
+    };
+
+    // Handler for play: remove t parameter
+    const handlePlay = () => {
+      // Keep timestamp parameter in URL during playback
+    };
+
+    // Handler for seeking: update t parameter when paused and always highlight immediately
+    const handleSeeking = () => {
+      const video = getVideoElement();
+      if (video && video.paused) {
+        const currentTime = Math.floor(getCurrentTimeCompat());
+        if (Number.isFinite(currentTime)) {
+          updateUrlTimeParam(currentTime);
+        }
+      }
+
+      // Always highlight nearest timestamp immediately when user seeks, bypassing the 5-second timer
+      cursorLeftUITime = null; // Reset the cursor leave timer
+      const currentTime = Math.floor(getCurrentTimeCompat());
+      if (Number.isFinite(currentTime)) {
         highlightNearestTimestamp(currentTime, true);
       }
     };
@@ -1636,6 +1672,7 @@ import { PANE_STYLES } from "./styles";
 
     video.addEventListener("timeupdate", handleTimeUpdate);
     video.addEventListener("pause", handlePause);
+    video.addEventListener("play", handlePlay);
     video.addEventListener("seeking", handleSeeking);
   }
 
@@ -1950,10 +1987,12 @@ import { PANE_STYLES } from "./styles";
     // Add event listeners to `list` after it is initialized
     list.addEventListener("mouseenter", () => {
       isMouseOverTimestamps = true;
+      cursorLeftUITime = null; // Clear the leave timer when cursor re-enters
     });
 
     list.addEventListener("mouseleave", () => {
       isMouseOverTimestamps = false;
+      cursorLeftUITime = Date.now(); // Record when cursor left the UI
     });
 
   pane.id = "ytls-pane";
