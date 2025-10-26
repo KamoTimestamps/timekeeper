@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.3.4
+// @version      3.3.5
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -447,6 +447,8 @@ const PANE_STYLES = `
         if (player && typeof player.seekTo === "function") {
             try {
                 player.seekTo(seconds, allowSeekAhead);
+                // Highlight and scroll to nearest timestamp after seeking
+                highlightNearestTimestamp(seconds, true);
                 return true;
             }
             catch (err) {
@@ -456,6 +458,8 @@ const PANE_STYLES = `
         const video = getVideoElement();
         if (video) {
             video.currentTime = seconds;
+            // Highlight and scroll to nearest timestamp after seeking
+            highlightNearestTimestamp(seconds, true);
             return true;
         }
         return false;
@@ -829,6 +833,46 @@ const PANE_STYLES = `
     let pendingSeekTime = null;
     let manualHighlightGuid = null;
     let manualHighlightTargetTime = 0;
+    // Find and highlight the nearest timestamp at or before the given time
+    function highlightNearestTimestamp(currentTime, shouldScroll = false) {
+        if (!Number.isFinite(currentTime)) {
+            return null;
+        }
+        const items = getTimestampItems();
+        if (items.length === 0) {
+            return null;
+        }
+        let nearestLi = null;
+        let smallestDifference = Infinity;
+        for (const li of items) {
+            const timeLink = li.querySelector('a[data-time]');
+            const timeValue = timeLink?.dataset.time;
+            if (!timeValue) {
+                continue;
+            }
+            const timestamp = Number.parseInt(timeValue, 10);
+            if (!Number.isFinite(timestamp)) {
+                continue;
+            }
+            // Only consider timestamps at or before current time
+            if (currentTime >= timestamp) {
+                const difference = currentTime - timestamp;
+                if (difference < smallestDifference) {
+                    smallestDifference = difference;
+                    nearestLi = li;
+                }
+            }
+        }
+        if (nearestLi) {
+            manualHighlightGuid = nearestLi.dataset.guid ?? null;
+            manualHighlightTargetTime = currentTime;
+            if (shouldScroll) {
+                nearestLi.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+            return nearestLi;
+        }
+        return null;
+    }
     function handleClick(event) {
         if (!list || isLoadingTimestamps) {
             return;
@@ -874,6 +918,11 @@ const PANE_STYLES = `
             const newTime = Math.max(0, currTime + increment);
             log(`Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`);
             formatTime(timeLink, newTime);
+            // Keep the timestamp highlighted while adjusting its time
+            const timestampLi = target.closest('li');
+            if (timestampLi) {
+                manualHighlightGuid = timestampLi.dataset.guid ?? null;
+            }
             pendingSeekTime = newTime;
             if (seekTimeoutId) {
                 clearTimeout(seekTimeoutId);
@@ -1666,7 +1715,7 @@ const PANE_STYLES = `
             if (manualHighlightGuid) {
                 const manualLi = items.find(li => li.dataset.guid === manualHighlightGuid) ?? null;
                 if (manualLi) {
-                    if (Math.abs(currentTime - manualHighlightTargetTime) <= 1) {
+                    if (Math.abs(currentTime - manualHighlightTargetTime) > 5) {
                         manualHighlightGuid = null;
                         manualHighlightTargetTime = 0;
                     }
@@ -1679,27 +1728,9 @@ const PANE_STYLES = `
                     manualHighlightTargetTime = 0;
                 }
             }
-            if (!selectedLi) {
-                let smallestDifference = Infinity;
-                for (const li of items) {
-                    const timeLink = li.querySelector('a[data-time]');
-                    const timeValue = timeLink?.dataset.time;
-                    if (!timeValue) {
-                        continue;
-                    }
-                    const timestamp = Number.parseInt(timeValue, 10);
-                    if (!Number.isFinite(timestamp)) {
-                        continue;
-                    }
-                    // Only highlight timestamps that are at or before the current playhead time
-                    if (currentTime >= timestamp) {
-                        const difference = currentTime - timestamp;
-                        if (difference < smallestDifference) {
-                            smallestDifference = difference;
-                            selectedLi = li;
-                        }
-                    }
-                }
+            // Only automatically highlight nearest timestamp when cursor is NOT over the timestamps UI
+            if (!selectedLi && !skipAutoScroll) {
+                selectedLi = highlightNearestTimestamp(currentTime, false) ?? null;
             }
             items.forEach(li => {
                 if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
@@ -1717,11 +1748,20 @@ const PANE_STYLES = `
         const handlePause = () => {
             // URL updates disabled
         };
+        // Handler for seeking: highlight nearest timestamp immediately when user seeks
+        const handleSeeking = () => {
+            const currentTime = Math.floor(getCurrentTimeCompat());
+            if (Number.isFinite(currentTime)) {
+                // Highlight immediately on seek, regardless of mouse position
+                highlightNearestTimestamp(currentTime, true);
+            }
+        };
         // Store handlers for cleanup
         videoTimeupdateHandler = handleTimeUpdate;
         videoPauseHandler = handlePause;
         video.addEventListener("timeupdate", handleTimeUpdate);
         video.addEventListener("pause", handlePause);
+        video.addEventListener("seeking", handleSeeking);
     }
     // === IndexedDB Helper Functions ===
     const DB_NAME = 'ytls-timestamps-db';
@@ -2020,6 +2060,11 @@ const PANE_STYLES = `
         });
         pane.id = "ytls-pane";
         header.id = "ytls-pane-header";
+        // Highlight and scroll to nearest timestamp when cursor leaves pane
+        pane.addEventListener("mouseleave", () => {
+            const currentTime = getCurrentTimeCompat();
+            highlightNearestTimestamp(currentTime, true); // shouldScroll = true
+        });
         header.addEventListener("dblclick", (event) => {
             const target = event.target instanceof HTMLElement ? event.target : null;
             if (target && (target.closest("a") || target.closest("button") || target.closest("#ytls-current-time") || target.closest(".ytls-version-display"))) {
