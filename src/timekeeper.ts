@@ -49,6 +49,17 @@ import { PANE_STYLES } from "./styles";
   const HEADER_ICON_DEFAULT_URL = "https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_64px_Indexed.png";
   const HEADER_ICON_HOVER_URL = "https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_Eyebrow_64px_Indexed.png";
 
+  // Preload header images once at script startup so they're cached for later use
+  function preloadHeaderIcons() {
+    const preloadImage = (url: string) => {
+      const img = new Image();
+      img.src = url;
+    };
+    preloadImage(HEADER_ICON_DEFAULT_URL);
+    preloadImage(HEADER_ICON_HOVER_URL);
+  }
+  preloadHeaderIcons();
+
   // Wait for YouTube interface to load completely
   async function waitForYouTubeReady() {
     // Wait for the main video element and controls to be present
