@@ -7,7 +7,7 @@
 // @match        https://www.youtube.com/*
 // @run-at       document-idle
 // @noframes
-// @icon         data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%2272px%22 font-size=%2272px%22>⏲️</text></svg>
+// @icon         https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_64px_Indexed.png
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        GM.setClipboard
