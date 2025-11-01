@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.3.6
+// @version      3.3.11
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -828,10 +828,8 @@ const PANE_STYLES = `
     let seekTimeoutId = null;
     let pendingSeekTime = null;
     let manualHighlightGuid = null;
-    let manualHighlightTargetTime = 0;
-    let cursorLeftUITime = null; // Track when cursor left the UI
-    // Find and highlight the nearest timestamp at or before the given time
-    function highlightNearestTimestamp(currentTime, shouldScroll = false) {
+    // Find and return the nearest timestamp at or before the given time
+    function findNearestTimestamp(currentTime) {
         if (!Number.isFinite(currentTime)) {
             return null;
         }
@@ -857,15 +855,24 @@ const PANE_STYLES = `
                 nearestLi = li;
             }
         }
-        if (nearestLi) {
-            manualHighlightGuid = nearestLi.dataset.guid ?? null;
-            manualHighlightTargetTime = currentTime;
-            if (shouldScroll) {
-                nearestLi.scrollIntoView({ behavior: "smooth", block: "center" });
+        return nearestLi;
+    }
+    // Highlight a timestamp and optionally scroll it into view
+    function highlightTimestamp(li, shouldScroll = false) {
+        if (!li)
+            return;
+        const items = getTimestampItems();
+        items.forEach(item => {
+            if (!item.classList.contains(TIMESTAMP_DELETE_CLASS)) {
+                item.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
             }
-            return nearestLi;
+        });
+        if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
+            li.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
+            if (shouldScroll) {
+                li.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
         }
-        return null;
     }
     function handleClick(event) {
         if (!list || isLoadingTimestamps) {
@@ -891,7 +898,6 @@ const PANE_STYLES = `
                 if (!clickedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
                     clickedLi.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
                     manualHighlightGuid = clickedLi.dataset.guid ?? null;
-                    manualHighlightTargetTime = Number.isFinite(newTime) ? newTime : manualHighlightTargetTime;
                     clickedLi.scrollIntoView({ behavior: "smooth", block: "center" });
                 }
             }
@@ -1693,58 +1699,28 @@ const PANE_STYLES = `
         const video = getVideoElement();
         if (!video)
             return;
-        // Handler for timeupdate: highlight nearest timestamp
+        // Handler for timeupdate: highlight nearest timestamp only when mouse isn't over UI and video is playing
         const handleTimeUpdate = () => {
-            if (!list)
+            if (!list || isMouseOverTimestamps)
                 return;
-            // Check if we're within 5 seconds of cursor leaving the UI
-            const now = Date.now();
-            const timeSinceLeavingUI = cursorLeftUITime ? now - cursorLeftUITime : Infinity;
-            const isWithin5SecsOfLeaving = timeSinceLeavingUI < 5000;
-            // Skip auto-scroll if:
-            // 1. Cursor is currently over the UI, OR
-            // 2. Cursor left less than 5 seconds ago
-            const skipAutoScroll = isMouseOverTimestamps || isWithin5SecsOfLeaving;
+            const video = getVideoElement();
+            if (!video || video.paused)
+                return;
             const currentTime = Math.floor(getCurrentTimeCompat());
             if (!Number.isFinite(currentTime))
                 return;
             const items = getTimestampItems();
-            if (items.length === 0) {
+            if (items.length === 0)
                 return;
-            }
+            // Only highlight if we don't have a manual highlight or it doesn't exist anymore
             let selectedLi = null;
             if (manualHighlightGuid) {
-                const manualLi = items.find(li => li.dataset.guid === manualHighlightGuid) ?? null;
-                if (manualLi) {
-                    if (Math.abs(currentTime - manualHighlightTargetTime) > 5) {
-                        manualHighlightGuid = null;
-                        manualHighlightTargetTime = 0;
-                    }
-                    else {
-                        selectedLi = manualLi;
-                    }
-                }
-                else {
-                    manualHighlightGuid = null;
-                    manualHighlightTargetTime = 0;
-                }
+                selectedLi = items.find(li => li.dataset.guid === manualHighlightGuid) ?? null;
             }
-            // Only automatically highlight nearest timestamp when not skipping auto-scroll
-            if (!selectedLi && !skipAutoScroll) {
-                selectedLi = highlightNearestTimestamp(currentTime, false) ?? null;
+            if (!selectedLi) {
+                selectedLi = findNearestTimestamp(currentTime);
             }
-            items.forEach(li => {
-                if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
-                    li.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
-                }
-            });
-            if (selectedLi && !selectedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
-                selectedLi.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
-                // Only scroll into view when not skipping auto-scroll
-                if (!skipAutoScroll) {
-                    selectedLi.scrollIntoView({ behavior: "smooth", block: "center" });
-                }
-            }
+            highlightTimestamp(selectedLi, false);
         };
         // Helper function to update URL t parameter
         const updateUrlTimeParam = (seconds) => {
@@ -1773,21 +1749,21 @@ const PANE_STYLES = `
         const handlePlay = () => {
             // Keep timestamp parameter in URL during playback
         };
-        // Handler for seeking: update t parameter when paused and always highlight immediately
+        // Handler for seeking: highlight immediately on seek
         const handleSeeking = () => {
             const video = getVideoElement();
-            if (video && video.paused) {
-                const currentTime = Math.floor(getCurrentTimeCompat());
-                if (Number.isFinite(currentTime)) {
-                    updateUrlTimeParam(currentTime);
-                }
-            }
-            // Always highlight nearest timestamp immediately when user seeks, bypassing the 5-second timer
-            cursorLeftUITime = null; // Reset the cursor leave timer
+            if (!video)
+                return;
             const currentTime = Math.floor(getCurrentTimeCompat());
-            if (Number.isFinite(currentTime)) {
-                highlightNearestTimestamp(currentTime, true);
+            if (!Number.isFinite(currentTime))
+                return;
+            // Update URL when paused
+            if (video.paused) {
+                updateUrlTimeParam(currentTime);
             }
+            // Always highlight immediately on seek, regardless of pause state
+            const nearestLi = findNearestTimestamp(currentTime);
+            highlightTimestamp(nearestLi, true);
         };
         // Store handlers for cleanup
         videoTimeupdateHandler = handleTimeUpdate;
@@ -2088,19 +2064,12 @@ const PANE_STYLES = `
         // Add event listeners to `list` after it is initialized
         list.addEventListener("mouseenter", () => {
             isMouseOverTimestamps = true;
-            cursorLeftUITime = null; // Clear the leave timer when cursor re-enters
         });
         list.addEventListener("mouseleave", () => {
             isMouseOverTimestamps = false;
-            cursorLeftUITime = Date.now(); // Record when cursor left the UI
         });
         pane.id = "ytls-pane";
         header.id = "ytls-pane-header";
-        // Highlight and scroll to nearest timestamp when cursor leaves pane
-        pane.addEventListener("mouseleave", () => {
-            const currentTime = getCurrentTimeCompat();
-            highlightNearestTimestamp(currentTime, true); // shouldScroll = true
-        });
         header.addEventListener("dblclick", (event) => {
             const target = event.target instanceof HTMLElement ? event.target : null;
             if (target && (target.closest("a") || target.closest("button") || target.closest("#ytls-current-time") || target.closest(".ytls-version-display"))) {
