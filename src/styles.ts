@@ -259,6 +259,17 @@ export const PANE_STYLES = `
     animation: fadeOut 0.3s ease-in-out forwards;
   }
 
+  /* Zoom animations for pane expand/collapse */
+  .ytls-zoom-in {
+    animation: zoomIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+    transform-origin: center center;
+  }
+
+  .ytls-zoom-out {
+    animation: zoomOut 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+    transform-origin: center center;
+  }
+
   /* Fade-in animation for modals */
   @keyframes fadeIn {
     from {
@@ -276,6 +287,30 @@ export const PANE_STYLES = `
     }
     to {
       opacity: 0;
+    }
+  }
+
+  /* Zoom-in animation - expand from point */
+  @keyframes zoomIn {
+    from {
+      opacity: 0;
+      transform: scale(0.1);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Zoom-out animation - collapse to point */
+  @keyframes zoomOut {
+    from {
+      opacity: 1;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(0.1);
     }
   }
 

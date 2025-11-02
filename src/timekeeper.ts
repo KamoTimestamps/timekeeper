@@ -1784,6 +1784,9 @@ import { PANE_STYLES } from "./styles";
       if (typeof isVisible === 'boolean') {
         if (isVisible) {
           pane.style.display = "flex";
+          // Apply zoom-in animation when showing initially
+          pane.classList.remove("ytls-zoom-out");
+          pane.classList.add("ytls-zoom-in");
         } else {
           pane.style.display = "none";
         }
@@ -1791,12 +1794,18 @@ import { PANE_STYLES } from "./styles";
       } else {
         // Default to visible if not found
         pane.style.display = "flex";
+        // Apply zoom-in animation when showing initially
+        pane.classList.remove("ytls-zoom-out");
+        pane.classList.add("ytls-zoom-in");
         syncToggleButtons(true);
       }
     }).catch(err => {
       log("Failed to load UI visibility state:", err, 'error');
       // Default to visible on error
       pane.style.display = "flex";
+      // Apply zoom-in animation when showing initially
+      pane.classList.remove("ytls-zoom-out");
+      pane.classList.add("ytls-zoom-in");
       syncToggleButtons(true);
     });
   }
@@ -1815,19 +1824,21 @@ import { PANE_STYLES } from "./styles";
     if (shouldShow) {
       pane.style.display = "flex";
       pane.classList.remove("ytls-fade-out");
-      pane.classList.add("ytls-fade-in");
+      pane.classList.remove("ytls-zoom-out");
+      pane.classList.add("ytls-zoom-in");
       syncToggleButtons(true);
       saveUIVisibilityState();
     } else {
       pane.classList.remove("ytls-fade-in");
-      pane.classList.add("ytls-fade-out");
+      pane.classList.remove("ytls-zoom-in");
+      pane.classList.add("ytls-zoom-out");
       syncToggleButtons(false);
       visibilityAnimationTimeoutId = setTimeout(() => {
         if (!pane) return;
         pane.style.display = "none";
         saveUIVisibilityState();
         visibilityAnimationTimeoutId = null;
-      }, 300);
+      }, 400);
     }
   }
 
