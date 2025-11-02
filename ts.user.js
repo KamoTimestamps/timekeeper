@@ -279,6 +279,17 @@ const PANE_STYLES = `
     animation: fadeOut 0.3s ease-in-out forwards;
   }
 
+  /* Zoom animations for pane expand/collapse */
+  .ytls-zoom-in {
+    animation: zoomIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+    transform-origin: center center;
+  }
+
+  .ytls-zoom-out {
+    animation: zoomOut 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+    transform-origin: center center;
+  }
+
   /* Fade-in animation for modals */
   @keyframes fadeIn {
     from {
@@ -296,6 +307,30 @@ const PANE_STYLES = `
     }
     to {
       opacity: 0;
+    }
+  }
+
+  /* Zoom-in animation - expand from point */
+  @keyframes zoomIn {
+    from {
+      opacity: 0;
+      transform: scale(0.1);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Zoom-out animation - collapse to point */
+  @keyframes zoomOut {
+    from {
+      opacity: 1;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(0.1);
     }
   }
 
@@ -1888,6 +1923,9 @@ const PANE_STYLES = `
             if (typeof isVisible === 'boolean') {
                 if (isVisible) {
                     pane.style.display = "flex";
+                    // Apply zoom-in animation when showing initially
+                    pane.classList.remove("ytls-zoom-out");
+                    pane.classList.add("ytls-zoom-in");
                 }
                 else {
                     pane.style.display = "none";
@@ -1897,12 +1935,18 @@ const PANE_STYLES = `
             else {
                 // Default to visible if not found
                 pane.style.display = "flex";
+                // Apply zoom-in animation when showing initially
+                pane.classList.remove("ytls-zoom-out");
+                pane.classList.add("ytls-zoom-in");
                 syncToggleButtons(true);
             }
         }).catch(err => {
             log("Failed to load UI visibility state:", err, 'error');
             // Default to visible on error
             pane.style.display = "flex";
+            // Apply zoom-in animation when showing initially
+            pane.classList.remove("ytls-zoom-out");
+            pane.classList.add("ytls-zoom-in");
             syncToggleButtons(true);
         });
     }
@@ -1918,13 +1962,15 @@ const PANE_STYLES = `
         if (shouldShow) {
             pane.style.display = "flex";
             pane.classList.remove("ytls-fade-out");
-            pane.classList.add("ytls-fade-in");
+            pane.classList.remove("ytls-zoom-out");
+            pane.classList.add("ytls-zoom-in");
             syncToggleButtons(true);
             saveUIVisibilityState();
         }
         else {
             pane.classList.remove("ytls-fade-in");
-            pane.classList.add("ytls-fade-out");
+            pane.classList.remove("ytls-zoom-in");
+            pane.classList.add("ytls-zoom-out");
             syncToggleButtons(false);
             visibilityAnimationTimeoutId = setTimeout(() => {
                 if (!pane)
@@ -1932,7 +1978,7 @@ const PANE_STYLES = `
                 pane.style.display = "none";
                 saveUIVisibilityState();
                 visibilityAnimationTimeoutId = null;
-            }, 300);
+            }, 400);
         }
     }
     function processImportedData(contentString) {
