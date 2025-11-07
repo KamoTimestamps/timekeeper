@@ -646,7 +646,7 @@ import { PANE_STYLES } from "./styles";
 
     if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
       li.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
-      if (shouldScroll) {
+      if (shouldScroll && !isMouseOverTimestamps) {
         li.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
@@ -1657,31 +1657,15 @@ import { PANE_STYLES } from "./styles";
     const video = getVideoElement();
     if (!video) return;
 
-    // Handler for timeupdate: highlight nearest timestamp only when mouse isn't over UI and video is playing
+    // Handler for timeupdate: always highlight the nearest timestamp
     const handleTimeUpdate = () => {
-      if (!list || isMouseOverTimestamps) return;
-
-      const video = getVideoElement();
-      if (!video || video.paused) return;
+      if (!list) return;
 
       const currentTime = Math.floor(getCurrentTimeCompat());
       if (!Number.isFinite(currentTime)) return;
 
-      const items = getTimestampItems();
-      if (items.length === 0) return;
-
-      // Only highlight if we don't have a manual highlight or it doesn't exist anymore
-      let selectedLi: HTMLLIElement | null = null;
-
-      if (manualHighlightGuid) {
-        selectedLi = items.find(li => li.dataset.guid === manualHighlightGuid) ?? null;
-      }
-
-      if (!selectedLi) {
-        selectedLi = findNearestTimestamp(currentTime);
-      }
-
-      highlightTimestamp(selectedLi, false);
+      const nearestLi = findNearestTimestamp(currentTime);
+      highlightTimestamp(nearestLi, false);
     };
 
     // Helper function to update URL t parameter
@@ -1709,7 +1693,7 @@ import { PANE_STYLES } from "./styles";
 
     // Handler for play: remove t parameter
     const handlePlay = () => {
-      // Keep timestamp parameter in URL during playback
+      updateUrlTimeParam(null);
     };
 
     // Handler for seeking: highlight immediately on seek
