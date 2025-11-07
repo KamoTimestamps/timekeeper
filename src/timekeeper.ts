@@ -652,6 +652,89 @@ import { PANE_STYLES } from "./styles";
     }
   }
 
+  function offsetAllTimestamps(delta: number): boolean {
+    if (!list || list.querySelector('.ytls-error-message')) {
+      return false;
+    }
+
+    if (!Number.isFinite(delta) || delta === 0) {
+      return false;
+    }
+
+    const items = getTimestampItems();
+    if (items.length === 0) {
+      return false;
+    }
+
+    let changed = false;
+
+    items.forEach(li => {
+      const anchor = li.querySelector<HTMLAnchorElement>('a[data-time]');
+      const timeValue = anchor?.dataset.time;
+      if (!anchor || !timeValue) {
+        return;
+      }
+
+      const currentTime = Number.parseInt(timeValue, 10);
+      if (!Number.isFinite(currentTime)) {
+        return;
+      }
+
+      const newTime = Math.max(0, currentTime + delta);
+      if (newTime !== currentTime) {
+        formatTime(anchor, newTime);
+        changed = true;
+      }
+    });
+
+    if (!changed) {
+      return false;
+    }
+
+    updateTimeDifferences();
+    updateSeekbarMarkers();
+    debouncedSaveTimestamps();
+    return true;
+  }
+
+  type OffsetApplicationOptions = {
+    alertOnNoChange?: boolean;
+    failureMessage?: string;
+    logLabel?: string;
+  };
+
+  function applyOffsetToAllTimestamps(delta: number, options: OffsetApplicationOptions = {}): boolean {
+    if (!Number.isFinite(delta) || delta === 0) {
+      return false;
+    }
+
+    const applied = offsetAllTimestamps(delta);
+    if (!applied) {
+      if (options.alertOnNoChange) {
+        const message = options.failureMessage ?? "Offset did not change any timestamps.";
+        alert(message);
+      }
+      return false;
+    }
+
+    if (seekTimeoutId) {
+      clearTimeout(seekTimeoutId);
+      seekTimeoutId = null;
+    }
+    pendingSeekTime = null;
+
+    const label = options.logLabel ?? "bulk offset";
+    log(`Timestamps changed: Offset all timestamps by ${delta > 0 ? '+' : ''}${delta} seconds (${label})`);
+
+    const currentTime = Math.floor(getCurrentTimeCompat());
+    if (Number.isFinite(currentTime)) {
+      const nearestLi = findNearestTimestamp(currentTime);
+      highlightTimestamp(nearestLi, false);
+    }
+
+    return true;
+  }
+
   function handleClick(event: MouseEvent | TouchEvent) {
     if (!list || isLoadingTimestamps) {
       return;
@@ -696,6 +779,12 @@ import { PANE_STYLES } from "./styles";
       const shiftPressed = 'shiftKey' in event ? event.shiftKey : false;
       if (shiftPressed) {
         increment *= configuredShiftSkip;
+      }
+
+      const altPressed = 'altKey' in event ? event.altKey : false;
+      if (altPressed) {
+        applyOffsetToAllTimestamps(increment, { logLabel: "Alt adjust" });
+        return;
       }
 
       const newTime = Math.max(0, currTime + increment);
@@ -2136,11 +2225,52 @@ import { PANE_STYLES } from "./styles";
       });
     };
 
+      const handleBulkOffset = () => {
+        if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
+          return;
+        }
+
+        const items = getTimestampItems();
+        if (items.length === 0) {
+          alert("No timestamps available to offset.");
+          return;
+        }
+
+        const input = prompt("Enter the number of seconds to offset all timestamps (positive or negative integer):", "0");
+        if (input === null) {
+          return;
+        }
+
+        const trimmed = input.trim();
+        if (trimmed.length === 0) {
+          return;
+        }
+
+        const offsetSeconds = Number.parseInt(trimmed, 10);
+        if (!Number.isFinite(offsetSeconds)) {
+          alert("Please enter a valid integer number of seconds.");
+          return;
+        }
+
+        if (offsetSeconds === 0) {
+          return;
+        }
+
+        if (!applyOffsetToAllTimestamps(offsetSeconds, {
+          alertOnNoChange: true,
+          failureMessage: "Offset had no effect because timestamps are already at the requested bounds.",
+          logLabel: "bulk offset"
+        })) {
+          return;
+        }
+      };
+
     // Configuration for main buttons
     const mainButtonConfigs = [
       { label: "🐣", title: "Add timestamp", action: handleAddTimestamp },
       { label: "⚙️", title: "Settings", action: toggleSettingsModal }, // Changed action
       { label: "📋", title: "Copy timestamps to clipboard", action: handleCopyTimestamps },
+        { label: "⏱️", title: "Offset all timestamps", action: handleBulkOffset },
       { label: "🔀", title: "Sort timestamps by time", action: sortTimestampsAndUpdateDisplay }
     ];
 
