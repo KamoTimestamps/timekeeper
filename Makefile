@@ -1,2 +1,2 @@
-default:
+build:
 	@npm run build

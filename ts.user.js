@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.4.3
+// @version      3.4.4
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -1703,6 +1703,13 @@ const PANE_STYLES = `
         if (!pane || !list) {
             return;
         }
+        const previousScrollTop = list.scrollTop;
+        const restoreScrollPosition = () => {
+            if (!list)
+                return;
+            const maxScrollTop = Math.max(0, list.scrollHeight - list.clientHeight);
+            list.scrollTop = Math.min(previousScrollTop, maxScrollTop);
+        };
         try {
             const validation = await validatePlayerAndVideoId();
             if (!validation.ok) {
@@ -1780,6 +1787,9 @@ const PANE_STYLES = `
         catch (err) {
             log("Unexpected error while loading timestamps:", err, 'error');
             displayPaneError("Timekeeper encountered an unexpected error while loading timestamps. Check the console for details.");
+        }
+        finally {
+            requestAnimationFrame(restoreScrollPosition);
         }
     }
     function getVideoId() {

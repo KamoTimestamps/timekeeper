@@ -1555,6 +1555,12 @@ import { PANE_STYLES } from "./styles";
     if (!pane || !list) {
       return;
     }
+    const previousScrollTop = list.scrollTop;
+    const restoreScrollPosition = () => {
+      if (!list) return;
+      const maxScrollTop = Math.max(0, list.scrollHeight - list.clientHeight);
+      list.scrollTop = Math.min(previousScrollTop, maxScrollTop);
+    };
     try {
       const validation = await validatePlayerAndVideoId();
       if (!validation.ok) {
@@ -1632,6 +1638,8 @@ import { PANE_STYLES } from "./styles";
     } catch (err) {
       log("Unexpected error while loading timestamps:", err, 'error');
       displayPaneError("Timekeeper encountered an unexpected error while loading timestamps. Check the console for details.");
+    } finally {
+      requestAnimationFrame(restoreScrollPosition);
     }
   }
 
