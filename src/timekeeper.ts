@@ -371,11 +371,27 @@ import { PANE_STYLES } from "./styles";
   // Global cache for latest timestamp value
   let latestTimestampValue: number | null = null;
 
+
   function getTimestampItems(): HTMLLIElement[] {
-    if (!list) {
-      return [];
-    }
-    return Array.from(list.querySelectorAll<HTMLLIElement>('li'));
+    return list ? Array.from(list.querySelectorAll<HTMLLIElement>('li')) : [];
+  }
+
+  // Utility to extract timestamp records from UI
+  function extractTimestampRecords(): TimestampRecord[] {
+    return getTimestampItems()
+      .map(li => {
+        const startLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
+        const timeValue = startLink?.dataset.time;
+        if (!startLink || !timeValue) return null;
+        const startTime = Number.parseInt(timeValue, 10);
+        if (!Number.isFinite(startTime)) return null;
+        const commentInput = li.querySelector<HTMLInputElement>('input');
+        const comment = commentInput?.value ?? '';
+        const guid = li.dataset.guid ?? crypto.randomUUID();
+        if (!li.dataset.guid) li.dataset.guid = guid;
+        return { start: startTime, comment, guid };
+      })
+      .filter(isTimestampRecord);
   }
 
   function getLatestTimestampValue(): number {
@@ -1280,46 +1296,14 @@ import { PANE_STYLES } from "./styles";
   }
 
   function saveTimestamps() {
-    if (!list) return;
-    if (list.querySelector('.ytls-error-message')) {
-      return; // Skip saving when displaying an error message
-    }
-
-    // Update all indent markers to ensure proper tree structure (├─ for branch, └─ for end)
+    if (!list || list.querySelector('.ytls-error-message')) return;
     updateIndentMarkers();
-
     const videoId = getVideoId();
     if (!videoId) return;
-
-    const currentTimestampsFromUI = getTimestampItems()
-      .map(li => {
-        const startLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
-        const timeValue = startLink?.dataset.time;
-        if (!startLink || !timeValue) {
-          return null;
-        }
-        const startTime = Number.parseInt(timeValue, 10);
-        if (!Number.isFinite(startTime)) {
-          return null;
-        }
-        const commentInput = li.querySelector<HTMLInputElement>('input');
-        const comment = commentInput?.value ?? '';
-        const guid = li.dataset.guid ?? crypto.randomUUID();
-        if (!li.dataset.guid) {
-          li.dataset.guid = guid;
-        }
-        return { start: startTime, comment, guid };
-      })
-      .filter(isTimestampRecord);
-
-    // Sort timestamps from UI just in case, though they should generally be in order.
-    currentTimestampsFromUI.sort((a, b) => a.start - b.start);
-
-    // Save UI timestamps (including empty array if all timestamps were deleted)
+    const currentTimestampsFromUI = extractTimestampRecords().sort((a, b) => a.start - b.start);
     saveToIndexedDB(videoId, currentTimestampsFromUI)
       .then(() => log(`Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`))
       .catch(err => log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, 'error'));
-    // Notify other tabs about the update
     channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
   }
 
@@ -1336,44 +1320,16 @@ import { PANE_STYLES } from "./styles";
   }
 
   async function saveTimestampsAs(format) {
-    if (!list) return;
-    if (list.querySelector('.ytls-error-message')) {
+    if (!list || list.querySelector('.ytls-error-message')) {
       alert("Cannot export timestamps while displaying an error message.");
       return;
     }
-
     const videoId = getVideoId();
     if (!videoId) return;
-
     log(`Exporting timestamps for video ID: ${videoId}`);
-
-    const timestamps = getTimestampItems()
-      .map(li => {
-        const startLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
-        const timeValue = startLink?.dataset.time;
-        if (!startLink || !timeValue) {
-          return null;
-        }
-        const startTime = Number.parseInt(timeValue, 10);
-        if (!Number.isFinite(startTime)) {
-          return null;
-        }
-        const commentInput = li.querySelector<HTMLInputElement>('input');
-        const comment = commentInput?.value ?? '';
-        const guid = li.dataset.guid ?? crypto.randomUUID();
-        if (!li.dataset.guid) {
-          li.dataset.guid = guid;
-        }
-        return { start: startTime, comment, guid };
-      })
-      .filter(isTimestampRecord);
-
-    // Determine formatting duration based on the latest timestamp value
-    // Use cached latest timestamp value
+    const timestamps = extractTimestampRecords();
     const videoDuration = Math.max(getLatestTimestampValue(), 0);
-
     const timestampSuffix = getTimestampSuffix();
-
     if (format === "json") {
       const blob = new Blob([JSON.stringify(timestamps, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -1388,7 +1344,6 @@ import { PANE_STYLES } from "./styles";
         const commentWithGuid = `${ts.comment} <!-- guid:${ts.guid} -->`.trimStart();
         return `${timeString} ${commentWithGuid}`;
       }).join("\n");
-
       const blob = new Blob([plainText], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -2187,55 +2142,26 @@ import { PANE_STYLES } from "./styles";
       }
     };
 
-    const handleCopyTimestamps = function (e) { // Accept event parameter to check Ctrl key
+    const handleCopyTimestamps = function (e) {
       if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
         this.textContent = "❌";
         setTimeout(() => { this.textContent = "📋"; }, 2000);
         return;
       }
-
-      const timestamps = getTimestampItems()
-        .map(li => {
-          const startLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
-          const timeValue = startLink?.dataset.time;
-          if (!startLink || !timeValue) {
-            return null;
-          }
-          const startTime = Number.parseInt(timeValue, 10);
-          if (!Number.isFinite(startTime)) {
-            return null;
-          }
-          const commentInput = li.querySelector<HTMLInputElement>('input');
-          const comment = commentInput?.value ?? '';
-          const guid = li.dataset.guid ?? crypto.randomUUID();
-          if (!li.dataset.guid) {
-            li.dataset.guid = guid;
-          }
-          return { start: startTime, comment, guid };
-        })
-        .filter(isTimestampRecord);
-
-      // Use the latest timestamp value for formatting when copying
-      // Use cached latest timestamp value
+      const timestamps = extractTimestampRecords();
       const videoDuration = Math.max(getLatestTimestampValue(), 0);
-
       if (timestamps.length === 0) {
         this.textContent = "❌";
         setTimeout(() => { this.textContent = "📋"; }, 2000);
-        return; // Do not copy if empty
+        return;
       }
-
-      const includeGuids = e.ctrlKey; // Check if Ctrl key is held
+      const includeGuids = e.ctrlKey;
       const plainText = timestamps.map(ts => {
         const timeString = formatTimeString(ts.start, videoDuration);
-        if (includeGuids) {
-          // Use HTML comment style for GUIDs, same as file export format
-          return `${timeString} ${ts.comment} <!-- guid:${ts.guid} -->`.trimStart();
-        } else {
-          return `${timeString} ${ts.comment}`;
-        }
+        return includeGuids
+          ? `${timeString} ${ts.comment} <!-- guid:${ts.guid} -->`.trimStart()
+          : `${timeString} ${ts.comment}`;
       }).join("\n");
-
       navigator.clipboard.writeText(plainText).then(() => {
         this.textContent = "✅";
         setTimeout(() => { this.textContent = "📋"; }, 2000);
