@@ -367,11 +367,33 @@ import { PANE_STYLES } from "./styles";
     guid: string;
   };
 
+
+  // Global cache for latest timestamp value
+  let latestTimestampValue: number | null = null;
+
   function getTimestampItems(): HTMLLIElement[] {
     if (!list) {
       return [];
     }
     return Array.from(list.querySelectorAll<HTMLLIElement>('li'));
+  }
+
+  function getLatestTimestampValue(): number {
+    if (latestTimestampValue !== null) {
+      return latestTimestampValue;
+    }
+    const items = getTimestampItems();
+    latestTimestampValue = items.length > 0
+      ? Math.max(...items.map(li => {
+          const t = li.querySelector('a[data-time]')?.getAttribute('data-time');
+          return t ? Number.parseInt(t, 10) : 0;
+        }))
+      : 0;
+    return latestTimestampValue;
+  }
+
+  function invalidateLatestTimestampValue() {
+    latestTimestampValue = null;
   }
 
   function getIndentMarker(isIndented: boolean, isLast: boolean): string {
@@ -586,9 +608,9 @@ import { PANE_STYLES } from "./styles";
 
   // Update existing calls to formatTimeString to pass video duration
   function formatTime(anchor: HTMLAnchorElement, timeInSeconds: number) {
-    const video = document.querySelector<HTMLVideoElement>("video");
-    const rawDuration = video?.duration;
-    const videoDuration = rawDuration && Number.isFinite(rawDuration) ? Math.floor(rawDuration) : 0;
+    // Use the latest timestamp value for formatting instead of the video's duration.
+    // This ensures formatting (M:SS vs H:MM:SS) is based on the timestamps themselves.
+    const videoDuration = Math.max(getLatestTimestampValue(), timeInSeconds || 0);
     anchor.textContent = formatTimeString(timeInSeconds, videoDuration);
     anchor.dataset.time = String(timeInSeconds);
     anchor.href = buildYouTubeUrlWithTimestamp(timeInSeconds, window.location.href);
@@ -790,6 +812,7 @@ import { PANE_STYLES } from "./styles";
       const newTime = Math.max(0, currTime + increment);
       log(`Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`);
       formatTime(timeLink, newTime);
+      invalidateLatestTimestampValue();
 
       // Keep the timestamp highlighted while adjusting its time
       const timestampLi = target.closest('li');
@@ -816,6 +839,7 @@ import { PANE_STYLES } from "./styles";
       event.preventDefault();
       log('Timestamps changed: All timestamps cleared from UI');
       list.textContent = "";
+      invalidateLatestTimestampValue();
       updateSeekbarMarkers();
       updateScroll();
       debouncedSaveTimestamps();
@@ -947,6 +971,7 @@ import { PANE_STYLES } from "./styles";
     };
 
     formatTime(anchor, sanitizedStart);
+    invalidateLatestTimestampValue();
 
     del.textContent = "🗑️";
     del.style.cssText = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
@@ -960,6 +985,7 @@ import { PANE_STYLES } from "./styles";
       if (li.dataset.deleteConfirmed === "true") {
         log('Timestamps changed: Timestamp deleted');
         li.remove();
+        invalidateLatestTimestampValue();
         updateTimeDifferences();
         updateSeekbarMarkers();
         updateScroll();
@@ -1321,8 +1347,6 @@ import { PANE_STYLES } from "./styles";
 
     log(`Exporting timestamps for video ID: ${videoId}`);
 
-    const videoDuration = Math.floor(getDurationCompat());
-
     const timestamps = getTimestampItems()
       .map(li => {
         const startLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
@@ -1343,6 +1367,10 @@ import { PANE_STYLES } from "./styles";
         return { start: startTime, comment, guid };
       })
       .filter(isTimestampRecord);
+
+    // Determine formatting duration based on the latest timestamp value
+    // Use cached latest timestamp value
+    const videoDuration = Math.max(getLatestTimestampValue(), 0);
 
     const timestampSuffix = getTimestampSuffix();
 
@@ -2166,9 +2194,6 @@ import { PANE_STYLES } from "./styles";
         return;
       }
 
-      const video = document.querySelector("video");
-      const videoDuration = video ? Math.floor(video.duration) : 0;
-
       const timestamps = getTimestampItems()
         .map(li => {
           const startLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
@@ -2189,6 +2214,10 @@ import { PANE_STYLES } from "./styles";
           return { start: startTime, comment, guid };
         })
         .filter(isTimestampRecord);
+
+      // Use the latest timestamp value for formatting when copying
+      // Use cached latest timestamp value
+      const videoDuration = Math.max(getLatestTimestampValue(), 0);
 
       if (timestamps.length === 0) {
         this.textContent = "❌";

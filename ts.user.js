@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.4.5
+// @version      3.4.6
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -657,11 +657,29 @@ const PANE_STYLES = `
     let videoTimeupdateHandler = null;
     let videoPauseHandler = null;
     let keydownHandler = null;
+    // Global cache for latest timestamp value
+    let latestTimestampValue = null;
     function getTimestampItems() {
         if (!list) {
             return [];
         }
         return Array.from(list.querySelectorAll('li'));
+    }
+    function getLatestTimestampValue() {
+        if (latestTimestampValue !== null) {
+            return latestTimestampValue;
+        }
+        const items = getTimestampItems();
+        latestTimestampValue = items.length > 0
+            ? Math.max(...items.map(li => {
+                const t = li.querySelector('a[data-time]')?.getAttribute('data-time');
+                return t ? Number.parseInt(t, 10) : 0;
+            }))
+            : 0;
+        return latestTimestampValue;
+    }
+    function invalidateLatestTimestampValue() {
+        latestTimestampValue = null;
     }
     function getIndentMarker(isIndented, isLast) {
         if (!isIndented)
@@ -852,9 +870,9 @@ const PANE_STYLES = `
     }
     // Update existing calls to formatTimeString to pass video duration
     function formatTime(anchor, timeInSeconds) {
-        const video = document.querySelector("video");
-        const rawDuration = video?.duration;
-        const videoDuration = rawDuration && Number.isFinite(rawDuration) ? Math.floor(rawDuration) : 0;
+        // Use the latest timestamp value for formatting instead of the video's duration.
+        // This ensures formatting (M:SS vs H:MM:SS) is based on the timestamps themselves.
+        const videoDuration = Math.max(getLatestTimestampValue(), timeInSeconds || 0);
         anchor.textContent = formatTimeString(timeInSeconds, videoDuration);
         anchor.dataset.time = String(timeInSeconds);
         anchor.href = buildYouTubeUrlWithTimestamp(timeInSeconds, window.location.href);
@@ -1020,6 +1038,7 @@ const PANE_STYLES = `
             const newTime = Math.max(0, currTime + increment);
             log(`Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`);
             formatTime(timeLink, newTime);
+            invalidateLatestTimestampValue();
             // Keep the timestamp highlighted while adjusting its time
             const timestampLi = target.closest('li');
             if (timestampLi) {
@@ -1044,6 +1063,7 @@ const PANE_STYLES = `
             event.preventDefault();
             log('Timestamps changed: All timestamps cleared from UI');
             list.textContent = "";
+            invalidateLatestTimestampValue();
             updateSeekbarMarkers();
             updateScroll();
             debouncedSaveTimestamps();
@@ -1154,6 +1174,7 @@ const PANE_STYLES = `
             }
         };
         formatTime(anchor, sanitizedStart);
+        invalidateLatestTimestampValue();
         del.textContent = "🗑️";
         del.style.cssText = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
         del.addEventListener("mouseenter", () => {
@@ -1166,6 +1187,7 @@ const PANE_STYLES = `
             if (li.dataset.deleteConfirmed === "true") {
                 log('Timestamps changed: Timestamp deleted');
                 li.remove();
+                invalidateLatestTimestampValue();
                 updateTimeDifferences();
                 updateSeekbarMarkers();
                 updateScroll();
@@ -1498,7 +1520,6 @@ const PANE_STYLES = `
         if (!videoId)
             return;
         log(`Exporting timestamps for video ID: ${videoId}`);
-        const videoDuration = Math.floor(getDurationCompat());
         const timestamps = getTimestampItems()
             .map(li => {
             const startLink = li.querySelector('a[data-time]');
@@ -1519,6 +1540,9 @@ const PANE_STYLES = `
             return { start: startTime, comment, guid };
         })
             .filter(isTimestampRecord);
+        // Determine formatting duration based on the latest timestamp value
+        // Use cached latest timestamp value
+        const videoDuration = Math.max(getLatestTimestampValue(), 0);
         const timestampSuffix = getTimestampSuffix();
         if (format === "json") {
             const blob = new Blob([JSON.stringify(timestamps, null, 2)], { type: "application/json" });
@@ -2270,8 +2294,6 @@ const PANE_STYLES = `
                 setTimeout(() => { this.textContent = "📋"; }, 2000);
                 return;
             }
-            const video = document.querySelector("video");
-            const videoDuration = video ? Math.floor(video.duration) : 0;
             const timestamps = getTimestampItems()
                 .map(li => {
                 const startLink = li.querySelector('a[data-time]');
@@ -2292,6 +2314,9 @@ const PANE_STYLES = `
                 return { start: startTime, comment, guid };
             })
                 .filter(isTimestampRecord);
+            // Use the latest timestamp value for formatting when copying
+            // Use cached latest timestamp value
+            const videoDuration = Math.max(getLatestTimestampValue(), 0);
             if (timestamps.length === 0) {
                 this.textContent = "❌";
                 setTimeout(() => { this.textContent = "📋"; }, 2000);
