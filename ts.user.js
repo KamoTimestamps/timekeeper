@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.4.7
+// @version      3.4.8
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -885,12 +885,10 @@ const PANE_STYLES = `
             return `https://www.youtube.com/watch?v=${vid}&t=${timeInSeconds}s`;
         }
     }
-    // Update existing calls to formatTimeString to pass video duration
+    // Update existing calls to formatTimeString to pass only the timestamp value itself
     function formatTime(anchor, timeInSeconds) {
-        // Use the latest timestamp value for formatting instead of the video's duration.
-        // This ensures formatting (M:SS vs H:MM:SS) is based on the timestamps themselves.
-        const videoDuration = Math.max(getLatestTimestampValue(), timeInSeconds || 0);
-        anchor.textContent = formatTimeString(timeInSeconds, videoDuration);
+        // Format the timestamp based solely on its own value.
+        anchor.textContent = formatTimeString(timeInSeconds);
         anchor.dataset.time = String(timeInSeconds);
         anchor.href = buildYouTubeUrlWithTimestamp(timeInSeconds, window.location.href);
     }

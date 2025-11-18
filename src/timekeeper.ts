@@ -622,12 +622,10 @@ import { PANE_STYLES } from "./styles";
     }
   }
 
-  // Update existing calls to formatTimeString to pass video duration
+  // Update existing calls to formatTimeString to pass only the timestamp value itself
   function formatTime(anchor: HTMLAnchorElement, timeInSeconds: number) {
-    // Use the latest timestamp value for formatting instead of the video's duration.
-    // This ensures formatting (M:SS vs H:MM:SS) is based on the timestamps themselves.
-    const videoDuration = Math.max(getLatestTimestampValue(), timeInSeconds || 0);
-    anchor.textContent = formatTimeString(timeInSeconds, videoDuration);
+    // Format the timestamp based solely on its own value.
+    anchor.textContent = formatTimeString(timeInSeconds);
     anchor.dataset.time = String(timeInSeconds);
     anchor.href = buildYouTubeUrlWithTimestamp(timeInSeconds, window.location.href);
   }
@@ -2037,7 +2035,7 @@ import { PANE_STYLES } from "./styles";
     // Add event listeners to `list` after it is initialized
     list.addEventListener("mouseenter", () => {
       isMouseOverTimestamps = true;
-    });
+       });
 
     list.addEventListener("mouseleave", () => {
       isMouseOverTimestamps = false;
