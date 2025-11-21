@@ -1912,8 +1912,35 @@ import { PANE_STYLES } from "./styles";
     let processedSuccessfully = false;
     // Try parsing as JSON first
     try {
-      const timestamps = JSON.parse(contentString);
-      if (Array.isArray(timestamps)) {
+      const parsed = JSON.parse(contentString);
+      let timestamps = null;
+
+      // Check if it's a direct array of timestamps
+      if (Array.isArray(parsed)) {
+        timestamps = parsed;
+      } else if (typeof parsed === 'object' && parsed !== null) {
+        // Check if it's the full export format with ytls- keys
+        const currentVideoId = getVideoId();
+        if (currentVideoId) {
+          const key = `ytls-${currentVideoId}`;
+          if (parsed[key] && Array.isArray(parsed[key].timestamps)) {
+            timestamps = parsed[key].timestamps;
+            log(`Found timestamps for current video (${currentVideoId}) in export format`, 'info');
+          }
+        }
+
+        // If we didn't find a matching video, check if there's only one video in the export
+        if (!timestamps) {
+          const keys = Object.keys(parsed).filter(k => k.startsWith('ytls-'));
+          if (keys.length === 1 && Array.isArray(parsed[keys[0]].timestamps)) {
+            timestamps = parsed[keys[0]].timestamps;
+            const videoId = parsed[keys[0]].video_id;
+            log(`Found timestamps for video ${videoId} in export format`, 'info');
+          }
+        }
+      }
+
+      if (timestamps && Array.isArray(timestamps)) {
         // Check if all items are valid timestamp objects
         const isValidJsonData = timestamps.every(ts => typeof ts.start === 'number' && typeof ts.comment === 'string');
         if (isValidJsonData) {
@@ -1938,7 +1965,7 @@ import { PANE_STYLES } from "./styles";
           log("Parsed JSON array, but items are not in the expected timestamp format. Trying as plain text.", 'warn');
         }
       } else {
-        log("Parsed JSON, but it's not an array. Trying as plain text.", 'warn');
+        log("Parsed JSON, but couldn't find valid timestamps. Trying as plain text.", 'warn');
       }
     } catch (e) {
       // JSON parsing failed or was not the correct structure, proceed to plain text parsing
