@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.4.12
+// @version      3.5.0
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -604,7 +604,7 @@ const PANE_STYLES = `
             return;
         }
         if (event.data) {
-            if (event.data.type === 'timestamps_updated' && event.data.videoId === getVideoId()) {
+            if (event.data.type === 'timestamps_updated' && event.data.videoId === currentLoadedVideoId) {
                 log('Debouncing timestamp load due to external update for video:', event.data.videoId);
                 clearTimeout(loadTimeoutId);
                 loadTimeoutId = setTimeout(() => {
@@ -975,7 +975,7 @@ const PANE_STYLES = `
         }
         updateTimeDifferences();
         updateSeekbarMarkers();
-        debouncedSaveTimestamps();
+        debouncedSaveTimestamps(currentLoadedVideoId);
         return true;
     }
     function applyOffsetToAllTimestamps(delta, options = {}) {
@@ -1072,7 +1072,7 @@ const PANE_STYLES = `
             }, 500);
             updateTimeDifferences();
             updateSeekbarMarkers();
-            debouncedSaveTimestamps();
+            debouncedSaveTimestamps(currentLoadedVideoId);
         }
         else if (target.dataset.action === "clear") {
             event.preventDefault();
@@ -1081,7 +1081,7 @@ const PANE_STYLES = `
             invalidateLatestTimestampValue();
             updateSeekbarMarkers();
             updateScroll();
-            debouncedSaveTimestamps();
+            debouncedSaveTimestamps(currentLoadedVideoId);
         }
     }
     function addTimestamp(start, comment = "", doNotSave = false, guid = null) {
@@ -1128,7 +1128,7 @@ const PANE_STYLES = `
             commentInput.value = `${marker}${cleanComment}`;
             // Immediately update arrow icon
             updateArrowIcon();
-            debouncedSaveTimestamps();
+            debouncedSaveTimestamps(currentLoadedVideoId);
         };
         indentGutter.onclick = handleIndentToggle;
         indentGutter.append(indentToggle);
@@ -1147,7 +1147,7 @@ const PANE_STYLES = `
         commentInput.addEventListener("input", () => {
             // This is too noisy to be enabled pretty much ever.
             // log('Timestamps changed: Comment modified');
-            debouncedSaveTimestamps();
+            debouncedSaveTimestamps(currentLoadedVideoId);
         });
         minus.textContent = "➖";
         minus.dataset.increment = "-1";
@@ -1185,7 +1185,7 @@ const PANE_STYLES = `
                 log(`Timestamps changedset to current playback time ${currentTime}`);
                 formatTime(anchor, currentTime);
                 updateTimeDifferences();
-                debouncedSaveTimestamps();
+                debouncedSaveTimestamps(currentLoadedVideoId);
             }
         };
         formatTime(anchor, sanitizedStart);
@@ -1206,7 +1206,7 @@ const PANE_STYLES = `
                 updateTimeDifferences();
                 updateSeekbarMarkers();
                 updateScroll();
-                debouncedSaveTimestamps();
+                debouncedSaveTimestamps(currentLoadedVideoId);
             }
             else {
                 li.dataset.deleteConfirmed = "true";
@@ -1324,7 +1324,7 @@ const PANE_STYLES = `
         updateScroll();
         updateSeekbarMarkers();
         if (!doNotSave) {
-            debouncedSaveTimestamps();
+            debouncedSaveTimestamps(currentLoadedVideoId);
         }
         return commentInput;
     }
@@ -1410,7 +1410,7 @@ const PANE_STYLES = `
         updateIndentMarkers();
         updateSeekbarMarkers();
         log('Timestamps changed: Timestamps sorted');
-        debouncedSaveTimestamps(); // Save after sorting
+        debouncedSaveTimestamps(currentLoadedVideoId); // Save after sorting
     }
     function updateScroll() {
         if (!list)
@@ -1473,13 +1473,12 @@ const PANE_STYLES = `
             progressBar.appendChild(marker);
         });
     }
-    function saveTimestamps() {
+    function saveTimestamps(videoId) {
         if (!list || list.querySelector('.ytls-error-message'))
             return;
-        updateIndentMarkers();
-        const videoId = getVideoId();
         if (!videoId)
             return;
+        updateIndentMarkers();
         const currentTimestampsFromUI = extractTimestampRecords().sort((a, b) => a.start - b.start);
         saveToIndexedDB(videoId, currentTimestampsFromUI)
             .then(() => log(`Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`))
@@ -1487,13 +1486,15 @@ const PANE_STYLES = `
         channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
     // Debounced save function that waits after last change before saving
-    function debouncedSaveTimestamps() {
+    function debouncedSaveTimestamps(videoId) {
+        if (!videoId)
+            return;
         if (saveTimeoutId) {
             clearTimeout(saveTimeoutId);
         }
         saveTimeoutId = setTimeout(() => {
             log('Timestamps changed: Executing debounced save');
-            saveTimestamps();
+            saveTimestamps(videoId);
             saveTimeoutId = null;
         }, 500);
     }
@@ -1502,7 +1503,7 @@ const PANE_STYLES = `
             alert("Cannot export timestamps while displaying an error message.");
             return;
         }
-        const videoId = getVideoId();
+        const videoId = currentLoadedVideoId;
         if (!videoId)
             return;
         log(`Exporting timestamps for video ID: ${videoId}`);
@@ -2050,7 +2051,7 @@ const PANE_STYLES = `
             }
             else if (typeof parsed === 'object' && parsed !== null) {
                 // Check if it's the full export format with ytls- keys
-                const currentVideoId = getVideoId();
+                const currentVideoId = currentLoadedVideoId;
                 if (currentVideoId) {
                     const key = `ytls-${currentVideoId}`;
                     if (parsed[key] && Array.isArray(parsed[key].timestamps)) {
@@ -2163,7 +2164,7 @@ const PANE_STYLES = `
         if (processedSuccessfully) {
             log('Timestamps changed: Imported timestamps from file/clipboard');
             updateIndentMarkers();
-            debouncedSaveTimestamps();
+            debouncedSaveTimestamps(currentLoadedVideoId);
             updateSeekbarMarkers();
             updateScroll();
             // alert("Timestamps loaded and merged successfully!");
@@ -2906,12 +2907,11 @@ const PANE_STYLES = `
             if (idx > 0)
                 el.remove();
         });
-        const currentVideoId = getVideoId(); // Still useful for logging
+        currentLoadedVideoId = getVideoId(); // Update global video ID
         const pageTitle = document.title;
         log("Page Title:", pageTitle);
-        log("Video ID:", currentVideoId);
+        log("Video ID:", currentLoadedVideoId);
         log("Current URL:", window.location.href);
-        currentLoadedVideoId = currentVideoId;
         clearTimestampsDisplay();
         updateSeekbarMarkers();
         // loadTimestamps will get the videoId itself, load data from IndexedDB (migrating from localStorage if needed),
@@ -2920,7 +2920,7 @@ const PANE_STYLES = `
         updateSeekbarMarkers();
         // Set loading state to false after timestamps are loaded
         setLoadingState(false);
-        log("Timestamps loaded and UI unlocked for video:", currentVideoId);
+        log("Timestamps loaded and UI unlocked for video:", currentLoadedVideoId);
         // Display the pane after loading timestamps (with correct visibility state)
         await displayPane();
         addHeaderButton();
