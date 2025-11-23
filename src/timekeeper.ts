@@ -543,7 +543,8 @@ import { PANE_STYLES } from "./styles";
         const video = getVideoElement();
         const playerInstance = getActivePlayer();
         if (video || playerInstance) {
-          const currentSeconds = Math.max(0, Math.floor(getCurrentTimeCompat()));
+          const rawTime = getCurrentTimeCompat();
+          const currentSeconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
           const h = Math.floor(currentSeconds / 3600);
           const m = Math.floor(currentSeconds / 60) % 60;
           const s = currentSeconds % 60;
@@ -634,6 +635,7 @@ import { PANE_STYLES } from "./styles";
   let seekTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let pendingSeekTime: number | null = null;
   let manualHighlightGuid: string | null = null;
+  let isSeeking = false;
 
   // Find and return the nearest timestamp at or before the given time
   function findNearestTimestamp(currentTime: number): HTMLLIElement | null {
@@ -785,7 +787,9 @@ import { PANE_STYLES } from "./styles";
       event.preventDefault();
       const newTime = Number(target.dataset.time);
       if (Number.isFinite(newTime)) {
+        isSeeking = true;
         seekToCompat(newTime);
+        setTimeout(() => { isSeeking = false; }, 500);
       }
       const clickedLi = target.closest('li') as HTMLLIElement | null;
       if (clickedLi) {
@@ -838,12 +842,14 @@ import { PANE_STYLES } from "./styles";
       if (seekTimeoutId) {
         clearTimeout(seekTimeoutId);
       }
+      isSeeking = true;
       seekTimeoutId = setTimeout(() => {
         if (pendingSeekTime !== null) {
           seekToCompat(pendingSeekTime);
         }
         seekTimeoutId = null;
         pendingSeekTime = null;
+        setTimeout(() => { isSeeking = false; }, 500);
       }, 500);
 
       updateTimeDifferences();
@@ -2089,12 +2095,14 @@ import { PANE_STYLES } from "./styles";
 
     // Enable clicking on the current timestamp to jump to the latest point in the live stream
     timeDisplay.onclick = () => {
+      isSeeking = true;
       seekToLiveHeadCompat();
+      setTimeout(() => { isSeeking = false; }, 500);
     };
 
     function updateTime() {
-      // Skip updates during loading
-      if (isLoadingTimestamps) {
+      // Skip updates during loading or seeking
+      if (isLoadingTimestamps || isSeeking) {
         return;
       }
 
@@ -2104,7 +2112,8 @@ import { PANE_STYLES } from "./styles";
         return;
       }
 
-      const currentSeconds = Math.max(0, Math.floor(getCurrentTimeCompat()));
+      const rawTime = getCurrentTimeCompat();
+      const currentSeconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
       const h = Math.floor(currentSeconds / 3600);
       const m = Math.floor(currentSeconds / 60) % 60;
       const s = currentSeconds % 60;

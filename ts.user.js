@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.5.0
+// @version      3.5.1
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -815,7 +815,8 @@ const PANE_STYLES = `
                 const video = getVideoElement();
                 const playerInstance = getActivePlayer();
                 if (video || playerInstance) {
-                    const currentSeconds = Math.max(0, Math.floor(getCurrentTimeCompat()));
+                    const rawTime = getCurrentTimeCompat();
+                    const currentSeconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
                     const h = Math.floor(currentSeconds / 3600);
                     const m = Math.floor(currentSeconds / 60) % 60;
                     const s = currentSeconds % 60;
@@ -896,6 +897,7 @@ const PANE_STYLES = `
     let seekTimeoutId = null;
     let pendingSeekTime = null;
     let manualHighlightGuid = null;
+    let isSeeking = false;
     // Find and return the nearest timestamp at or before the given time
     function findNearestTimestamp(currentTime) {
         if (!Number.isFinite(currentTime)) {
@@ -1016,7 +1018,9 @@ const PANE_STYLES = `
             event.preventDefault();
             const newTime = Number(target.dataset.time);
             if (Number.isFinite(newTime)) {
+                isSeeking = true;
                 seekToCompat(newTime);
+                setTimeout(() => { isSeeking = false; }, 500);
             }
             const clickedLi = target.closest('li');
             if (clickedLi) {
@@ -1063,12 +1067,14 @@ const PANE_STYLES = `
             if (seekTimeoutId) {
                 clearTimeout(seekTimeoutId);
             }
+            isSeeking = true;
             seekTimeoutId = setTimeout(() => {
                 if (pendingSeekTime !== null) {
                     seekToCompat(pendingSeekTime);
                 }
                 seekTimeoutId = null;
                 pendingSeekTime = null;
+                setTimeout(() => { isSeeking = false; }, 500);
             }, 500);
             updateTimeDifferences();
             updateSeekbarMarkers();
@@ -2210,11 +2216,13 @@ const PANE_STYLES = `
         timeDisplay.textContent = "⏳";
         // Enable clicking on the current timestamp to jump to the latest point in the live stream
         timeDisplay.onclick = () => {
+            isSeeking = true;
             seekToLiveHeadCompat();
+            setTimeout(() => { isSeeking = false; }, 500);
         };
         function updateTime() {
-            // Skip updates during loading
-            if (isLoadingTimestamps) {
+            // Skip updates during loading or seeking
+            if (isLoadingTimestamps || isSeeking) {
                 return;
             }
             const video = getVideoElement();
@@ -2222,7 +2230,8 @@ const PANE_STYLES = `
             if (!video && !playerInstance) {
                 return;
             }
-            const currentSeconds = Math.max(0, Math.floor(getCurrentTimeCompat()));
+            const rawTime = getCurrentTimeCompat();
+            const currentSeconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
             const h = Math.floor(currentSeconds / 3600);
             const m = Math.floor(currentSeconds / 60) % 60;
             const s = currentSeconds % 60;
