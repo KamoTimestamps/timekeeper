@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.5.1
+// @version      3.5.2
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -897,6 +897,8 @@ const PANE_STYLES = `
     let seekTimeoutId = null;
     let pendingSeekTime = null;
     let manualHighlightGuid = null;
+    let manualHighlightTimeoutId = null;
+    let lastAutoHighlightedGuid = null;
     let isSeeking = false;
     // Find and return the nearest timestamp at or before the given time
     function findNearestTimestamp(currentTime) {
@@ -1032,6 +1034,13 @@ const PANE_STYLES = `
                 if (!clickedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
                     clickedLi.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
                     manualHighlightGuid = clickedLi.dataset.guid ?? null;
+                    if (manualHighlightTimeoutId) {
+                        clearTimeout(manualHighlightTimeoutId);
+                    }
+                    manualHighlightTimeoutId = setTimeout(() => {
+                        manualHighlightGuid = null;
+                        manualHighlightTimeoutId = null;
+                    }, 10000); // Clear manual highlight after 10 seconds
                     clickedLi.scrollIntoView({ behavior: "smooth", block: "center" });
                 }
             }
@@ -1062,6 +1071,13 @@ const PANE_STYLES = `
             const timestampLi = target.closest('li');
             if (timestampLi) {
                 manualHighlightGuid = timestampLi.dataset.guid ?? null;
+                if (manualHighlightTimeoutId) {
+                    clearTimeout(manualHighlightTimeoutId);
+                }
+                manualHighlightTimeoutId = setTimeout(() => {
+                    manualHighlightGuid = null;
+                    manualHighlightTimeoutId = null;
+                }, 10000);
             }
             pendingSeekTime = newTime;
             if (seekTimeoutId) {
@@ -1635,6 +1651,12 @@ const PANE_STYLES = `
             clearTimeout(visibilityAnimationTimeoutId);
             visibilityAnimationTimeoutId = null;
         }
+        if (manualHighlightTimeoutId) {
+            clearTimeout(manualHighlightTimeoutId);
+            manualHighlightTimeoutId = null;
+        }
+        manualHighlightGuid = null;
+        lastAutoHighlightedGuid = null;
         // Remove all event listeners to prevent memory leaks
         removeAllEventListeners();
         // Close the BroadcastChannel to prevent memory leaks
@@ -2265,6 +2287,16 @@ const PANE_STYLES = `
                 }
             }
             timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+            // Auto-highlight and scroll to the nearest timestamp during playback (unless manually highlighted)
+            if (!manualHighlightGuid && timestamps.length > 0) {
+                const nearestLi = findNearestTimestamp(currentSeconds);
+                const nearestGuid = nearestLi?.dataset.guid ?? null;
+                // Only update if we've moved to a different timestamp
+                if (nearestGuid && nearestGuid !== lastAutoHighlightedGuid) {
+                    lastAutoHighlightedGuid = nearestGuid;
+                    highlightTimestamp(nearestLi, true);
+                }
+            }
         }
         updateTime();
         if (timeUpdateIntervalId) {
