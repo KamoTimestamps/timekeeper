@@ -635,6 +635,8 @@ import { PANE_STYLES } from "./styles";
   let seekTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let pendingSeekTime: number | null = null;
   let manualHighlightGuid: string | null = null;
+  let manualHighlightTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let lastAutoHighlightedGuid: string | null = null;
   let isSeeking = false;
 
   // Find and return the nearest timestamp at or before the given time
@@ -801,6 +803,13 @@ import { PANE_STYLES } from "./styles";
         if (!clickedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
           clickedLi.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
           manualHighlightGuid = clickedLi.dataset.guid ?? null;
+          if (manualHighlightTimeoutId) {
+            clearTimeout(manualHighlightTimeoutId);
+          }
+          manualHighlightTimeoutId = setTimeout(() => {
+            manualHighlightGuid = null;
+            manualHighlightTimeoutId = null;
+          }, 10000); // Clear manual highlight after 10 seconds
           clickedLi.scrollIntoView({ behavior: "smooth", block: "center" });
         }
       }
@@ -836,6 +845,13 @@ import { PANE_STYLES } from "./styles";
       const timestampLi = target.closest('li');
       if (timestampLi) {
         manualHighlightGuid = timestampLi.dataset.guid ?? null;
+        if (manualHighlightTimeoutId) {
+          clearTimeout(manualHighlightTimeoutId);
+        }
+        manualHighlightTimeoutId = setTimeout(() => {
+          manualHighlightGuid = null;
+          manualHighlightTimeoutId = null;
+        }, 10000);
       }
 
       pendingSeekTime = newTime;
@@ -1466,6 +1482,14 @@ import { PANE_STYLES } from "./styles";
       clearTimeout(visibilityAnimationTimeoutId);
       visibilityAnimationTimeoutId = null;
     }
+
+    if (manualHighlightTimeoutId) {
+      clearTimeout(manualHighlightTimeoutId);
+      manualHighlightTimeoutId = null;
+    }
+
+    manualHighlightGuid = null;
+    lastAutoHighlightedGuid = null;
 
     // Remove all event listeners to prevent memory leaks
     removeAllEventListeners();
@@ -2150,6 +2174,18 @@ import { PANE_STYLES } from "./styles";
       }
 
       timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+
+      // Auto-highlight and scroll to the nearest timestamp during playback (unless manually highlighted)
+      if (!manualHighlightGuid && timestamps.length > 0) {
+        const nearestLi = findNearestTimestamp(currentSeconds);
+        const nearestGuid = nearestLi?.dataset.guid ?? null;
+
+        // Only update if we've moved to a different timestamp
+        if (nearestGuid && nearestGuid !== lastAutoHighlightedGuid) {
+          lastAutoHighlightedGuid = nearestGuid;
+          highlightTimestamp(nearestLi, true);
+        }
+      }
     }
     updateTime();
     if (timeUpdateIntervalId) {
