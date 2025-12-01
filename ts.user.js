@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.5.2
+// @version      3.5.3
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -1500,6 +1500,11 @@ const PANE_STYLES = `
             return;
         if (!videoId)
             return;
+        // Prevent saving during loading state to avoid race conditions
+        if (isLoadingTimestamps) {
+            log('Save blocked: timestamps are currently loading');
+            return;
+        }
         updateIndentMarkers();
         const currentTimestampsFromUI = extractTimestampRecords().sort((a, b) => a.start - b.start);
         saveToIndexedDB(videoId, currentTimestampsFromUI)
@@ -1514,9 +1519,17 @@ const PANE_STYLES = `
         if (saveTimeoutId) {
             clearTimeout(saveTimeoutId);
         }
+        // Capture the video ID at the time of debounce to prevent race conditions
+        const capturedVideoId = videoId;
         saveTimeoutId = setTimeout(() => {
             log('Timestamps changed: Executing debounced save');
-            saveTimestamps(videoId);
+            // Only save if we're not in a loading state and video ID hasn't changed
+            if (!isLoadingTimestamps && capturedVideoId === currentLoadedVideoId) {
+                saveTimestamps(capturedVideoId);
+            }
+            else {
+                log(`Debounced save canceled: loading=${isLoadingTimestamps}, videoId changed=${capturedVideoId !== currentLoadedVideoId}`);
+            }
             saveTimeoutId = null;
         }, 500);
     }
@@ -2442,8 +2455,8 @@ const PANE_STYLES = `
             const buttonConfigs = [
                 { label: "💾 Save", title: "Save As...", action: saveBtn.onclick }, // Assuming saveBtn.onclick shows another modal
                 { label: "📂 Load", title: "Load", action: loadBtn.onclick },
-                { label: "📤 Export", title: "Export All Data", action: exportBtn.onclick },
-                { label: "📥 Import", title: "Import All Data", action: importBtn.onclick },
+                { label: "📤 Export All", title: "Export All Data", action: exportBtn.onclick },
+                { label: "📥 Import All", title: "Import All Data", action: importBtn.onclick },
                 {
                     label: "Close", title: "Close", action: () => {
                         if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
@@ -2948,6 +2961,12 @@ const PANE_STYLES = `
             if (idx > 0)
                 el.remove();
         });
+        // Cancel any pending saves from the previous video to prevent race conditions
+        if (saveTimeoutId) {
+            clearTimeout(saveTimeoutId);
+            saveTimeoutId = null;
+            log('Canceled pending save due to navigation');
+        }
         currentLoadedVideoId = getVideoId(); // Update global video ID
         const pageTitle = document.title;
         log("Page Title:", pageTitle);
