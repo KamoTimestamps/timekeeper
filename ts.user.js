@@ -1,11 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-<<<<<<< HEAD
-// @version      4.0.0
-=======
-// @version      4.0.5
->>>>>>> ef08df9 (data fmt v2)
+// @version      4.0.8
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -644,8 +640,8 @@ const PANE_STYLES = `
         configuredShiftSkip = DEFAULT_SHIFT_SKIP;
         await GM.setValue(SHIFT_SKIP_KEY, configuredShiftSkip);
     }
-    let saveTimeoutId = null; // Variable to hold the timeout ID for debouncing
     let loadTimeoutId = null; // Variable to hold the timeout ID for debouncing loads from broadcast
+    let commentSaveTimeouts = new Map(); // Track comment save timeouts per GUID
     let isMouseOverTimestamps = false; // Default to false
     let settingsModalInstance = null; // To keep a reference to the settings modal
     let settingsCogButtonElement = null; // To keep a reference to the settings cog button
@@ -983,7 +979,7 @@ const PANE_STYLES = `
         }
         updateTimeDifferences();
         updateSeekbarMarkers();
-        debouncedSaveTimestamps(currentLoadedVideoId);
+        saveTimestamps(currentLoadedVideoId);
         return true;
     }
     function applyOffsetToAllTimestamps(delta, options = {}) {
@@ -998,11 +994,6 @@ const PANE_STYLES = `
             }
             return false;
         }
-        if (seekTimeoutId) {
-            clearTimeout(seekTimeoutId);
-            seekTimeoutId = null;
-        }
-        pendingSeekTime = null;
         const label = options.logLabel ?? "bulk offset";
         log(`Timestamps changed: Offset all timestamps by ${delta > 0 ? '+' : ''}${delta} seconds (${label})`);
         const currentTime = Math.floor(getCurrentTimeCompat());
@@ -1114,7 +1105,7 @@ const PANE_STYLES = `
             invalidateLatestTimestampValue();
             updateSeekbarMarkers();
             updateScroll();
-            debouncedSaveTimestamps(currentLoadedVideoId);
+            saveTimestamps(currentLoadedVideoId);
         }
     }
     function addTimestamp(start, comment = "", doNotSave = false, guid = null) {
@@ -1179,10 +1170,17 @@ const PANE_STYLES = `
         commentInput.value = comment || "";
         commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
         commentInput.addEventListener("input", () => {
-            // This is too noisy to be enabled pretty much ever.
-            // log('Timestamps changed: Comment modified');
-            const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
-            saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+            // Debounce comment saves with 250ms delay
+            const existingTimeout = commentSaveTimeouts.get(timestampGuid);
+            if (existingTimeout) {
+                clearTimeout(existingTimeout);
+            }
+            const timeout = setTimeout(() => {
+                const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
+                saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+                commentSaveTimeouts.delete(timestampGuid);
+            }, 250);
+            commentSaveTimeouts.set(timestampGuid, timeout);
         });
         minus.textContent = "➖";
         minus.dataset.increment = "-1";
@@ -1446,7 +1444,7 @@ const PANE_STYLES = `
         updateIndentMarkers();
         updateSeekbarMarkers();
         log('Timestamps changed: Timestamps sorted');
-        debouncedSaveTimestamps(currentLoadedVideoId); // Save after sorting
+        saveTimestamps(currentLoadedVideoId);
     }
     function updateScroll() {
         if (!list)
@@ -1526,27 +1524,6 @@ const PANE_STYLES = `
             .catch(err => log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, 'error'));
         channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
-    // Debounced save function that waits after last change before saving
-    function debouncedSaveTimestamps(videoId) {
-        if (!videoId)
-            return;
-        if (saveTimeoutId) {
-            clearTimeout(saveTimeoutId);
-        }
-        // Capture the video ID at the time of debounce to prevent race conditions
-        const capturedVideoId = videoId;
-        saveTimeoutId = setTimeout(() => {
-            log('Timestamps changed: Executing debounced save');
-            // Only save if we're not in a loading state and video ID hasn't changed
-            if (!isLoadingTimestamps && capturedVideoId === currentLoadedVideoId) {
-                saveTimestamps(capturedVideoId);
-            }
-            else {
-                log(`Debounced save canceled: loading=${isLoadingTimestamps}, videoId changed=${capturedVideoId !== currentLoadedVideoId}`);
-            }
-            saveTimeoutId = null;
-        }, 500);
-    }
     function extractSingleTimestampFromLi(li) {
         const anchor = li.querySelector('a[data-time]');
         const commentInput = li.querySelector('input');
@@ -1575,6 +1552,7 @@ const PANE_STYLES = `
         if (!videoId || isLoadingTimestamps)
             return;
         const timestamp = { guid, start, comment };
+        log(`Saving timestamp: guid=${guid}, start=${start}, comment="${comment}"`);
         saveSingleTimestampToIndexedDB(videoId, timestamp)
             .catch(err => log(`Failed to save timestamp ${guid}:`, err, 'error'));
         channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
@@ -1582,6 +1560,7 @@ const PANE_STYLES = `
     function deleteSingleTimestamp(videoId, guid) {
         if (!videoId || isLoadingTimestamps)
             return;
+        log(`Deleting timestamp: guid=${guid}`);
         deleteSingleTimestampFromIndexedDB(videoId, guid)
             .catch(err => log(`Failed to delete timestamp ${guid}:`, err, 'error'));
         channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
@@ -1701,10 +1680,9 @@ const PANE_STYLES = `
     }
     function unloadTimekeeper() {
         removeSeekbarMarkers();
-        if (saveTimeoutId) {
-            clearTimeout(saveTimeoutId);
-            saveTimeoutId = null;
-        }
+        // Clear all pending comment saves
+        commentSaveTimeouts.forEach(timeout => clearTimeout(timeout));
+        commentSaveTimeouts.clear();
         if (loadTimeoutId) {
             clearTimeout(loadTimeoutId);
             loadTimeoutId = null;
@@ -1968,8 +1946,15 @@ const PANE_STYLES = `
             request.onupgradeneeded = event => {
                 const db = event.target.result;
                 // V1 store: video_id -> {video_id, timestamps: []}
+                // V1 store: video_id -> {video_id, timestamps: []}
                 if (!db.objectStoreNames.contains(STORE_NAME)) {
                     db.createObjectStore(STORE_NAME, { keyPath: 'video_id' });
+                }
+                // V2 store: guid -> {guid, video_id, start, comment}
+                if (!db.objectStoreNames.contains(STORE_NAME_V2)) {
+                    const v2Store = db.createObjectStore(STORE_NAME_V2, { keyPath: 'guid' });
+                    v2Store.createIndex('video_id', 'video_id', { unique: false });
+                    v2Store.createIndex('video_start', ['video_id', 'start'], { unique: false });
                 }
                 // V2 store: guid -> {guid, video_id, start, comment}
                 if (!db.objectStoreNames.contains(STORE_NAME_V2)) {
@@ -2046,8 +2031,6 @@ const PANE_STYLES = `
                 tx.onerror = () => reject(tx.error ?? new Error('Failed to save to IndexedDB'));
             });
         });
-<<<<<<< HEAD
-=======
     }
     function saveSingleTimestampToIndexedDB(videoId, timestamp) {
         // Save single timestamp to v2, update v1 with all current timestamps
@@ -2111,7 +2094,6 @@ const PANE_STYLES = `
                 tx.onerror = () => reject(tx.error ?? new Error('Failed to delete single timestamp from IndexedDB'));
             });
         });
->>>>>>> ef08df9 (data fmt v2)
     }
     function loadFromIndexedDB(videoId) {
         // Try v2 store first
@@ -2465,7 +2447,7 @@ const PANE_STYLES = `
         if (processedSuccessfully) {
             log('Timestamps changed: Imported timestamps from file/clipboard');
             updateIndentMarkers();
-            debouncedSaveTimestamps(currentLoadedVideoId);
+            saveTimestamps(currentLoadedVideoId);
             updateSeekbarMarkers();
             updateScroll();
             // alert("Timestamps loaded and merged successfully!");
@@ -3221,12 +3203,6 @@ const PANE_STYLES = `
             if (idx > 0)
                 el.remove();
         });
-        // Cancel any pending saves from the previous video to prevent race conditions
-        if (saveTimeoutId) {
-            clearTimeout(saveTimeoutId);
-            saveTimeoutId = null;
-            log('Canceled pending save due to navigation');
-        }
         currentLoadedVideoId = getVideoId(); // Update global video ID
         const pageTitle = document.title;
         log("Page Title:", pageTitle);

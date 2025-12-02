@@ -342,8 +342,8 @@ import { PANE_STYLES } from "./styles";
     await GM.setValue(SHIFT_SKIP_KEY, configuredShiftSkip);
   }
 
-  let saveTimeoutId: ReturnType<typeof setTimeout> | null = null; // Variable to hold the timeout ID for debouncing
   let loadTimeoutId: ReturnType<typeof setTimeout> | null = null; // Variable to hold the timeout ID for debouncing loads from broadcast
+  let commentSaveTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map(); // Track comment save timeouts per GUID
   let isMouseOverTimestamps = false; // Default to false
   let settingsModalInstance: HTMLDivElement | null = null; // To keep a reference to the settings modal
   let settingsCogButtonElement: HTMLButtonElement | null = null; // To keep a reference to the settings cog button
@@ -733,7 +733,7 @@ import { PANE_STYLES } from "./styles";
 
     updateTimeDifferences();
     updateSeekbarMarkers();
-    debouncedSaveTimestamps(currentLoadedVideoId);
+    saveTimestamps(currentLoadedVideoId);
     return true;
   }
 
@@ -756,12 +756,6 @@ import { PANE_STYLES } from "./styles";
       }
       return false;
     }
-
-    if (seekTimeoutId) {
-      clearTimeout(seekTimeoutId);
-      seekTimeoutId = null;
-    }
-    pendingSeekTime = null;
 
     const label = options.logLabel ?? "bulk offset";
     log(`Timestamps changed: Offset all timestamps by ${delta > 0 ? '+' : ''}${delta} seconds (${label})`);
@@ -886,7 +880,7 @@ import { PANE_STYLES } from "./styles";
       invalidateLatestTimestampValue();
       updateSeekbarMarkers();
       updateScroll();
-      debouncedSaveTimestamps(currentLoadedVideoId);
+      saveTimestamps(currentLoadedVideoId);
     }
   }
 
@@ -968,10 +962,19 @@ import { PANE_STYLES } from "./styles";
     commentInput.value = comment || "";
     commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
     commentInput.addEventListener("input", () => {
-      // This is too noisy to be enabled pretty much ever.
-      // log('Timestamps changed: Comment modified');
-      const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
-      saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+      // Debounce comment saves with 250ms delay
+      const existingTimeout = commentSaveTimeouts.get(timestampGuid);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+
+      const timeout = setTimeout(() => {
+        const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
+        saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+        commentSaveTimeouts.delete(timestampGuid);
+      }, 250);
+
+      commentSaveTimeouts.set(timestampGuid, timeout);
     });
 
     minus.textContent = "➖";
@@ -1260,7 +1263,7 @@ import { PANE_STYLES } from "./styles";
 
     updateSeekbarMarkers();
     log('Timestamps changed: Timestamps sorted');
-    debouncedSaveTimestamps(currentLoadedVideoId); // Save after sorting
+    saveTimestamps(currentLoadedVideoId);
   }
 
   function updateScroll() {
@@ -1342,26 +1345,6 @@ import { PANE_STYLES } from "./styles";
     channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
   }
 
-  // Debounced save function that waits after last change before saving
-  function debouncedSaveTimestamps(videoId: string | null | undefined) {
-    if (!videoId) return;
-    if (saveTimeoutId) {
-      clearTimeout(saveTimeoutId);
-    }
-    // Capture the video ID at the time of debounce to prevent race conditions
-    const capturedVideoId = videoId;
-    saveTimeoutId = setTimeout(() => {
-      log('Timestamps changed: Executing debounced save');
-      // Only save if we're not in a loading state and video ID hasn't changed
-      if (!isLoadingTimestamps && capturedVideoId === currentLoadedVideoId) {
-        saveTimestamps(capturedVideoId);
-      } else {
-        log(`Debounced save canceled: loading=${isLoadingTimestamps}, videoId changed=${capturedVideoId !== currentLoadedVideoId}`);
-      }
-      saveTimeoutId = null;
-    }, 500);
-  }
-
   function extractSingleTimestampFromLi(li: HTMLLIElement): TimestampRecord | null {
     const anchor = li.querySelector<HTMLAnchorElement>('a[data-time]');
     const commentInput = li.querySelector<HTMLInputElement>('input');
@@ -1395,6 +1378,7 @@ import { PANE_STYLES } from "./styles";
     if (!videoId || isLoadingTimestamps) return;
 
     const timestamp: TimestampRecord = { guid, start, comment };
+    log(`Saving timestamp: guid=${guid}, start=${start}, comment="${comment}"`);
 
     saveSingleTimestampToIndexedDB(videoId, timestamp)
       .catch(err => log(`Failed to save timestamp ${guid}:`, err, 'error'));
@@ -1405,6 +1389,7 @@ import { PANE_STYLES } from "./styles";
   function deleteSingleTimestamp(videoId: string | null | undefined, guid: string) {
     if (!videoId || isLoadingTimestamps) return;
 
+    log(`Deleting timestamp: guid=${guid}`);
     deleteSingleTimestampFromIndexedDB(videoId, guid)
       .catch(err => log(`Failed to delete timestamp ${guid}:`, err, 'error'));
 
@@ -1538,10 +1523,10 @@ import { PANE_STYLES } from "./styles";
   function unloadTimekeeper() {
     removeSeekbarMarkers();
 
-    if (saveTimeoutId) {
-      clearTimeout(saveTimeoutId);
-      saveTimeoutId = null;
-    }
+    // Clear all pending comment saves
+    commentSaveTimeouts.forEach(timeout => clearTimeout(timeout));
+    commentSaveTimeouts.clear();
+
     if (loadTimeoutId) {
       clearTimeout(loadTimeoutId);
       loadTimeoutId = null;
@@ -1818,9 +1803,7 @@ import { PANE_STYLES } from "./styles";
   // === IndexedDB Helper Functions ===
   const DB_NAME = 'ytls-timestamps-db';
   const DB_VERSION = 3;
-  const DB_VERSION = 3;
   const STORE_NAME = 'timestamps';
-  const STORE_NAME_V2 = 'timestamps_v2';
   const STORE_NAME_V2 = 'timestamps_v2';
   const SETTINGS_STORE_NAME = 'settings';
 
@@ -2012,72 +1995,6 @@ import { PANE_STYLES } from "./styles";
   }
 
   function loadFromIndexedDB(videoId: string): Promise<TimestampRecord[] | null> {
-    // Try v2 store first
-    return openIndexedDB().then(db => {
-      return new Promise<TimestampRecord[] | null>((resolve, reject) => {
-        const tx = db.transaction([STORE_NAME_V2, STORE_NAME], 'readwrite');
-        const v2Store = tx.objectStore(STORE_NAME_V2);
-        const v2Index = v2Store.index('video_id');
-
-        const v2Request = v2Index.getAll(IDBKeyRange.only(videoId));
-
-        v2Request.onsuccess = () => {
-          const v2Records = v2Request.result as Array<{guid: string; video_id: string; start: number; comment: string}>;
-
-          if (v2Records.length > 0) {
-            // Found data in v2 store
-            const timestamps = v2Records.map(r => ({
-              guid: r.guid,
-              start: r.start,
-              comment: r.comment
-            })).sort((a, b) => a.start - b.start);
-            resolve(timestamps);
-          } else {
-            // Fallback to v1 store and migrate
-            const v1Store = tx.objectStore(STORE_NAME);
-            const v1Request = v1Store.get(videoId);
-
-            v1Request.onsuccess = () => {
-              const videoData = v1Request.result as { timestamps?: unknown } | undefined;
-              const v1Data = Array.isArray(videoData?.timestamps) ? (videoData.timestamps as TimestampRecord[]) : null;
-
-              if (v1Data && v1Data.length > 0) {
-                // Migrate v1 data to v2
-                log(`Migrating ${v1Data.length} timestamps from v1 to v2 for video ${videoId}`);
-                v1Data.forEach(ts => {
-                  v2Store.put({
-                    guid: ts.guid,
-                    video_id: videoId,
-                    start: ts.start,
-                    comment: ts.comment
-                  });
-                });
-
-                // Delete from v1 after migration
-                v1Store.delete(videoId);
-              }
-
-              resolve(v1Data);
-            };
-
-            v1Request.onerror = () => resolve(null);
-          }
-        };
-
-        v2Request.onerror = () => {
-          // If v2 fails, try v1
-          const v1Store = tx.objectStore(STORE_NAME);
-          const v1Request = v1Store.get(videoId);
-
-          v1Request.onsuccess = () => {
-            const videoData = v1Request.result as { timestamps?: unknown } | undefined;
-            const v1Data = Array.isArray(videoData?.timestamps) ? (videoData.timestamps as TimestampRecord[]) : null;
-            resolve(v1Data);
-          };
-
-          v1Request.onerror = () => resolve(null);
-        };
-      });
     // Try v2 store first
     return openIndexedDB().then(db => {
       return new Promise<TimestampRecord[] | null>((resolve, reject) => {
@@ -2462,7 +2379,7 @@ import { PANE_STYLES } from "./styles";
     if (processedSuccessfully) {
       log('Timestamps changed: Imported timestamps from file/clipboard');
       updateIndentMarkers();
-      debouncedSaveTimestamps(currentLoadedVideoId);
+      saveTimestamps(currentLoadedVideoId);
       updateSeekbarMarkers();
       updateScroll();
       // alert("Timestamps loaded and merged successfully!");
@@ -3304,13 +3221,6 @@ import { PANE_STYLES } from "./styles";
     document.querySelectorAll("#ytls-pane").forEach((el, idx) => {
       if (idx > 0) el.remove();
     });
-
-    // Cancel any pending saves from the previous video to prevent race conditions
-    if (saveTimeoutId) {
-      clearTimeout(saveTimeoutId);
-      saveTimeoutId = null;
-      log('Canceled pending save due to navigation');
-    }
 
     currentLoadedVideoId = getVideoId(); // Update global video ID
     const pageTitle = document.title;
