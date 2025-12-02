@@ -870,7 +870,15 @@ import { PANE_STYLES } from "./styles";
 
       updateTimeDifferences();
       updateSeekbarMarkers();
-      debouncedSaveTimestamps(currentLoadedVideoId);
+
+      // Save the modified timestamp
+      if (timestampLi) {
+        const tsCommentInput = timestampLi.querySelector<HTMLInputElement>('input');
+        const tsGuid = timestampLi.dataset.guid;
+        if (tsCommentInput && tsGuid) {
+          saveSingleTimestampDirect(currentLoadedVideoId, tsGuid, newTime, tsCommentInput.value);
+        }
+      }
     } else if (target.dataset.action === "clear") {
       event.preventDefault();
       log('Timestamps changed: All timestamps cleared from UI');
@@ -937,7 +945,8 @@ import { PANE_STYLES } from "./styles";
 
       // Immediately update arrow icon
       updateArrowIcon();
-      debouncedSaveTimestamps(currentLoadedVideoId);
+      const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
+      saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
     };
 
     indentGutter.onclick = handleIndentToggle;
@@ -961,7 +970,8 @@ import { PANE_STYLES } from "./styles";
     commentInput.addEventListener("input", () => {
       // This is too noisy to be enabled pretty much ever.
       // log('Timestamps changed: Comment modified');
-      debouncedSaveTimestamps(currentLoadedVideoId);
+      const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
+      saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
     });
 
     minus.textContent = "➖";
@@ -1002,7 +1012,7 @@ import { PANE_STYLES } from "./styles";
         log(`Timestamps changedset to current playback time ${currentTime}`);
         formatTime(anchor, currentTime);
         updateTimeDifferences();
-        debouncedSaveTimestamps(currentLoadedVideoId);
+        saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
       }
     };
 
@@ -1020,12 +1030,13 @@ import { PANE_STYLES } from "./styles";
     del.onclick = () => {
       if (li.dataset.deleteConfirmed === "true") {
         log('Timestamps changed: Timestamp deleted');
+        const guid = li.dataset.guid ?? '';
         li.remove();
         invalidateLatestTimestampValue();
         updateTimeDifferences();
         updateSeekbarMarkers();
         updateScroll();
-        debouncedSaveTimestamps(currentLoadedVideoId);
+        deleteSingleTimestamp(currentLoadedVideoId, guid);
       } else {
         li.dataset.deleteConfirmed = "true";
         li.classList.add(TIMESTAMP_DELETE_CLASS);
@@ -1156,7 +1167,7 @@ import { PANE_STYLES } from "./styles";
     updateScroll();
     updateSeekbarMarkers();
     if (!doNotSave) {
-      debouncedSaveTimestamps(currentLoadedVideoId);
+      saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, sanitizedStart, comment);
     }
     return commentInput;
   }
@@ -1349,6 +1360,55 @@ import { PANE_STYLES } from "./styles";
       }
       saveTimeoutId = null;
     }, 500);
+  }
+
+  function extractSingleTimestampFromLi(li: HTMLLIElement): TimestampRecord | null {
+    const anchor = li.querySelector<HTMLAnchorElement>('a[data-time]');
+    const commentInput = li.querySelector<HTMLInputElement>('input');
+    const guid = li.dataset.guid;
+
+    if (!anchor || !commentInput || !guid) {
+      return null;
+    }
+
+    const time = Number.parseInt(anchor.dataset.time ?? "0", 10);
+    return {
+      start: time,
+      comment: commentInput.value,
+      guid: guid
+    };
+  }
+
+  function saveSingleTimestamp(videoId: string | null | undefined, li: HTMLLIElement) {
+    if (!videoId || isLoadingTimestamps) return;
+
+    const timestamp = extractSingleTimestampFromLi(li);
+    if (!timestamp) return;
+
+    saveSingleTimestampToIndexedDB(videoId, timestamp)
+      .catch(err => log(`Failed to save timestamp ${timestamp.guid}:`, err, 'error'));
+
+    channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+  }
+
+  function saveSingleTimestampDirect(videoId: string | null | undefined, guid: string, start: number, comment: string) {
+    if (!videoId || isLoadingTimestamps) return;
+
+    const timestamp: TimestampRecord = { guid, start, comment };
+
+    saveSingleTimestampToIndexedDB(videoId, timestamp)
+      .catch(err => log(`Failed to save timestamp ${guid}:`, err, 'error'));
+
+    channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+  }
+
+  function deleteSingleTimestamp(videoId: string | null | undefined, guid: string) {
+    if (!videoId || isLoadingTimestamps) return;
+
+    deleteSingleTimestampFromIndexedDB(videoId, guid)
+      .catch(err => log(`Failed to delete timestamp ${guid}:`, err, 'error'));
+
+    channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
   }
 
   async function saveTimestampsAs(format) {
@@ -1758,7 +1818,9 @@ import { PANE_STYLES } from "./styles";
   // === IndexedDB Helper Functions ===
   const DB_NAME = 'ytls-timestamps-db';
   const DB_VERSION = 3;
+  const DB_VERSION = 3;
   const STORE_NAME = 'timestamps';
+  const STORE_NAME_V2 = 'timestamps_v2';
   const STORE_NAME_V2 = 'timestamps_v2';
   const SETTINGS_STORE_NAME = 'settings';
 
@@ -1769,9 +1831,19 @@ import { PANE_STYLES } from "./styles";
         const db = (event.target as IDBOpenDBRequest).result;
 
         // V1 store: video_id -> {video_id, timestamps: []}
+
+        // V1 store: video_id -> {video_id, timestamps: []}
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME, { keyPath: 'video_id' });
         }
+
+        // V2 store: guid -> {guid, video_id, start, comment}
+        if (!db.objectStoreNames.contains(STORE_NAME_V2)) {
+          const v2Store = db.createObjectStore(STORE_NAME_V2, { keyPath: 'guid' });
+          v2Store.createIndex('video_id', 'video_id', { unique: false });
+          v2Store.createIndex('video_start', ['video_id', 'start'], { unique: false });
+        }
+
 
         // V2 store: guid -> {guid, video_id, start, comment}
         if (!db.objectStoreNames.contains(STORE_NAME_V2)) {
@@ -1865,7 +1937,147 @@ import { PANE_STYLES } from "./styles";
     });
   }
 
+  function saveSingleTimestampToIndexedDB(videoId: string, timestamp: TimestampRecord): Promise<void> {
+    // Save single timestamp to v2, update v1 with all current timestamps
+    return openIndexedDB().then(db => {
+      return new Promise<void>((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME, STORE_NAME_V2], 'readwrite');
+
+        // Write to v2 store (individual record)
+        const v2Store = tx.objectStore(STORE_NAME_V2);
+        v2Store.put({
+          guid: timestamp.guid,
+          video_id: videoId,
+          start: timestamp.start,
+          comment: timestamp.comment
+        });
+
+        // Update v1 store with all timestamps for this video
+        const v1Store = tx.objectStore(STORE_NAME);
+        const v2Index = v2Store.index('video_id');
+        const getAllRequest = v2Index.getAll(IDBKeyRange.only(videoId));
+
+        getAllRequest.onsuccess = () => {
+          const allRecords = getAllRequest.result as Array<{guid: string; start: number; comment: string}>;
+          const allTimestamps = allRecords.map(r => ({
+            guid: r.guid,
+            start: r.start,
+            comment: r.comment
+          })).sort((a, b) => a.start - b.start);
+
+          v1Store.put({ video_id: videoId, timestamps: allTimestamps });
+        };
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error ?? new Error('Failed to save single timestamp to IndexedDB'));
+      });
+    });
+  }
+
+  function deleteSingleTimestampFromIndexedDB(videoId: string, guid: string): Promise<void> {
+    // Delete single timestamp from v2, update v1 with remaining timestamps
+    return openIndexedDB().then(db => {
+      return new Promise<void>((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME, STORE_NAME_V2], 'readwrite');
+
+        // Delete from v2 store
+        const v2Store = tx.objectStore(STORE_NAME_V2);
+        v2Store.delete(guid);
+
+        // Update v1 store with remaining timestamps for this video
+        const v1Store = tx.objectStore(STORE_NAME);
+        const v2Index = v2Store.index('video_id');
+        const getAllRequest = v2Index.getAll(IDBKeyRange.only(videoId));
+
+        getAllRequest.onsuccess = () => {
+          const remainingRecords = getAllRequest.result as Array<{guid: string; start: number; comment: string}>;
+          const remainingTimestamps = remainingRecords.map(r => ({
+            guid: r.guid,
+            start: r.start,
+            comment: r.comment
+          })).sort((a, b) => a.start - b.start);
+
+          if (remainingTimestamps.length > 0) {
+            v1Store.put({ video_id: videoId, timestamps: remainingTimestamps });
+          } else {
+            // If no timestamps left, remove the video entry from v1
+            v1Store.delete(videoId);
+          }
+        };
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error ?? new Error('Failed to delete single timestamp from IndexedDB'));
+      });
+    });
+  }
+
   function loadFromIndexedDB(videoId: string): Promise<TimestampRecord[] | null> {
+    // Try v2 store first
+    return openIndexedDB().then(db => {
+      return new Promise<TimestampRecord[] | null>((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME_V2, STORE_NAME], 'readwrite');
+        const v2Store = tx.objectStore(STORE_NAME_V2);
+        const v2Index = v2Store.index('video_id');
+
+        const v2Request = v2Index.getAll(IDBKeyRange.only(videoId));
+
+        v2Request.onsuccess = () => {
+          const v2Records = v2Request.result as Array<{guid: string; video_id: string; start: number; comment: string}>;
+
+          if (v2Records.length > 0) {
+            // Found data in v2 store
+            const timestamps = v2Records.map(r => ({
+              guid: r.guid,
+              start: r.start,
+              comment: r.comment
+            })).sort((a, b) => a.start - b.start);
+            resolve(timestamps);
+          } else {
+            // Fallback to v1 store and migrate
+            const v1Store = tx.objectStore(STORE_NAME);
+            const v1Request = v1Store.get(videoId);
+
+            v1Request.onsuccess = () => {
+              const videoData = v1Request.result as { timestamps?: unknown } | undefined;
+              const v1Data = Array.isArray(videoData?.timestamps) ? (videoData.timestamps as TimestampRecord[]) : null;
+
+              if (v1Data && v1Data.length > 0) {
+                // Migrate v1 data to v2
+                log(`Migrating ${v1Data.length} timestamps from v1 to v2 for video ${videoId}`);
+                v1Data.forEach(ts => {
+                  v2Store.put({
+                    guid: ts.guid,
+                    video_id: videoId,
+                    start: ts.start,
+                    comment: ts.comment
+                  });
+                });
+
+                // Delete from v1 after migration
+                v1Store.delete(videoId);
+              }
+
+              resolve(v1Data);
+            };
+
+            v1Request.onerror = () => resolve(null);
+          }
+        };
+
+        v2Request.onerror = () => {
+          // If v2 fails, try v1
+          const v1Store = tx.objectStore(STORE_NAME);
+          const v1Request = v1Store.get(videoId);
+
+          v1Request.onsuccess = () => {
+            const videoData = v1Request.result as { timestamps?: unknown } | undefined;
+            const v1Data = Array.isArray(videoData?.timestamps) ? (videoData.timestamps as TimestampRecord[]) : null;
+            resolve(v1Data);
+          };
+
+          v1Request.onerror = () => resolve(null);
+        };
+      });
     // Try v2 store first
     return openIndexedDB().then(db => {
       return new Promise<TimestampRecord[] | null>((resolve, reject) => {
@@ -1949,6 +2161,64 @@ import { PANE_STYLES } from "./styles";
     });
   }
 
+  async function migrateAllTimestampsToV2(): Promise<void> {
+    try {
+      log('Starting migration of all timestamps from v1 to v2...');
+
+      const db = await openIndexedDB();
+      const tx = db.transaction([STORE_NAME, STORE_NAME_V2], 'readwrite');
+      const v1Store = tx.objectStore(STORE_NAME);
+      const v2Store = tx.objectStore(STORE_NAME_V2);
+
+      const getAllRequest = v1Store.getAll();
+
+      await new Promise<void>((resolve, reject) => {
+        getAllRequest.onsuccess = () => {
+          const v1Records = getAllRequest.result as Array<{
+            video_id: string;
+            timestamps: TimestampRecord[];
+          }>;
+
+          if (v1Records.length === 0) {
+            log('No v1 timestamps to migrate');
+            resolve();
+            return;
+          }
+
+          let totalMigrated = 0;
+
+          v1Records.forEach(record => {
+            if (Array.isArray(record.timestamps) && record.timestamps.length > 0) {
+              record.timestamps.forEach(ts => {
+                v2Store.put({
+                  guid: ts.guid,
+                  video_id: record.video_id,
+                  start: ts.start,
+                  comment: ts.comment
+                });
+                totalMigrated++;
+              });
+
+              // Delete from v1 after migration
+              v1Store.delete(record.video_id);
+            }
+          });
+
+          log(`Migrated ${totalMigrated} timestamps from ${v1Records.length} videos to v2 store`);
+        };
+
+        getAllRequest.onerror = () => {
+          reject(getAllRequest.error ?? new Error('Failed to get v1 records'));
+        };
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error ?? new Error('Migration transaction failed'));
+      });
+    } catch (err) {
+      log('Failed to migrate timestamps to v2:', err, 'error');
+    }
+  }
+
   function saveGlobalSettings(key: string, value: unknown) {
     executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
       store.put({ key, value });
@@ -1967,6 +2237,11 @@ import { PANE_STYLES } from "./styles";
       return undefined;
     });
   }
+
+  // Migrate all v1 timestamps to v2 on init
+  migrateAllTimestampsToV2().catch(err => {
+    log('Failed to migrate timestamps on init:', err, 'error');
+  });
 
   function saveUIVisibilityState() {
     if (!pane) return;
