@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      3.5.3
+// @version      4.0.0
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -1905,16 +1905,24 @@ const PANE_STYLES = `
     }
     // === IndexedDB Helper Functions ===
     const DB_NAME = 'ytls-timestamps-db';
-    const DB_VERSION = 2;
+    const DB_VERSION = 3;
     const STORE_NAME = 'timestamps';
+    const STORE_NAME_V2 = 'timestamps_v2';
     const SETTINGS_STORE_NAME = 'settings';
     function openIndexedDB() {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
             request.onupgradeneeded = event => {
                 const db = event.target.result;
+                // V1 store: video_id -> {video_id, timestamps: []}
                 if (!db.objectStoreNames.contains(STORE_NAME)) {
                     db.createObjectStore(STORE_NAME, { keyPath: 'video_id' });
+                }
+                // V2 store: guid -> {guid, video_id, start, comment}
+                if (!db.objectStoreNames.contains(STORE_NAME_V2)) {
+                    const v2Store = db.createObjectStore(STORE_NAME_V2, { keyPath: 'guid' });
+                    v2Store.createIndex('video_id', 'video_id', { unique: false });
+                    v2Store.createIndex('video_start', ['video_id', 'start'], { unique: false });
                 }
                 if (!db.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
                     db.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'key' });
@@ -1949,16 +1957,100 @@ const PANE_STYLES = `
         });
     }
     function saveToIndexedDB(videoId, data) {
-        return executeTransaction(STORE_NAME, 'readwrite', (store) => {
-            store.put({ video_id: videoId, timestamps: data });
-        }).then(() => undefined);
+        // Dual write: save to both v1 and v2 stores
+        return openIndexedDB().then(db => {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction([STORE_NAME, STORE_NAME_V2], 'readwrite');
+                // Write to v1 store (legacy)
+                const v1Store = tx.objectStore(STORE_NAME);
+                v1Store.put({ video_id: videoId, timestamps: data });
+                // Write to v2 store (GUID-based)
+                const v2Store = tx.objectStore(STORE_NAME_V2);
+                const v2Index = v2Store.index('video_id');
+                // Get existing records for this video
+                const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
+                getRequest.onsuccess = () => {
+                    const existingRecords = getRequest.result;
+                    const existingGuids = new Set(existingRecords.map(r => r.guid));
+                    const newGuids = new Set(data.map(ts => ts.guid));
+                    // Delete removed timestamps
+                    existingRecords.forEach(record => {
+                        if (!newGuids.has(record.guid)) {
+                            v2Store.delete(record.guid);
+                        }
+                    });
+                    // Add/update timestamps
+                    data.forEach(ts => {
+                        v2Store.put({
+                            guid: ts.guid,
+                            video_id: videoId,
+                            start: ts.start,
+                            comment: ts.comment
+                        });
+                    });
+                };
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error ?? new Error('Failed to save to IndexedDB'));
+            });
+        });
     }
     function loadFromIndexedDB(videoId) {
-        return executeTransaction(STORE_NAME, 'readonly', (store) => {
-            return store.get(videoId);
-        }).then(result => {
-            const videoData = result;
-            return Array.isArray(videoData?.timestamps) ? videoData.timestamps : null;
+        // Try v2 store first
+        return openIndexedDB().then(db => {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction([STORE_NAME_V2, STORE_NAME], 'readwrite');
+                const v2Store = tx.objectStore(STORE_NAME_V2);
+                const v2Index = v2Store.index('video_id');
+                const v2Request = v2Index.getAll(IDBKeyRange.only(videoId));
+                v2Request.onsuccess = () => {
+                    const v2Records = v2Request.result;
+                    if (v2Records.length > 0) {
+                        // Found data in v2 store
+                        const timestamps = v2Records.map(r => ({
+                            guid: r.guid,
+                            start: r.start,
+                            comment: r.comment
+                        })).sort((a, b) => a.start - b.start);
+                        resolve(timestamps);
+                    }
+                    else {
+                        // Fallback to v1 store and migrate
+                        const v1Store = tx.objectStore(STORE_NAME);
+                        const v1Request = v1Store.get(videoId);
+                        v1Request.onsuccess = () => {
+                            const videoData = v1Request.result;
+                            const v1Data = Array.isArray(videoData?.timestamps) ? videoData.timestamps : null;
+                            if (v1Data && v1Data.length > 0) {
+                                // Migrate v1 data to v2
+                                log(`Migrating ${v1Data.length} timestamps from v1 to v2 for video ${videoId}`);
+                                v1Data.forEach(ts => {
+                                    v2Store.put({
+                                        guid: ts.guid,
+                                        video_id: videoId,
+                                        start: ts.start,
+                                        comment: ts.comment
+                                    });
+                                });
+                                // Delete from v1 after migration
+                                v1Store.delete(videoId);
+                            }
+                            resolve(v1Data);
+                        };
+                        v1Request.onerror = () => resolve(null);
+                    }
+                };
+                v2Request.onerror = () => {
+                    // If v2 fails, try v1
+                    const v1Store = tx.objectStore(STORE_NAME);
+                    const v1Request = v1Store.get(videoId);
+                    v1Request.onsuccess = () => {
+                        const videoData = v1Request.result;
+                        const v1Data = Array.isArray(videoData?.timestamps) ? videoData.timestamps : null;
+                        resolve(v1Data);
+                    };
+                    v1Request.onerror = () => resolve(null);
+                };
+            });
         });
     }
     function removeFromIndexedDB(videoId) {
