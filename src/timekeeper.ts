@@ -1686,6 +1686,53 @@ import { PANE_STYLES } from "./styles";
   const STORE_NAME_V2 = 'timestamps_v2';
   const SETTINGS_STORE_NAME = 'settings';
 
+  // Standalone export function to export all timestamps to a ytls-data file
+  async function exportAllTimestamps(): Promise<void> {
+    const exportData = {} as Record<string, unknown>;
+
+    try {
+      // Get all timestamps from v2 store
+      const allTimestamps = await getAllFromIndexedDB(STORE_NAME_V2);
+
+      // Group timestamps by video_id
+      const videoGroups = new Map<string, TimestampRecord[]>();
+      for (const record of allTimestamps) {
+        const ts = record as {guid: string; video_id: string; start: number; comment: string};
+        if (!videoGroups.has(ts.video_id)) {
+          videoGroups.set(ts.video_id, []);
+        }
+        videoGroups.get(ts.video_id)!.push({
+          guid: ts.guid,
+          start: ts.start,
+          comment: ts.comment
+        });
+      }
+
+      // Populate exportData with all timestamps in v1 format for compatibility
+      for (const [videoId, timestamps] of videoGroups) {
+        exportData[`ytls-${videoId}`] = {
+          video_id: videoId,
+          timestamps: timestamps.sort((a, b) => a.start - b.start)
+        };
+      }
+
+      // Create a JSON file for export
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const timestampSuffix = getTimestampSuffix();
+      a.download = `ytls-data-${timestampSuffix}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      log(`Exported ${videoGroups.size} videos with ${allTimestamps.length} timestamps`);
+    } catch (err) {
+      log("Failed to export data:", err, 'error');
+      throw err;
+    }
+  }
+
   function openIndexedDB(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -1706,6 +1753,55 @@ import { PANE_STYLES } from "./styles";
 
         // Version 3: Migrate from timestamps to timestamps_v2 and delete old store
         if (oldVersion < 3) {
+          // Export backup before migration
+          if (db.objectStoreNames.contains(STORE_NAME)) {
+            log('Exporting backup before v2 migration...');
+            const v1Store = transaction.objectStore(STORE_NAME);
+            const exportRequest = v1Store.getAll();
+
+            exportRequest.onsuccess = () => {
+              const v1Records = exportRequest.result as Array<{
+                video_id: string;
+                timestamps: TimestampRecord[];
+              }>;
+
+              if (v1Records.length > 0) {
+                try {
+                  const exportData = {} as Record<string, unknown>;
+                  let totalTimestamps = 0;
+
+                  v1Records.forEach(record => {
+                    if (Array.isArray(record.timestamps) && record.timestamps.length > 0) {
+                      const timestampsWithGuids = record.timestamps.map(ts => ({
+                        guid: ts.guid || crypto.randomUUID(),
+                        start: ts.start,
+                        comment: ts.comment
+                      }));
+
+                      exportData[`ytls-${record.video_id}`] = {
+                        video_id: record.video_id,
+                        timestamps: timestampsWithGuids.sort((a, b) => a.start - b.start)
+                      };
+                      totalTimestamps += timestampsWithGuids.length;
+                    }
+                  });
+
+                  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `ytls-data-${getTimestampSuffix()}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+
+                  log(`Pre-migration backup exported: ${v1Records.length} videos, ${totalTimestamps} timestamps`);
+                } catch (err) {
+                  log('Failed to export pre-migration backup:', err, 'error');
+                }
+              }
+            };
+          }
+
           // Create v2 store with new structure: guid -> {guid, video_id, start, comment}
           const v2Store = db.createObjectStore(STORE_NAME_V2, { keyPath: 'guid' });
           v2Store.createIndex('video_id', 'video_id', { unique: false });
@@ -2664,45 +2760,9 @@ import { PANE_STYLES } from "./styles";
     exportBtn.textContent = "📤 Export";
     exportBtn.classList.add("ytls-file-operation-button");
     exportBtn.onclick = async () => {
-      const exportData = {} as Record<string, unknown>;
-
       try {
-        // Get all timestamps from v2 store
-        const allTimestamps = await getAllFromIndexedDB(STORE_NAME_V2);
-
-        // Group timestamps by video_id
-        const videoGroups = new Map<string, TimestampRecord[]>();
-        for (const record of allTimestamps) {
-          const ts = record as {guid: string; video_id: string; start: number; comment: string};
-          if (!videoGroups.has(ts.video_id)) {
-            videoGroups.set(ts.video_id, []);
-          }
-          videoGroups.get(ts.video_id)!.push({
-            guid: ts.guid,
-            start: ts.start,
-            comment: ts.comment
-          });
-        }
-
-        // Populate exportData with all timestamps in v1 format for compatibility
-        for (const [videoId, timestamps] of videoGroups) {
-          exportData[`ytls-${videoId}`] = {
-            video_id: videoId,
-            timestamps: timestamps.sort((a, b) => a.start - b.start)
-          };
-        }
-
-        // Create a JSON file for export
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        const timestampSuffix = getTimestampSuffix();
-        a.download = `ytls-data-${timestampSuffix}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        await exportAllTimestamps();
       } catch (err) {
-        log("Failed to export data:", err, 'error');
         alert("Failed to export data: Could not read from database.");
       }
     };
