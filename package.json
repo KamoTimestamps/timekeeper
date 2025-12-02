@@ -1,6 +1,6 @@
 {
   "name": "timekeeper",
-  "version": "4.0.10",
+  "version": "4.0.0",
   "private": true,
   "description": "Timekeeper userscript TypeScript project",
   "scripts": {

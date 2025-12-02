@@ -1686,7 +1686,7 @@ import { PANE_STYLES } from "./styles";
   const STORE_NAME_V2 = 'timestamps_v2';
   const SETTINGS_STORE_NAME = 'settings';
 
-  // Standalone export function to export all timestamps to a ytls-data file
+  // Standalone export function to export all timestamps to a timekeeper-data file
   async function exportAllTimestamps(): Promise<void> {
     const exportData = {} as Record<string, unknown>;
 
@@ -1722,7 +1722,7 @@ import { PANE_STYLES } from "./styles";
       const a = document.createElement("a");
       a.href = url;
       const timestampSuffix = getTimestampSuffix();
-      a.download = `ytls-data-${timestampSuffix}.json`;
+      a.download = `timekeeper-data-${timestampSuffix}.json`;
       a.click();
       URL.revokeObjectURL(url);
 
@@ -1790,7 +1790,7 @@ import { PANE_STYLES } from "./styles";
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
-                  a.download = `ytls-data-${getTimestampSuffix()}.json`;
+                  a.download = `timekeeper-data-${getTimestampSuffix()}.json`;
                   a.click();
                   URL.revokeObjectURL(url);
 
@@ -2150,7 +2150,7 @@ import { PANE_STYLES } from "./styles";
         // Check if it's the full export format with ytls- keys
         const currentVideoId = currentLoadedVideoId;
         if (currentVideoId) {
-          const key = `ytls-${currentVideoId}`;
+          const key = `timekeeper-${currentVideoId}`;
           if (parsed[key] && Array.isArray(parsed[key].timestamps)) {
             timestamps = parsed[key].timestamps;
             log(`Found timestamps for current video (${currentVideoId}) in export format`, 'info');
