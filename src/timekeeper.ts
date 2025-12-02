@@ -153,110 +153,7 @@ import { PANE_STYLES } from "./styles";
     return fallbackPlayer;
   }
 
-  function getCurrentTimeCompat() {
-    const player = getActivePlayer();
-    if (player && typeof player.getCurrentTime === "function") {
-      try {
-        return player.getCurrentTime();
-      } catch (err) {
-        log("fallback: player.getCurrentTime failed, using video element.", err, 'warn');
-      }
-    }
-    const video = getVideoElement();
-    return video ? video.currentTime || 0 : 0;
-  }
 
-  function seekToCompat(seconds, allowSeekAhead = true) {
-    const player = getActivePlayer();
-    if (player && typeof player.seekTo === "function") {
-      try {
-        player.seekTo(seconds, allowSeekAhead);
-        return true;
-      } catch (err) {
-        log("fallback: player.seekTo failed, using video element.", err, 'warn');
-      }
-    }
-    const video = getVideoElement();
-    if (video) {
-      video.currentTime = seconds;
-      return true;
-    }
-    return false;
-  }
-
-  function getPlayerStateCompat() {
-    const player = getActivePlayer();
-    if (player && typeof player.getPlayerState === "function") {
-      try {
-        return player.getPlayerState();
-      } catch (err) {
-        log("fallback: player.getPlayerState failed, using video element.", err, 'warn');
-      }
-    }
-    const video = getVideoElement();
-    if (!video) {
-      return -1; // unstarted/unknown
-    }
-    if (video.ended) {
-      return 0; // ended
-    }
-    if (video.paused) {
-      return 2; // paused
-    }
-    return 1; // playing
-  }
-
-  function seekToLiveHeadCompat() {
-    const player = getActivePlayer();
-    if (player && typeof player.seekToLiveHead === "function") {
-      try {
-        player.seekToLiveHead();
-        return true;
-      } catch (err) {
-        log("fallback: player.seekToLiveHead failed, using video element.", err, 'warn');
-      }
-    }
-    // TODO: Need a way to detect whether or not the video is a live stream before attempting this
-    // As is, it just seeks to the end of the video, which you don't want for VODs.
-    // const video = getVideoElement();
-    // if (video && video.seekable && video.seekable.length > 0) {
-    //   const liveEdge = video.seekable.end(video.seekable.length - 1);
-    //   video.currentTime = liveEdge;
-    //   return true;
-    // }
-    return false;
-  }
-
-  function getVideoDataCompat() {
-    const player = getActivePlayer();
-    if (player && typeof player.getVideoData === "function") {
-      try {
-        return player.getVideoData();
-      } catch (err) {
-        log("fallback: player.getVideoData failed, using video element.", err, 'warn');
-      }
-    }
-    const video = getVideoElement();
-    if (!video) {
-      return { isLive: false };
-    }
-    const duration = video.duration;
-    const isLive = !Number.isFinite(duration) || duration === Infinity;
-    return { isLive };
-  }
-
-  function getDurationCompat() {
-    const player = getActivePlayer();
-    if (player && typeof player.getDuration === "function") {
-      try {
-        return player.getDuration();
-      } catch (err) {
-        log("fallback: player.getDuration failed, using video element.", err, 'warn');
-      }
-    }
-    const video = getVideoElement();
-    return video ? video.duration || 0 : 0;
-  }
 
   // Configuration for timestamp offset
   const OFFSET_KEY = "timestampOffsetSeconds";
@@ -540,16 +437,15 @@ import { PANE_STYLES } from "./styles";
 
       // Update CT display now that loading is done
       if (timeDisplay) {
-        const video = getVideoElement();
         const playerInstance = getActivePlayer();
-        if (video || playerInstance) {
-          const rawTime = getCurrentTimeCompat();
+        if (playerInstance) {
+          const rawTime = playerInstance.getCurrentTime();
           const currentSeconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
           const h = Math.floor(currentSeconds / 3600);
           const m = Math.floor(currentSeconds / 60) % 60;
           const s = currentSeconds % 60;
 
-          const { isLive } = getVideoDataCompat() || { isLive: false };
+          const { isLive } = playerInstance.getVideoData() || { isLive: false };
 
           const timestamps = list ? Array.from(list.children).map(li => {
             const timeLink = li.querySelector('a[data-time]');
@@ -568,10 +464,10 @@ import { PANE_STYLES } from "./styles";
                 }
               }
             } else {
-              const durationSeconds = getDurationCompat();
+              const durationSeconds = playerInstance.getDuration();
               const validDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
                 ? durationSeconds
-                : (video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0);
+                : 0;
               const totalMinutes = Math.max(1, validDuration / 60);
               const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(1);
               if (parseFloat(timestampsPerMin) > 0) {
@@ -760,7 +656,8 @@ import { PANE_STYLES } from "./styles";
     const label = options.logLabel ?? "bulk offset";
     log(`Timestamps changed: Offset all timestamps by ${delta > 0 ? '+' : ''}${delta} seconds (${label})`);
 
-    const currentTime = Math.floor(getCurrentTimeCompat());
+    const player = getActivePlayer();
+    const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
     if (Number.isFinite(currentTime)) {
       const nearestLi = findNearestTimestamp(currentTime);
       highlightTimestamp(nearestLi, false);
@@ -784,7 +681,8 @@ import { PANE_STYLES } from "./styles";
       const newTime = Number(target.dataset.time);
       if (Number.isFinite(newTime)) {
         isSeeking = true;
-        seekToCompat(newTime);
+        const player = getActivePlayer();
+        if (player) player.seekTo(newTime);
         setTimeout(() => { isSeeking = false; }, 500);
       }
       const clickedLi = target.closest('li') as HTMLLIElement | null;
@@ -855,7 +753,8 @@ import { PANE_STYLES } from "./styles";
       isSeeking = true;
       seekTimeoutId = setTimeout(() => {
         if (pendingSeekTime !== null) {
-          seekToCompat(pendingSeekTime);
+          const player = getActivePlayer();
+          if (player) player.seekTo(pendingSeekTime);
         }
         seekTimeoutId = null;
         pendingSeekTime = null;
@@ -962,7 +861,7 @@ import { PANE_STYLES } from "./styles";
     commentInput.value = comment || "";
     commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
     commentInput.addEventListener("input", () => {
-      // Debounce comment saves with 250ms delay
+      // Debounce comment saves with 500ms delay
       const existingTimeout = commentSaveTimeouts.get(timestampGuid);
       if (existingTimeout) {
         clearTimeout(existingTimeout);
@@ -972,7 +871,7 @@ import { PANE_STYLES } from "./styles";
         const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
         saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
         commentSaveTimeouts.delete(timestampGuid);
-      }, 250);
+      }, 500);
 
       commentSaveTimeouts.set(timestampGuid, timeout);
     });
@@ -1010,7 +909,8 @@ import { PANE_STYLES } from "./styles";
       record.style.textShadow = "none";
     });
     record.onclick = () => {
-      const currentTime = Math.floor(getCurrentTimeCompat());
+      const player = getActivePlayer();
+      const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
       if (Number.isFinite(currentTime)) {
         log(`Timestamps changedset to current playback time ${currentTime}`);
         formatTime(anchor, currentTime);
@@ -1050,7 +950,8 @@ import { PANE_STYLES } from "./styles";
           li.dataset.deleteConfirmed = "false";
           li.classList.remove(TIMESTAMP_DELETE_CLASS);
           // Restore highlight if the item should be highlighted
-          const currentTime = getCurrentTimeCompat();
+          const player = getActivePlayer();
+          const currentTime = player ? player.getCurrentTime() : 0;
           const itemTime = Number.parseInt(li.querySelector<HTMLAnchorElement>('a[data-time]')?.dataset.time ?? "0", 10);
           if (Number.isFinite(currentTime) && Number.isFinite(itemTime) && currentTime >= itemTime) {
             li.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
@@ -1282,7 +1183,8 @@ import { PANE_STYLES } from "./styles";
     if (!list) return;
     const video = getVideoElement();
     const progressBar = document.querySelector<HTMLDivElement>(".ytp-progress-bar");
-    const videoData = getVideoDataCompat();
+    const player = getActivePlayer();
+    const videoData = player ? player.getVideoData() : null;
     const isLiveStream = !!videoData && !!videoData.isLive;
 
     // Skip if video isn't ready, progress bar isn't found, or if it's a live stream
@@ -1324,7 +1226,10 @@ import { PANE_STYLES } from "./styles";
       marker.style.cursor = "pointer";
       marker.style.left = (ts.start / video.duration * 100) + "%";
       marker.dataset.time = String(ts.start);
-      marker.addEventListener("click", () => seekToCompat(ts.start));
+      marker.addEventListener("click", () => {
+        const player = getActivePlayer();
+        if (player) player.seekTo(ts.start);
+      });
       progressBar.appendChild(marker);
     });
   }
@@ -1708,7 +1613,8 @@ import { PANE_STYLES } from "./styles";
     const handleTimeUpdate = () => {
       if (!list) return;
 
-      const currentTime = Math.floor(getCurrentTimeCompat());
+      const player = getActivePlayer();
+      const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
       if (!Number.isFinite(currentTime)) return;
 
       const nearestLi = findNearestTimestamp(currentTime);
@@ -1732,7 +1638,8 @@ import { PANE_STYLES } from "./styles";
 
     // Handler for pause: add t parameter with current time
     const handlePause = () => {
-      const currentTime = Math.floor(getCurrentTimeCompat());
+      const player = getActivePlayer();
+      const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
       if (Number.isFinite(currentTime)) {
         updateUrlTimeParam(currentTime);
       }
@@ -1748,7 +1655,8 @@ import { PANE_STYLES } from "./styles";
       const video = getVideoElement();
       if (!video) return;
 
-      const currentTime = Math.floor(getCurrentTimeCompat());
+      const player = getActivePlayer();
+      const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
       if (!Number.isFinite(currentTime)) return;
 
       // Update URL when paused
@@ -2314,7 +2222,8 @@ import { PANE_STYLES } from "./styles";
     // Enable clicking on the current timestamp to jump to the latest point in the live stream
     timeDisplay.onclick = () => {
       isSeeking = true;
-      seekToLiveHeadCompat();
+      const player = getActivePlayer();
+      if (player) player.seekToLiveHead();
       setTimeout(() => { isSeeking = false; }, 500);
     };
 
@@ -2330,13 +2239,13 @@ import { PANE_STYLES } from "./styles";
         return;
       }
 
-      const rawTime = getCurrentTimeCompat();
+      const rawTime = playerInstance ? playerInstance.getCurrentTime() : 0;
       const currentSeconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
       const h = Math.floor(currentSeconds / 3600);
       const m = Math.floor(currentSeconds / 60) % 60;
       const s = currentSeconds % 60;
 
-      const { isLive } = getVideoDataCompat() || { isLive: false };
+      const { isLive } = playerInstance ? (playerInstance.getVideoData() || { isLive: false }) : { isLive: false };
 
       const timestamps = list ? Array.from(list.children).map(li => {
         const timeLink = li.querySelector('a[data-time]');
@@ -2355,7 +2264,7 @@ import { PANE_STYLES } from "./styles";
             }
           }
         } else {
-          const durationSeconds = getDurationCompat();
+          const durationSeconds = playerInstance ? playerInstance.getDuration() : 0;
           const validDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
             ? durationSeconds
             : (video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0);
@@ -2396,7 +2305,8 @@ import { PANE_STYLES } from "./styles";
 
       // Use configuredOffset if available, otherwise default to 0
       const offset = typeof configuredOffset !== 'undefined' ? configuredOffset : 0;
-      const currentTime = Math.floor(getCurrentTimeCompat() + offset);
+      const player = getActivePlayer();
+      const currentTime = player ? Math.floor(player.getCurrentTime() + offset) : 0;
       if (!Number.isFinite(currentTime)) {
         return;
       }
