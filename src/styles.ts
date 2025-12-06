@@ -125,6 +125,7 @@ export const PANE_STYLES = `
     color:white;
     font-size:14px;
     cursor:pointer;
+    position:relative;
   }
 
   /* Shared modal container styles */

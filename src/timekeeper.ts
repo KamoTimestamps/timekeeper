@@ -245,6 +245,8 @@ import { PANE_STYLES } from "./styles";
   let settingsModalInstance: HTMLDivElement | null = null; // To keep a reference to the settings modal
   let settingsCogButtonElement: HTMLButtonElement | null = null; // To keep a reference to the settings cog button
   let currentLoadedVideoId: string | null = null; // Track the currently loaded video to prevent duplicate loads
+  let currentLoadedVideoTitle: string | null = null; // Track the currently loaded video title
+  let titleObserver: MutationObserver | null = null; // Observer for title changes
   let visibilityAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let headerButtonImage: HTMLImageElement | null = null;
   let isHeaderButtonHovered = false;
@@ -1466,6 +1468,13 @@ import { PANE_STYLES } from "./styles";
     settingsCogButtonElement = null;
     isMouseOverTimestamps = false;
     currentLoadedVideoId = null;
+    currentLoadedVideoTitle = null;
+
+    // Disconnect title observer
+    if (titleObserver) {
+      titleObserver.disconnect();
+      titleObserver = null;
+    }
 
     if (pane && pane.parentNode) {
       pane.remove();
@@ -1545,6 +1554,11 @@ import { PANE_STYLES } from "./styles";
 
       const { videoId } = validation;
 
+      // Update the video title tooltip on the time display
+      if (timeDisplay && currentLoadedVideoTitle) {
+        timeDisplay.title = currentLoadedVideoTitle;
+      }
+
       let finalTimestampsToDisplay = [];
 
       try {
@@ -1603,6 +1617,16 @@ import { PANE_STYLES } from "./styles";
 
     // Return null if no video ID or clip identifier is found
     return null;
+  }
+
+  function getVideoTitle(): string {
+    // Get the video title from the meta tag
+    const titleMeta = document.querySelector<HTMLMetaElement>('meta[name="title"]');
+    if (titleMeta?.content) {
+      return titleMeta.content;
+    }
+    // Fallback to document.title if meta tag not found
+    return document.title.replace(' - YouTube', '');
   }
 
   function setupVideoEventListeners() {
@@ -2482,13 +2506,138 @@ import { PANE_STYLES } from "./styles";
         }
       };
 
+      const handleDeleteAll = async () => {
+        const currentVideoId = getVideoId();
+        if (!currentVideoId) {
+          alert("Unable to determine current video ID.");
+          return;
+        }
+
+        // Create a styled modal for confirmation
+        const modal = document.createElement("div");
+        modal.id = "ytls-save-modal";
+        modal.classList.remove("ytls-fade-out");
+        modal.classList.add("ytls-fade-in");
+
+        const message = document.createElement("p");
+        message.textContent = `Hold the button to delete all timestamps for:`;
+        message.style.marginBottom = "10px";
+
+        const videoIdDisplay = document.createElement("p");
+        videoIdDisplay.textContent = currentVideoId;
+        videoIdDisplay.style.fontFamily = "monospace";
+        videoIdDisplay.style.fontSize = "12px";
+        videoIdDisplay.style.marginBottom = "15px";
+        videoIdDisplay.style.color = "#aaa";
+
+        const confirmButton = document.createElement("button");
+        confirmButton.classList.add("ytls-save-modal-button");
+        confirmButton.style.background = "#d32f2f";
+        confirmButton.style.position = "relative";
+        confirmButton.style.overflow = "hidden";
+
+        let holdTimer: ReturnType<typeof setTimeout> | null = null;
+        let holdStartTime = 0;
+        let progressAnimationFrame: number | null = null;
+
+        const progressBar = document.createElement("div");
+        progressBar.style.position = "absolute";
+        progressBar.style.left = "0";
+        progressBar.style.top = "0";
+        progressBar.style.height = "100%";
+        progressBar.style.width = "0%";
+        progressBar.style.background = "#ff6b6b";
+        progressBar.style.transition = "none";
+        progressBar.style.pointerEvents = "none";
+        confirmButton.appendChild(progressBar);
+
+        const buttonText = document.createElement("span");
+        buttonText.textContent = "Hold to Delete All";
+        buttonText.style.position = "relative";
+        buttonText.style.zIndex = "1";
+        confirmButton.appendChild(buttonText);
+
+        const updateProgress = () => {
+          if (!holdStartTime) return;
+          const elapsed = Date.now() - holdStartTime;
+          const progress = Math.min((elapsed / 5000) * 100, 100);
+          progressBar.style.width = `${progress}%`;
+
+          if (progress < 100) {
+            progressAnimationFrame = requestAnimationFrame(updateProgress);
+          }
+        };
+
+        const resetButton = () => {
+          if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+          }
+          if (progressAnimationFrame) {
+            cancelAnimationFrame(progressAnimationFrame);
+            progressAnimationFrame = null;
+          }
+          holdStartTime = 0;
+          progressBar.style.width = "0%";
+          buttonText.textContent = "Hold to Delete All";
+        };
+
+        confirmButton.onmousedown = () => {
+          holdStartTime = Date.now();
+          buttonText.textContent = "Deleting...";
+          progressAnimationFrame = requestAnimationFrame(updateProgress);
+
+          holdTimer = setTimeout(async () => {
+            // 5 seconds elapsed, proceed with deletion
+            resetButton();
+            modal.classList.remove("ytls-fade-in");
+            modal.classList.add("ytls-fade-out");
+            setTimeout(async () => {
+              if (document.body.contains(modal)) {
+                document.body.removeChild(modal);
+              }
+              try {
+                await removeFromIndexedDB(currentVideoId);
+                handleUrlChange(); // Refresh the tool to reflect deletion
+              } catch (err) {
+                log("Failed to delete all timestamps:", err, 'error');
+                alert("Failed to delete timestamps. Check console for details.");
+              }
+            }, 300);
+          }, 5000);
+        };
+
+        confirmButton.onmouseup = resetButton;
+        confirmButton.onmouseleave = resetButton;
+
+        const cancelButton = document.createElement("button");
+        cancelButton.textContent = "Cancel";
+        cancelButton.classList.add("ytls-save-modal-cancel-button");
+        cancelButton.onclick = () => {
+          modal.classList.remove("ytls-fade-in");
+          modal.classList.add("ytls-fade-out");
+          setTimeout(() => {
+            if (document.body.contains(modal)) {
+              document.body.removeChild(modal);
+            }
+          }, 300);
+        };
+
+        modal.appendChild(message);
+        modal.appendChild(videoIdDisplay);
+        modal.appendChild(confirmButton);
+        modal.appendChild(cancelButton);
+        document.body.appendChild(modal);
+      };
+
     // Configuration for main buttons
     const mainButtonConfigs = [
       { label: "🐣", title: "Add timestamp", action: handleAddTimestamp },
       { label: "⚙️", title: "Settings", action: toggleSettingsModal }, // Changed action
       { label: "📋", title: "Copy timestamps to clipboard", action: handleCopyTimestamps },
         { label: "⏱️", title: "Offset all timestamps", action: handleBulkOffset },
-      { label: "🔀", title: "Sort timestamps by time", action: sortTimestampsAndUpdateDisplay }
+      { label: "🔀", title: "Sort timestamps by time", action: sortTimestampsAndUpdateDisplay },
+      { label: "🗑️", title: "Delete all timestamps for current video", action: handleDeleteAll }
     ];
 
     // Create and append main buttons
@@ -3069,6 +3218,37 @@ import { PANE_STYLES } from "./styles";
     log("Timekeeper header button added next to YouTube logo");
   }
 
+  // Setup observer to watch for title changes
+  function setupTitleObserver() {
+    if (titleObserver) {
+      return; // Already set up
+    }
+
+    titleObserver = new MutationObserver(() => {
+      const newTitle = getVideoTitle();
+      if (newTitle !== currentLoadedVideoTitle) {
+        currentLoadedVideoTitle = newTitle;
+        if (timeDisplay) {
+          timeDisplay.title = currentLoadedVideoTitle;
+          log("Video title changed, updated tooltip:", currentLoadedVideoTitle);
+        }
+      }
+    });
+
+    // Watch for changes to the title meta tag
+    const titleMeta = document.querySelector('meta[name="title"]');
+    if (titleMeta) {
+      titleObserver.observe(titleMeta, { attributes: true, attributeFilter: ['content'] });
+    }
+    // Also watch document.title changes as fallback
+    const titleElement = document.querySelector('title');
+    if (titleElement) {
+      titleObserver.observe(titleElement, { childList: true, characterData: true, subtree: true });
+    }
+
+    log("Title observer initialized");
+  }
+
   // Add a function to handle URL changes
   async function handleUrlChange() {
     if (!isSupportedUrl()) {
@@ -3085,10 +3265,20 @@ import { PANE_STYLES } from "./styles";
     });
 
     currentLoadedVideoId = getVideoId(); // Update global video ID
+    currentLoadedVideoTitle = getVideoTitle(); // Update global video title
     const pageTitle = document.title;
     log("Page Title:", pageTitle);
     log("Video ID:", currentLoadedVideoId);
+    log("Video Title:", currentLoadedVideoTitle);
     log("Current URL:", window.location.href);
+
+    // Update the video title tooltip whenever video changes
+    if (timeDisplay && currentLoadedVideoTitle) {
+      timeDisplay.title = currentLoadedVideoTitle;
+    }
+
+    // Setup title observer on first run
+    setupTitleObserver();
 
     clearTimestampsDisplay();
     updateSeekbarMarkers();
