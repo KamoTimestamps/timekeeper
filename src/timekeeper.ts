@@ -1710,6 +1710,46 @@ import { PANE_STYLES } from "./styles";
   const STORE_NAME_V2 = 'timestamps_v2';
   const SETTINGS_STORE_NAME = 'settings';
 
+  // Persistent database connection
+  let dbConnection: IDBDatabase | null = null;
+  let dbConnectionPromise: Promise<IDBDatabase> | null = null;
+
+  // Get or create the database connection
+  function getDB(): Promise<IDBDatabase> {
+    // If we have a valid connection, return it
+    if (dbConnection && !dbConnection.objectStoreNames.contains('__invalid__')) {
+      return Promise.resolve(dbConnection);
+    }
+
+    // If a connection is already being established, return that promise
+    if (dbConnectionPromise) {
+      return dbConnectionPromise;
+    }
+
+    // Create a new connection
+    dbConnectionPromise = openIndexedDB().then(db => {
+      dbConnection = db;
+      dbConnectionPromise = null;
+
+      // Handle unexpected closes
+      db.onclose = () => {
+        log('IndexedDB connection closed unexpectedly', 'warn');
+        dbConnection = null;
+      };
+
+      db.onerror = (event) => {
+        log('IndexedDB connection error:', event, 'error');
+      };
+
+      return db;
+    }).catch(err => {
+      dbConnectionPromise = null;
+      throw err;
+    });
+
+    return dbConnectionPromise;
+  }
+
   // Standalone export function to export all timestamps to a timekeeper-data file
   async function exportAllTimestamps(): Promise<void> {
     const exportData = {} as Record<string, unknown>;
@@ -1883,7 +1923,7 @@ import { PANE_STYLES } from "./styles";
     mode: IDBTransactionMode,
     operation: (store: IDBObjectStore) => IDBRequest<T> | void
   ): Promise<T | undefined> {
-    return openIndexedDB().then(db => {
+    return getDB().then(db => {
       return new Promise<T | undefined>((resolve, reject) => {
         const tx = db.transaction(storeName, mode);
         const store = tx.objectStore(storeName);
@@ -1891,27 +1931,20 @@ import { PANE_STYLES } from "./styles";
 
         if (request) {
           request.onsuccess = () => resolve(request.result);
-          request.onerror = () => {
-            db.close();
-            reject(request.error ?? new Error(`IndexedDB ${mode} operation failed`));
-          };
+          request.onerror = () => reject(request.error ?? new Error(`IndexedDB ${mode} operation failed`));
         }
 
         tx.oncomplete = () => {
-          db.close();
           if (!request) resolve(undefined);
         };
-        tx.onerror = () => {
-          db.close();
-          reject(tx.error ?? new Error(`IndexedDB transaction failed`));
-        };
+        tx.onerror = () => reject(tx.error ?? new Error(`IndexedDB transaction failed`));
       });
     });
   }
 
   function saveToIndexedDB(videoId: string, data: TimestampRecord[]): Promise<void> {
     // Save to v2 store only
-    return openIndexedDB().then(db => {
+    return getDB().then(db => {
       return new Promise<void>((resolve, reject) => {
         const tx = db.transaction([STORE_NAME_V2], 'readwrite');        // Write to v2 store (GUID-based)
         const v2Store = tx.objectStore(STORE_NAME_V2);
@@ -1943,21 +1976,15 @@ import { PANE_STYLES } from "./styles";
           });
         };
 
-        tx.oncomplete = () => {
-          db.close();
-          resolve();
-        };
-        tx.onerror = () => {
-          db.close();
-          reject(tx.error ?? new Error('Failed to save to IndexedDB'));
-        };
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error ?? new Error('Failed to save to IndexedDB'));
       });
     });
   }
 
   function saveSingleTimestampToIndexedDB(videoId: string, timestamp: TimestampRecord): Promise<void> {
     // Save single timestamp to v2 store only
-    return openIndexedDB().then(db => {
+    return getDB().then(db => {
       return new Promise<void>((resolve, reject) => {
         const tx = db.transaction([STORE_NAME_V2], 'readwrite');
 
@@ -1972,21 +1999,15 @@ import { PANE_STYLES } from "./styles";
 
 
 
-        tx.oncomplete = () => {
-          db.close();
-          resolve();
-        };
-        tx.onerror = () => {
-          db.close();
-          reject(tx.error ?? new Error('Failed to save single timestamp to IndexedDB'));
-        };
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error ?? new Error('Failed to save single timestamp to IndexedDB'));
       });
     });
   }
 
   function deleteSingleTimestampFromIndexedDB(videoId: string, guid: string): Promise<void> {
     // Delete single timestamp from v2 store only
-    return openIndexedDB().then(db => {
+    return getDB().then(db => {
       return new Promise<void>((resolve, reject) => {
         const tx = db.transaction([STORE_NAME_V2], 'readwrite');
 
@@ -1994,21 +2015,15 @@ import { PANE_STYLES } from "./styles";
         const v2Store = tx.objectStore(STORE_NAME_V2);
         v2Store.delete(guid);
 
-        tx.oncomplete = () => {
-          db.close();
-          resolve();
-        };
-        tx.onerror = () => {
-          db.close();
-          reject(tx.error ?? new Error('Failed to delete single timestamp from IndexedDB'));
-        };
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error ?? new Error('Failed to delete single timestamp from IndexedDB'));
       });
     });
   }
 
   function loadFromIndexedDB(videoId: string): Promise<TimestampRecord[] | null> {
     // Load from v2 store only
-    return openIndexedDB().then(db => {
+    return getDB().then(db => {
       return new Promise<TimestampRecord[] | null>((resolve, reject) => {
         const tx = db.transaction([STORE_NAME_V2], 'readonly');
         const v2Store = tx.objectStore(STORE_NAME_V2);
@@ -2026,26 +2041,21 @@ import { PANE_STYLES } from "./styles";
               start: r.start,
               comment: r.comment
             })).sort((a, b) => a.start - b.start);
-            db.close();
             resolve(timestamps);
           } else {
             // No data found
-            db.close();
             resolve(null);
           }
         };
 
-        v2Request.onerror = () => {
-          db.close();
-          resolve(null);
-        };
+        v2Request.onerror = () => resolve(null);
       });
     });
   }
 
   function removeFromIndexedDB(videoId: string): Promise<void> {
     // Remove all timestamps for a video from v2 store
-    return openIndexedDB().then(db => {
+    return getDB().then(db => {
       return new Promise<void>((resolve, reject) => {
         const tx = db.transaction([STORE_NAME_V2], 'readwrite');
         const v2Store = tx.objectStore(STORE_NAME_V2);
@@ -2059,14 +2069,8 @@ import { PANE_STYLES } from "./styles";
           });
         };
 
-        tx.oncomplete = () => {
-          db.close();
-          resolve();
-        };
-        tx.onerror = () => {
-          db.close();
-          reject(tx.error ?? new Error('Failed to remove timestamps'));
-        };
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error ?? new Error('Failed to remove timestamps'));
       });
     });
   }
