@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.0.2
+// @version      4.0.3
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -1993,13 +1993,20 @@ const PANE_STYLES = `
                 const request = operation(store);
                 if (request) {
                     request.onsuccess = () => resolve(request.result);
-                    request.onerror = () => reject(request.error ?? new Error(`IndexedDB ${mode} operation failed`));
+                    request.onerror = () => {
+                        db.close();
+                        reject(request.error ?? new Error(`IndexedDB ${mode} operation failed`));
+                    };
                 }
                 tx.oncomplete = () => {
+                    db.close();
                     if (!request)
                         resolve(undefined);
                 };
-                tx.onerror = () => reject(tx.error ?? new Error(`IndexedDB transaction failed`));
+                tx.onerror = () => {
+                    db.close();
+                    reject(tx.error ?? new Error(`IndexedDB transaction failed`));
+                };
             });
         });
     }
@@ -2032,8 +2039,14 @@ const PANE_STYLES = `
                         });
                     });
                 };
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error ?? new Error('Failed to save to IndexedDB'));
+                tx.oncomplete = () => {
+                    db.close();
+                    resolve();
+                };
+                tx.onerror = () => {
+                    db.close();
+                    reject(tx.error ?? new Error('Failed to save to IndexedDB'));
+                };
             });
         });
     }
@@ -2050,8 +2063,14 @@ const PANE_STYLES = `
                     start: timestamp.start,
                     comment: timestamp.comment
                 });
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error ?? new Error('Failed to save single timestamp to IndexedDB'));
+                tx.oncomplete = () => {
+                    db.close();
+                    resolve();
+                };
+                tx.onerror = () => {
+                    db.close();
+                    reject(tx.error ?? new Error('Failed to save single timestamp to IndexedDB'));
+                };
             });
         });
     }
@@ -2063,8 +2082,14 @@ const PANE_STYLES = `
                 // Delete from v2 store
                 const v2Store = tx.objectStore(STORE_NAME_V2);
                 v2Store.delete(guid);
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error ?? new Error('Failed to delete single timestamp from IndexedDB'));
+                tx.oncomplete = () => {
+                    db.close();
+                    resolve();
+                };
+                tx.onerror = () => {
+                    db.close();
+                    reject(tx.error ?? new Error('Failed to delete single timestamp from IndexedDB'));
+                };
             });
         });
     }
@@ -2085,14 +2110,19 @@ const PANE_STYLES = `
                             start: r.start,
                             comment: r.comment
                         })).sort((a, b) => a.start - b.start);
+                        db.close();
                         resolve(timestamps);
                     }
                     else {
                         // No data found
+                        db.close();
                         resolve(null);
                     }
                 };
-                v2Request.onerror = () => resolve(null);
+                v2Request.onerror = () => {
+                    db.close();
+                    resolve(null);
+                };
             });
         });
     }
@@ -2110,8 +2140,14 @@ const PANE_STYLES = `
                         v2Store.delete(record.guid);
                     });
                 };
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error ?? new Error('Failed to remove timestamps'));
+                tx.oncomplete = () => {
+                    db.close();
+                    resolve();
+                };
+                tx.onerror = () => {
+                    db.close();
+                    reject(tx.error ?? new Error('Failed to remove timestamps'));
+                };
             });
         });
     }

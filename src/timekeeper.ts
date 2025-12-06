@@ -1891,13 +1891,20 @@ import { PANE_STYLES } from "./styles";
 
         if (request) {
           request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error ?? new Error(`IndexedDB ${mode} operation failed`));
+          request.onerror = () => {
+            db.close();
+            reject(request.error ?? new Error(`IndexedDB ${mode} operation failed`));
+          };
         }
 
         tx.oncomplete = () => {
+          db.close();
           if (!request) resolve(undefined);
         };
-        tx.onerror = () => reject(tx.error ?? new Error(`IndexedDB transaction failed`));
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error ?? new Error(`IndexedDB transaction failed`));
+        };
       });
     });
   }
@@ -1936,8 +1943,14 @@ import { PANE_STYLES } from "./styles";
           });
         };
 
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error('Failed to save to IndexedDB'));
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error ?? new Error('Failed to save to IndexedDB'));
+        };
       });
     });
   }
@@ -1959,8 +1972,14 @@ import { PANE_STYLES } from "./styles";
 
 
 
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error('Failed to save single timestamp to IndexedDB'));
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error ?? new Error('Failed to save single timestamp to IndexedDB'));
+        };
       });
     });
   }
@@ -1975,8 +1994,14 @@ import { PANE_STYLES } from "./styles";
         const v2Store = tx.objectStore(STORE_NAME_V2);
         v2Store.delete(guid);
 
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error('Failed to delete single timestamp from IndexedDB'));
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error ?? new Error('Failed to delete single timestamp from IndexedDB'));
+        };
       });
     });
   }
@@ -2001,14 +2026,19 @@ import { PANE_STYLES } from "./styles";
               start: r.start,
               comment: r.comment
             })).sort((a, b) => a.start - b.start);
+            db.close();
             resolve(timestamps);
           } else {
             // No data found
+            db.close();
             resolve(null);
           }
         };
 
-        v2Request.onerror = () => resolve(null);
+        v2Request.onerror = () => {
+          db.close();
+          resolve(null);
+        };
       });
     });
   }
@@ -2029,8 +2059,14 @@ import { PANE_STYLES } from "./styles";
           });
         };
 
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error('Failed to remove timestamps'));
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error ?? new Error('Failed to remove timestamps'));
+        };
       });
     });
   }
