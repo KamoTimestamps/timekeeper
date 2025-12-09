@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.0.5
+// @version      4.0.6
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -492,9 +492,26 @@ const PANE_STYLES = `
         consoleMethod(`${prefix} ${message}`, ...consoleArgs);
     }
     // Create a BroadcastChannel for cross-tab communication
-    const channel = new BroadcastChannel('ytls_timestamp_channel');
+    let channel = new BroadcastChannel('ytls_timestamp_channel');
+    // Safe wrapper for posting messages to avoid "Channel is closed" errors
+    function safePostMessage(message) {
+        try {
+            channel.postMessage(message);
+        }
+        catch (err) {
+            log('BroadcastChannel error, reopening:', err, 'warn');
+            try {
+                channel = new BroadcastChannel('ytls_timestamp_channel');
+                channel.onmessage = handleChannelMessage;
+                channel.postMessage(message);
+            }
+            catch (reopenErr) {
+                log('Failed to reopen BroadcastChannel:', reopenErr, 'error');
+            }
+        }
+    }
     // Listen for messages from other tabs
-    channel.onmessage = (event) => {
+    function handleChannelMessage(event) {
         log('Received message from another tab:', event.data);
         if (!isSupportedUrl() || !list || !pane) {
             return;
@@ -523,7 +540,8 @@ const PANE_STYLES = `
                 }
             }
         }
-    };
+    }
+    channel.onmessage = handleChannelMessage;
     // The user can configure 'timestampOffsetSeconds' in ViolentMonkey's script values.
     // A positive value will make it after current time, negative before.
     let configuredOffset = await GM.getValue(OFFSET_KEY);
@@ -1431,7 +1449,7 @@ const PANE_STYLES = `
         saveToIndexedDB(videoId, currentTimestampsFromUI)
             .then(() => log(`Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`))
             .catch(err => log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, 'error'));
-        channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+        safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
     function extractSingleTimestampFromLi(li) {
         const anchor = li.querySelector('a[data-time]');
@@ -1455,7 +1473,7 @@ const PANE_STYLES = `
             return;
         saveSingleTimestampToIndexedDB(videoId, timestamp)
             .catch(err => log(`Failed to save timestamp ${timestamp.guid}:`, err, 'error'));
-        channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+        safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
     function saveSingleTimestampDirect(videoId, guid, start, comment) {
         if (!videoId || isLoadingTimestamps)
@@ -1464,7 +1482,7 @@ const PANE_STYLES = `
         log(`Saving timestamp: guid=${guid}, start=${start}, comment="${comment}"`);
         saveSingleTimestampToIndexedDB(videoId, timestamp)
             .catch(err => log(`Failed to save timestamp ${guid}:`, err, 'error'));
-        channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+        safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
     function deleteSingleTimestamp(videoId, guid) {
         if (!videoId || isLoadingTimestamps)
@@ -1472,7 +1490,7 @@ const PANE_STYLES = `
         log(`Deleting timestamp: guid=${guid}`);
         deleteSingleTimestampFromIndexedDB(videoId, guid)
             .catch(err => log(`Failed to delete timestamp ${guid}:`, err, 'error'));
-        channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+        safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
     }
     async function saveTimestampsAs(format) {
         if (!list || list.querySelector('.ytls-error-message')) {
@@ -1613,7 +1631,12 @@ const PANE_STYLES = `
         // Remove all event listeners to prevent memory leaks
         removeAllEventListeners();
         // Close the BroadcastChannel to prevent memory leaks
-        channel.close();
+        try {
+            channel.close();
+        }
+        catch (err) {
+            // Channel may already be closed
+        }
         if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
             document.body.removeChild(settingsModalInstance);
         }
@@ -3171,7 +3194,7 @@ const PANE_STYLES = `
             lastSavedPanePosition = { ...positionData };
             log(`Saving window position to IndexedDB: x=${positionData.x}, y=${positionData.y}`);
             saveGlobalSettings('windowPosition', positionData);
-            channel.postMessage({
+            safePostMessage({
                 type: 'window_position_updated',
                 position: positionData,
                 timestamp: Date.now()

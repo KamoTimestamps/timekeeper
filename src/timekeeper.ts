@@ -192,10 +192,26 @@ import { PANE_STYLES } from "./styles";
   }
 
   // Create a BroadcastChannel for cross-tab communication
-  const channel = new BroadcastChannel('ytls_timestamp_channel');
+  let channel = new BroadcastChannel('ytls_timestamp_channel');
+
+  // Safe wrapper for posting messages to avoid "Channel is closed" errors
+  function safePostMessage(message: unknown) {
+    try {
+      channel.postMessage(message);
+    } catch (err) {
+      log('BroadcastChannel error, reopening:', err, 'warn');
+      try {
+        channel = new BroadcastChannel('ytls_timestamp_channel');
+        channel.onmessage = handleChannelMessage;
+        channel.postMessage(message);
+      } catch (reopenErr) {
+        log('Failed to reopen BroadcastChannel:', reopenErr, 'error');
+      }
+    }
+  }
 
   // Listen for messages from other tabs
-  channel.onmessage = (event) => {
+  function handleChannelMessage(event: MessageEvent) {
     log('Received message from another tab:', event.data);
     if (!isSupportedUrl() || !list || !pane) {
       return;
@@ -223,7 +239,8 @@ import { PANE_STYLES } from "./styles";
         }
       }
     }
-  };
+  }
+  channel.onmessage = handleChannelMessage;
 
   // The user can configure 'timestampOffsetSeconds' in ViolentMonkey's script values.
   // A positive value will make it after current time, negative before.
@@ -1249,7 +1266,7 @@ import { PANE_STYLES } from "./styles";
     saveToIndexedDB(videoId, currentTimestampsFromUI)
       .then(() => log(`Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`))
       .catch(err => log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, 'error'));
-    channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+    safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
   }
 
   function extractSingleTimestampFromLi(li: HTMLLIElement): TimestampRecord | null {
@@ -1278,7 +1295,7 @@ import { PANE_STYLES } from "./styles";
     saveSingleTimestampToIndexedDB(videoId, timestamp)
       .catch(err => log(`Failed to save timestamp ${timestamp.guid}:`, err, 'error'));
 
-    channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+    safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
   }
 
   function saveSingleTimestampDirect(videoId: string | null | undefined, guid: string, start: number, comment: string) {
@@ -1290,7 +1307,7 @@ import { PANE_STYLES } from "./styles";
     saveSingleTimestampToIndexedDB(videoId, timestamp)
       .catch(err => log(`Failed to save timestamp ${guid}:`, err, 'error'));
 
-    channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+    safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
   }
 
   function deleteSingleTimestamp(videoId: string | null | undefined, guid: string) {
@@ -1300,7 +1317,7 @@ import { PANE_STYLES } from "./styles";
     deleteSingleTimestampFromIndexedDB(videoId, guid)
       .catch(err => log(`Failed to delete timestamp ${guid}:`, err, 'error'));
 
-    channel.postMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+    safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
   }
 
   async function saveTimestampsAs(format) {
@@ -1459,7 +1476,11 @@ import { PANE_STYLES } from "./styles";
     removeAllEventListeners();
 
     // Close the BroadcastChannel to prevent memory leaks
-    channel.close();
+    try {
+      channel.close();
+    } catch (err) {
+      // Channel may already be closed
+    }
 
     if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
       document.body.removeChild(settingsModalInstance);
@@ -3180,7 +3201,7 @@ import { PANE_STYLES } from "./styles";
       log(`Saving window position to IndexedDB: x=${positionData.x}, y=${positionData.y}`);
       saveGlobalSettings('windowPosition', positionData);
 
-      channel.postMessage({
+      safePostMessage({
         type: 'window_position_updated',
         position: positionData,
         timestamp: Date.now()
