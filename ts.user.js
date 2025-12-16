@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.0.7
+// @version      4.0.8
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -2540,6 +2540,7 @@ const PANE_STYLES = `
         });
         list.addEventListener("mouseleave", () => {
             isMouseOverTimestamps = false;
+            sortTimestampsAndUpdateDisplay();
         });
         pane.id = "ytls-pane";
         header.id = "ytls-pane-header";
@@ -2821,7 +2822,6 @@ const PANE_STYLES = `
             { label: "⚙️", title: "Settings", action: toggleSettingsModal }, // Changed action
             { label: "📋", title: "Copy timestamps to clipboard", action: handleCopyTimestamps },
             { label: "⏱️", title: "Offset all timestamps", action: handleBulkOffset },
-            { label: "🔀", title: "Sort timestamps by time", action: sortTimestampsAndUpdateDisplay },
             { label: "🗑️", title: "Delete all timestamps for current video", action: handleDeleteAll }
         ];
         // Create and append main buttons

@@ -2480,6 +2480,7 @@ import { PANE_STYLES } from "./styles";
 
     list.addEventListener("mouseleave", () => {
       isMouseOverTimestamps = false;
+      sortTimestampsAndUpdateDisplay();
     });
 
   pane.id = "ytls-pane";
@@ -2798,7 +2799,6 @@ import { PANE_STYLES } from "./styles";
       { label: "⚙️", title: "Settings", action: toggleSettingsModal }, // Changed action
       { label: "📋", title: "Copy timestamps to clipboard", action: handleCopyTimestamps },
         { label: "⏱️", title: "Offset all timestamps", action: handleBulkOffset },
-      { label: "🔀", title: "Sort timestamps by time", action: sortTimestampsAndUpdateDisplay },
       { label: "🗑️", title: "Delete all timestamps for current video", action: handleDeleteAll }
     ];
 
