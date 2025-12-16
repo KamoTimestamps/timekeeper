@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.0.8
+// @version      4.0.9
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -815,6 +815,27 @@ const PANE_STYLES = `
     let manualHighlightTimeoutId = null;
     let lastAutoHighlightedGuid = null;
     let isSeeking = false;
+    // Detect whether playback is behind the live edge using YouTube player internals.
+    function isBehindLiveEdge(playerInstance) {
+        if (!playerInstance || typeof playerInstance.getVideoData !== "function") {
+            return false;
+        }
+        const videoData = playerInstance.getVideoData();
+        if (!videoData?.isLive) {
+            return false;
+        }
+        // Use YouTube's progress state if available to avoid relying on the HTML5 video element.
+        if (typeof playerInstance.getProgressState === "function") {
+            const state = playerInstance.getProgressState();
+            const liveHead = Number(state?.seekableEnd ?? state?.liveHead ?? state?.head ?? state?.duration);
+            const current = Number(state?.current ?? playerInstance.getCurrentTime?.());
+            if (Number.isFinite(liveHead) && Number.isFinite(current)) {
+                // Consider a small threshold to avoid flicker at the edge.
+                return liveHead - current > 2;
+            }
+        }
+        return false;
+    }
     function highlightNearestTimestampAtTime(currentSeconds, shouldScroll) {
         if (!Number.isFinite(currentSeconds)) {
             return;
@@ -1721,8 +1742,9 @@ const PANE_STYLES = `
             return;
         }
         const previousScrollTop = list.scrollTop;
+        let shouldRestoreScroll = true;
         const restoreScrollPosition = () => {
-            if (!list)
+            if (!list || !shouldRestoreScroll)
                 return;
             const maxScrollTop = Math.max(0, list.scrollHeight - list.clientHeight);
             list.scrollTop = Math.min(previousScrollTop, maxScrollTop);
@@ -1770,6 +1792,14 @@ const PANE_STYLES = `
                 });
                 updateIndentMarkers();
                 updateSeekbarMarkers();
+                const playerForHighlight = getActivePlayer();
+                const currentTimeForHighlight = playerForHighlight
+                    ? Math.floor(playerForHighlight.getCurrentTime())
+                    : getLatestTimestampValue();
+                if (Number.isFinite(currentTimeForHighlight)) {
+                    highlightNearestTimestampAtTime(currentTimeForHighlight, true);
+                    shouldRestoreScroll = false;
+                }
             }
             else {
                 clearTimestampsDisplay(); // Ensure UI is cleared if no timestamps are found
@@ -2595,6 +2625,7 @@ const PANE_STYLES = `
             const m = Math.floor(currentSeconds / 60) % 60;
             const s = currentSeconds % 60;
             const { isLive } = playerInstance ? (playerInstance.getVideoData() || { isLive: false }) : { isLive: false };
+            const behindLive = playerInstance ? isBehindLiveEdge(playerInstance) : false;
             const timestamps = list ? Array.from(list.children).map(li => {
                 const timeLink = li.querySelector('a[data-time]');
                 return timeLink ? parseFloat(timeLink.getAttribute('data-time')) : 0;
@@ -2624,6 +2655,7 @@ const PANE_STYLES = `
                 }
             }
             timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+            timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
             // Always highlight the nearest timestamp; defer scrolling to mouse leave
             if (timestamps.length > 0) {
                 highlightNearestTimestampAtTime(currentSeconds, false);

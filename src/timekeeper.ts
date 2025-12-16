@@ -554,6 +554,31 @@ import { PANE_STYLES } from "./styles";
   let lastAutoHighlightedGuid: string | null = null;
   let isSeeking = false;
 
+  // Detect whether playback is behind the live edge using YouTube player internals.
+  function isBehindLiveEdge(playerInstance: any): boolean {
+    if (!playerInstance || typeof playerInstance.getVideoData !== "function") {
+      return false;
+    }
+    const videoData = playerInstance.getVideoData();
+    if (!videoData?.isLive) {
+      return false;
+    }
+
+    // Use YouTube's progress state if available to avoid relying on the HTML5 video element.
+    if (typeof playerInstance.getProgressState === "function") {
+      const state = playerInstance.getProgressState();
+      const liveHead = Number(state?.seekableEnd ?? state?.liveHead ?? state?.head ?? state?.duration);
+      const current = Number(state?.current ?? playerInstance.getCurrentTime?.());
+
+      if (Number.isFinite(liveHead) && Number.isFinite(current)) {
+        // Consider a small threshold to avoid flicker at the edge.
+        return liveHead - current > 2;
+      }
+    }
+
+    return false;
+  }
+
   function highlightNearestTimestampAtTime(currentSeconds: number, shouldScroll: boolean) {
     if (!Number.isFinite(currentSeconds)) {
       return;
@@ -1580,8 +1605,9 @@ import { PANE_STYLES } from "./styles";
       return;
     }
     const previousScrollTop = list.scrollTop;
+    let shouldRestoreScroll = true;
     const restoreScrollPosition = () => {
-      if (!list) return;
+      if (!list || !shouldRestoreScroll) return;
       const maxScrollTop = Math.max(0, list.scrollHeight - list.clientHeight);
       list.scrollTop = Math.min(previousScrollTop, maxScrollTop);
     };
@@ -1631,6 +1657,15 @@ import { PANE_STYLES } from "./styles";
         });
         updateIndentMarkers();
         updateSeekbarMarkers();
+
+        const playerForHighlight = getActivePlayer();
+        const currentTimeForHighlight = playerForHighlight
+          ? Math.floor(playerForHighlight.getCurrentTime())
+          : getLatestTimestampValue();
+        if (Number.isFinite(currentTimeForHighlight)) {
+          highlightNearestTimestampAtTime(currentTimeForHighlight, true);
+          shouldRestoreScroll = false;
+        }
       } else {
         clearTimestampsDisplay(); // Ensure UI is cleared if no timestamps are found
         updateSeekbarMarkers(); // Ensure seekbar markers are cleared
@@ -2547,6 +2582,7 @@ import { PANE_STYLES } from "./styles";
       const s = currentSeconds % 60;
 
       const { isLive } = playerInstance ? (playerInstance.getVideoData() || { isLive: false }) : { isLive: false };
+      const behindLive = playerInstance ? isBehindLiveEdge(playerInstance) : false;
 
       const timestamps = list ? Array.from(list.children).map(li => {
         const timeLink = li.querySelector('a[data-time]');
@@ -2578,6 +2614,7 @@ import { PANE_STYLES } from "./styles";
       }
 
       timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+      timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
 
       // Always highlight the nearest timestamp; defer scrolling to mouse leave
       if (timestamps.length > 0) {
