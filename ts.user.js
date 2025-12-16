@@ -1190,35 +1190,108 @@ const PANE_STYLES = `
                 saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
             }, 50);
         });
-        minus.textContent = "➖";
+        // Inline SVG icon for minus without innerHTML
+        // Source: https://www.reshot.com/free-svg-icons/item/minus-P479E8NFBH/
+        {
+            const ns = "http://www.w3.org/2000/svg";
+            const svg = document.createElementNS(ns, "svg");
+            svg.setAttribute("aria-hidden", "true");
+            svg.setAttribute("focusable", "false");
+            svg.setAttribute("width", "16");
+            svg.setAttribute("height", "16");
+            svg.setAttribute("viewBox", "0 0 16 16");
+            svg.setAttribute("fill", "#e8ce9f");
+            const path1 = document.createElementNS(ns, "path");
+            path1.setAttribute("d", "M8 1a7 7 0 1 1-7 7 7 7 0 0 1 7-7m0-1a8 8 0 1 0 8 8 8 8 0 0 0-8-8z");
+            const path2 = document.createElementNS(ns, "path");
+            path2.setAttribute("d", "M4 7h8v2H4z");
+            svg.append(path1, path2);
+            svg.style.pointerEvents = "none"; // keep clicks on the parent span
+            minus.textContent = "";
+            minus.appendChild(svg);
+        }
         minus.dataset.increment = "-1";
         minus.style.cursor = "pointer";
         minus.style.margin = "0px";
+        minus.style.display = "inline-flex";
+        minus.style.alignItems = "center";
+        minus.style.justifyContent = "center";
+        minus.tabIndex = 0;
         minus.addEventListener("mouseenter", () => {
-            minus.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
+            minus.style.filter = "drop-shadow(0 0 6px rgba(255, 255, 255, 0.8)) drop-shadow(0 0 10px rgba(100, 200, 255, 0.6))";
         });
         minus.addEventListener("mouseleave", () => {
-            minus.style.textShadow = "none";
+            minus.style.filter = "none";
         });
-        plus.textContent = "➕";
+        // Inline SVG icon for plus without innerHTML
+        // Source: https://www.reshot.com/free-svg-icons/item/plus-PVYBG2DQRU/
+        {
+            const ns = "http://www.w3.org/2000/svg";
+            const svg = document.createElementNS(ns, "svg");
+            svg.setAttribute("aria-hidden", "true");
+            svg.setAttribute("focusable", "false");
+            svg.setAttribute("width", "16");
+            svg.setAttribute("height", "16");
+            svg.setAttribute("viewBox", "0 0 16 16");
+            svg.setAttribute("fill", "#e8ce9f");
+            const path1 = document.createElementNS(ns, "path");
+            path1.setAttribute("d", "M8 0a8 8 0 1 0 8 8 8 8 0 0 0-8-8zm0 15a7 7 0 1 1 7-7 7 7 0 0 1-7 7z");
+            const path2 = document.createElementNS(ns, "path");
+            path2.setAttribute("d", "M9 4H7v3H4v2h3v3h2V9h3V7H9V4z");
+            svg.append(path1, path2);
+            svg.style.pointerEvents = "none"; // keep clicks on the parent span
+            plus.textContent = "";
+            plus.appendChild(svg);
+        }
         plus.dataset.increment = "1";
         plus.style.cursor = "pointer";
         plus.style.margin = "0px";
+        plus.style.display = "inline-flex";
+        plus.style.alignItems = "center";
+        plus.style.justifyContent = "center";
+        plus.tabIndex = 0;
         plus.addEventListener("mouseenter", () => {
-            plus.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
+            plus.style.filter = "drop-shadow(0 0 6px rgba(255, 255, 255, 0.8)) drop-shadow(0 0 10px rgba(100, 200, 255, 0.6))";
         });
         plus.addEventListener("mouseleave", () => {
-            plus.style.textShadow = "none";
+            plus.style.filter = "none";
         });
-        record.textContent = "⏺️";
+        // Inline SVG icon for record without innerHTML
+        // Source: https://www.reshot.com/free-svg-icons/item/record-2K36YJ9QFM/
+        {
+            const ns = "http://www.w3.org/2000/svg";
+            const svg = document.createElementNS(ns, "svg");
+            svg.setAttribute("aria-hidden", "true");
+            svg.setAttribute("focusable", "false");
+            svg.setAttribute("width", "16");
+            svg.setAttribute("height", "16");
+            svg.setAttribute("viewBox", "0 0 32 32");
+            svg.setAttribute("fill", "#e8ce9f");
+            const path1 = document.createElementNS(ns, "path");
+            path1.setAttribute("d", "M30.56 8.47a8 8 0 0 0-7-7 64.29 64.29 0 0 0-15.06 0 8 8 0 0 0-7 7 64.29 64.29 0 0 0 0 15.06 8 8 0 0 0 7 7 64.29 64.29 0 0 0 15.06 0 8 8 0 0 0 7-7 64.29 64.29 0 0 0 0-15.06zm-2 14.83a6 6 0 0 1-5.28 5.28 63.65 63.65 0 0 1-14.6 0 6 6 0 0 1-5.26-5.28 63.65 63.65 0 0 1 0-14.6A6 6 0 0 1 8.7 3.42a63.65 63.65 0 0 1 14.6 0 6 6 0 0 1 5.28 5.28 63.65 63.65 0 0 1 0 14.6z");
+            const path2 = document.createElementNS(ns, "path");
+            path2.setAttribute("d", "M16 8a8 8 0 1 0 8 8 8 8 0 0 0-8-8zm0 14a6 6 0 1 1 6-6 6 6 0 0 1-6 6z");
+            const circle = document.createElementNS(ns, "circle");
+            circle.setAttribute("cx", "16");
+            circle.setAttribute("cy", "16");
+            circle.setAttribute("r", "4");
+            svg.append(path1, path2, circle);
+            svg.style.pointerEvents = "none"; // keep clicks on the parent span
+            record.textContent = "";
+            record.appendChild(svg);
+        }
         record.style.cursor = "pointer";
         record.style.margin = "0px";
+        record.style.display = "inline-flex";
+        record.style.alignItems = "center";
+        record.style.justifyContent = "center";
+        record.tabIndex = 0;
         record.title = "Set to current playback time";
         record.addEventListener("mouseenter", () => {
-            record.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
+            record.style.filter = "drop-shadow(0 0 6px rgba(255, 255, 255, 0.8)) drop-shadow(0 0 10px rgba(100, 200, 255, 0.6))";
         });
         record.addEventListener("mouseleave", () => {
-            record.style.textShadow = "none";
+            record.style.filter = "none";
         });
         record.onclick = () => {
             const player = getActivePlayer();
