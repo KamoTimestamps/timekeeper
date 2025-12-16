@@ -1242,6 +1242,8 @@ import { PANE_STYLES } from "./styles";
     if (!doNotSave) {
       saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, sanitizedStart, comment);
       mostRecentlyModifiedTimestampGuid = timestampGuid;
+      // Immediately highlight the newly created timestamp
+      highlightTimestamp(li, false);
     }
     return commentInput;
   }

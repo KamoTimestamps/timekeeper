@@ -1438,6 +1438,8 @@ const PANE_STYLES = `
         if (!doNotSave) {
             saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, sanitizedStart, comment);
             mostRecentlyModifiedTimestampGuid = timestampGuid;
+            // Immediately highlight the newly created timestamp
+            highlightTimestamp(li, false);
         }
         return commentInput;
     }
