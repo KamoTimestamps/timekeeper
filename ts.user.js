@@ -815,6 +815,17 @@ const PANE_STYLES = `
     let manualHighlightTimeoutId = null;
     let lastAutoHighlightedGuid = null;
     let isSeeking = false;
+    function highlightNearestTimestampAtTime(currentSeconds, shouldScroll) {
+        if (!Number.isFinite(currentSeconds)) {
+            return;
+        }
+        const nearestLi = findNearestTimestamp(currentSeconds);
+        const nearestGuid = nearestLi?.dataset.guid ?? null;
+        if (nearestGuid) {
+            lastAutoHighlightedGuid = nearestGuid;
+        }
+        highlightTimestamp(nearestLi, shouldScroll);
+    }
     // Find and return the nearest timestamp at or before the given time
     function findNearestTimestamp(currentTime) {
         if (!Number.isFinite(currentTime)) {
@@ -2540,6 +2551,9 @@ const PANE_STYLES = `
         });
         list.addEventListener("mouseleave", () => {
             isMouseOverTimestamps = false;
+            const player = getActivePlayer();
+            const currentTime = player ? Math.floor(player.getCurrentTime()) : getLatestTimestampValue();
+            highlightNearestTimestampAtTime(currentTime, true);
             sortTimestampsAndUpdateDisplay();
         });
         pane.id = "ytls-pane";
@@ -2610,15 +2624,9 @@ const PANE_STYLES = `
                 }
             }
             timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
-            // Auto-highlight and scroll to the nearest timestamp during playback (unless manually highlighted)
-            if (!manualHighlightGuid && timestamps.length > 0) {
-                const nearestLi = findNearestTimestamp(currentSeconds);
-                const nearestGuid = nearestLi?.dataset.guid ?? null;
-                // Only update if we've moved to a different timestamp
-                if (nearestGuid && nearestGuid !== lastAutoHighlightedGuid) {
-                    lastAutoHighlightedGuid = nearestGuid;
-                    highlightTimestamp(nearestLi, true);
-                }
+            // Always highlight the nearest timestamp; defer scrolling to mouse leave
+            if (timestamps.length > 0) {
+                highlightNearestTimestampAtTime(currentSeconds, false);
             }
         }
         updateTime();
