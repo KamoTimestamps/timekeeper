@@ -880,10 +880,6 @@ const PANE_STYLES = `
         if (!Number.isFinite(currentSeconds)) {
             return;
         }
-        // Only change highlight while seeking is not happening and mouse is OFF the timestamps UI
-        if (isSeeking || isMouseOverTimestamps) {
-            return;
-        }
         const nearestLi = findNearestTimestamp(currentSeconds);
         const nearestGuid = nearestLi?.dataset.guid ?? null;
         if (nearestGuid) {
@@ -1290,12 +1286,14 @@ const PANE_STYLES = `
         record.onclick = () => {
             const player = getActivePlayer();
             const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
-            log(`Timestamps changedset to current playback time ${currentTime}`);
-            formatTime(anchor, currentTime);
-            updateTimeDifferences();
-            updateIndentMarkers();
-            saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
-            mostRecentlyModifiedTimestampGuid = timestampGuid;
+            if (Number.isFinite(currentTime)) {
+                log(`Timestamps changedset to current playback time ${currentTime}`);
+                formatTime(anchor, currentTime);
+                updateTimeDifferences();
+                updateIndentMarkers();
+                saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+                mostRecentlyModifiedTimestampGuid = timestampGuid;
+            }
         };
         formatTime(anchor, sanitizedStart);
         invalidateLatestTimestampValue();
@@ -2867,6 +2865,9 @@ const PANE_STYLES = `
             const offset = typeof configuredOffset !== 'undefined' ? configuredOffset : 0;
             const player = getActivePlayer();
             const currentTime = player ? Math.floor(player.getCurrentTime() + offset) : 0;
+            if (!Number.isFinite(currentTime)) {
+                return;
+            }
             const newCommentInput = addTimestamp(currentTime, "");
             if (newCommentInput) {
                 newCommentInput.focus();

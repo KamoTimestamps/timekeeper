@@ -614,11 +614,6 @@ import { PANE_STYLES } from "./styles";
       return;
     }
 
-    // Only change highlight while seeking is not happening and mouse is OFF the timestamps UI
-    if (isSeeking || isMouseOverTimestamps) {
-      return;
-    }
-
     const nearestLi = findNearestTimestamp(currentSeconds);
     const nearestGuid = nearestLi?.dataset.guid ?? null;
 
