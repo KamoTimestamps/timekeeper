@@ -921,7 +921,7 @@ import { PANE_STYLES } from "./styles";
     });
 
     commentInput.value = comment || "";
-    commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
+    commentInput.style.cssText = "width:100%;margin-top:5px;display:block;user-select:text;caret-color:auto;font-family:inherit;";
     commentInput.addEventListener("input", () => {
       // Debounce comment saves with 500ms delay
       const existingTimeout = commentSaveTimeouts.get(timestampGuid);
