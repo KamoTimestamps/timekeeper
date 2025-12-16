@@ -276,6 +276,12 @@ import { PANE_STYLES } from "./styles";
   let videoTimeupdateHandler: (() => void) | null = null;
   let videoPauseHandler: (() => void) | null = null;
   let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+  // Track pointer activity to distinguish intentional blur from OS UI (emoji picker)
+  let docPointerDownHandler: ((e: PointerEvent) => void) | null = null;
+  let docPointerUpHandler: ((e: PointerEvent) => void) | null = null;
+  let lastPointerDownTs = 0;
+  // Cache selection positions for inputs to restore after refocus
+  const selectionCache = new WeakMap<HTMLInputElement, { start: number; end: number }>();
 
   type TimestampRecord = {
     start: number;
@@ -922,7 +928,43 @@ import { PANE_STYLES } from "./styles";
 
     commentInput.value = comment || "";
     commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
-    commentInput.addEventListener("input", () => {
+    commentInput.type = "text";
+    commentInput.setAttribute("inputmode", "text");
+    commentInput.autocapitalize = "off" as any;
+    commentInput.autocomplete = "off";
+    commentInput.spellcheck = false;
+    // Keep selection cached to restore after OS-driven blur (e.g., emoji picker)
+    const updateSelectionCache = () => {
+      const start = commentInput.selectionStart ?? commentInput.value.length;
+      const end = commentInput.selectionEnd ?? start;
+      selectionCache.set(commentInput, { start, end });
+    };
+    commentInput.addEventListener("keyup", updateSelectionCache);
+    commentInput.addEventListener("select", updateSelectionCache);
+    // If blur occurs without recent pointer interaction and without a local focus target, restore focus
+    commentInput.addEventListener("focusout", (ev) => {
+      const rt = (ev as FocusEvent).relatedTarget as Element | null;
+      const recentPointer = Date.now() - lastPointerDownTs < 250;
+      const movingWithinPane = !!rt && !!pane && pane.contains(rt);
+      if (!recentPointer && !movingWithinPane) {
+        setTimeout(() => {
+          // If nothing else took focus, restore here
+          if (document.activeElement === document.body || document.activeElement == null) {
+            commentInput.focus({ preventScroll: true });
+            const sel = selectionCache.get(commentInput);
+            if (sel) {
+              try { commentInput.setSelectionRange(sel.start, sel.end); } catch {}
+            }
+          }
+        }, 0);
+      }
+    });
+    // Save on input, but avoid saving mid-composition (IME/emoji picker)
+    commentInput.addEventListener("input", (ev) => {
+      const ie = ev as InputEvent;
+      if (ie && (ie.isComposing || ie.inputType === "insertCompositionText")) {
+        return;
+      }
       // Debounce comment saves with 500ms delay
       const existingTimeout = commentSaveTimeouts.get(timestampGuid);
       if (existingTimeout) {
@@ -936,6 +978,14 @@ import { PANE_STYLES } from "./styles";
       }, 500);
 
       commentSaveTimeouts.set(timestampGuid, timeout);
+    });
+    // Commit a quick save when composition ends (e.g., emoji/IME finalized)
+    commentInput.addEventListener("compositionend", () => {
+      const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
+      // Use a small delay to let the finalized character land in the value
+      setTimeout(() => {
+        saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+      }, 50);
     });
 
     minus.textContent = "➖";
@@ -1474,6 +1524,14 @@ import { PANE_STYLES } from "./styles";
     if (windowResizeHandler) {
       window.removeEventListener("resize", windowResizeHandler);
       windowResizeHandler = null;
+    }
+    if (docPointerDownHandler) {
+      document.removeEventListener("pointerdown", docPointerDownHandler, true);
+      docPointerDownHandler = null;
+    }
+    if (docPointerUpHandler) {
+      document.removeEventListener("pointerup", docPointerUpHandler, true);
+      docPointerUpHandler = null;
     }
 
     // Remove video listeners
@@ -3367,6 +3425,18 @@ import { PANE_STYLES } from "./styles";
     content.append(list, btns); // list and btns are now directly in content; header is separate
 
     pane.append(header, content, style); // Append header, then content, then style to the pane
+
+    // Track pointer interactions globally to differentiate user-initiated focus changes
+    if (!docPointerDownHandler) {
+      document.addEventListener("pointerdown", docPointerDownHandler = () => {
+        lastPointerDownTs = Date.now();
+      }, true);
+    }
+    if (!docPointerUpHandler) {
+      document.addEventListener("pointerup", docPointerUpHandler = () => {
+        // no-op placeholder; reserved for future heuristics
+      }, true);
+    }
   }
 
   // Append the pane to the DOM and set up final UI

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.0.9
+// @version      4.0.11
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -97,6 +97,15 @@ const PANE_STYLES = `
     text-decoration: none;
     border: none;
     outline: none;
+  }
+  /* Ensure editing controls behave like editable fields despite parent user-select:none */
+  #ytls-pane input,
+  #ytls-pane textarea {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+    caret-color: white;
   }
   #ytls-buttons {
     display: flex;
@@ -573,6 +582,12 @@ const PANE_STYLES = `
     let videoTimeupdateHandler = null;
     let videoPauseHandler = null;
     let keydownHandler = null;
+    // Track pointer activity to distinguish intentional blur from OS UI (emoji picker)
+    let docPointerDownHandler = null;
+    let docPointerUpHandler = null;
+    let lastPointerDownTs = 0;
+    // Cache selection positions for inputs to restore after refocus
+    const selectionCache = new WeakMap();
     // Global cache for latest timestamp value
     let latestTimestampValue = null;
     function getTimestampItems() {
@@ -1124,7 +1139,46 @@ const PANE_STYLES = `
         });
         commentInput.value = comment || "";
         commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
-        commentInput.addEventListener("input", () => {
+        commentInput.type = "text";
+        commentInput.setAttribute("inputmode", "text");
+        commentInput.autocapitalize = "off";
+        commentInput.autocomplete = "off";
+        commentInput.spellcheck = false;
+        // Keep selection cached to restore after OS-driven blur (e.g., emoji picker)
+        const updateSelectionCache = () => {
+            const start = commentInput.selectionStart ?? commentInput.value.length;
+            const end = commentInput.selectionEnd ?? start;
+            selectionCache.set(commentInput, { start, end });
+        };
+        commentInput.addEventListener("keyup", updateSelectionCache);
+        commentInput.addEventListener("select", updateSelectionCache);
+        // If blur occurs without recent pointer interaction and without a local focus target, restore focus
+        commentInput.addEventListener("focusout", (ev) => {
+            const rt = ev.relatedTarget;
+            const recentPointer = Date.now() - lastPointerDownTs < 250;
+            const movingWithinPane = !!rt && !!pane && pane.contains(rt);
+            if (!recentPointer && !movingWithinPane) {
+                setTimeout(() => {
+                    // If nothing else took focus, restore here
+                    if (document.activeElement === document.body || document.activeElement == null) {
+                        commentInput.focus({ preventScroll: true });
+                        const sel = selectionCache.get(commentInput);
+                        if (sel) {
+                            try {
+                                commentInput.setSelectionRange(sel.start, sel.end);
+                            }
+                            catch { }
+                        }
+                    }
+                }, 0);
+            }
+        });
+        // Save on input, but avoid saving mid-composition (IME/emoji picker)
+        commentInput.addEventListener("input", (ev) => {
+            const ie = ev;
+            if (ie && (ie.isComposing || ie.inputType === "insertCompositionText")) {
+                return;
+            }
             // Debounce comment saves with 500ms delay
             const existingTimeout = commentSaveTimeouts.get(timestampGuid);
             if (existingTimeout) {
@@ -1136,6 +1190,14 @@ const PANE_STYLES = `
                 commentSaveTimeouts.delete(timestampGuid);
             }, 500);
             commentSaveTimeouts.set(timestampGuid, timeout);
+        });
+        // Commit a quick save when composition ends (e.g., emoji/IME finalized)
+        commentInput.addEventListener("compositionend", () => {
+            const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
+            // Use a small delay to let the finalized character land in the value
+            setTimeout(() => {
+                saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+            }, 50);
         });
         minus.textContent = "➖";
         minus.dataset.increment = "-1";
@@ -1629,6 +1691,14 @@ const PANE_STYLES = `
         if (windowResizeHandler) {
             window.removeEventListener("resize", windowResizeHandler);
             windowResizeHandler = null;
+        }
+        if (docPointerDownHandler) {
+            document.removeEventListener("pointerdown", docPointerDownHandler, true);
+            docPointerDownHandler = null;
+        }
+        if (docPointerUpHandler) {
+            document.removeEventListener("pointerup", docPointerUpHandler, true);
+            docPointerUpHandler = null;
         }
         // Remove video listeners
         const video = getVideoElement();
@@ -3335,6 +3405,17 @@ const PANE_STYLES = `
         content.id = "ytls-content";
         content.append(list, btns); // list and btns are now directly in content; header is separate
         pane.append(header, content, style); // Append header, then content, then style to the pane
+        // Track pointer interactions globally to differentiate user-initiated focus changes
+        if (!docPointerDownHandler) {
+            document.addEventListener("pointerdown", docPointerDownHandler = () => {
+                lastPointerDownTs = Date.now();
+            }, true);
+        }
+        if (!docPointerUpHandler) {
+            document.addEventListener("pointerup", docPointerUpHandler = () => {
+                // no-op placeholder; reserved for future heuristics
+            }, true);
+        }
     }
     // Append the pane to the DOM and set up final UI
     async function displayPane() {

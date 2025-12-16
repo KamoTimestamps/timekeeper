@@ -78,6 +78,15 @@ export const PANE_STYLES = `
     border: none;
     outline: none;
   }
+  /* Ensure editing controls behave like editable fields despite parent user-select:none */
+  #ytls-pane input,
+  #ytls-pane textarea {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+    caret-color: white;
+  }
   #ytls-buttons {
     display: flex;
     gap: 5px;
