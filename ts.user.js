@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.0.16
+// @version      4.0.17
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -581,6 +581,8 @@ const PANE_STYLES = `
     let windowResizeHandler = null;
     let videoTimeupdateHandler = null;
     let videoPauseHandler = null;
+    let videoPlayHandler = null;
+    let videoSeekingHandler = null;
     let keydownHandler = null;
     // Track pointer activity to distinguish intentional blur from OS UI (emoji picker)
     let docPointerDownHandler = null;
@@ -1731,6 +1733,14 @@ const PANE_STYLES = `
                 video.removeEventListener("pause", videoPauseHandler);
                 videoPauseHandler = null;
             }
+            if (videoPlayHandler) {
+                video.removeEventListener("play", videoPlayHandler);
+                videoPlayHandler = null;
+            }
+            if (videoSeekingHandler) {
+                video.removeEventListener("seeking", videoSeekingHandler);
+                videoSeekingHandler = null;
+            }
         }
     }
     function unloadTimekeeper() {
@@ -1986,6 +1996,8 @@ const PANE_STYLES = `
         // Store handlers for cleanup
         videoTimeupdateHandler = handleTimeUpdate;
         videoPauseHandler = handlePause;
+        videoPlayHandler = handlePlay;
+        videoSeekingHandler = handleSeeking;
         video.addEventListener("timeupdate", handleTimeUpdate);
         video.addEventListener("pause", handlePause);
         video.addEventListener("play", handlePlay);

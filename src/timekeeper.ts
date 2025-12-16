@@ -275,6 +275,8 @@ import { PANE_STYLES } from "./styles";
   let windowResizeHandler: (() => void) | null = null;
   let videoTimeupdateHandler: (() => void) | null = null;
   let videoPauseHandler: (() => void) | null = null;
+  let videoPlayHandler: (() => void) | null = null;
+  let videoSeekingHandler: (() => void) | null = null;
   let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
   // Track pointer activity to distinguish intentional blur from OS UI (emoji picker)
   let docPointerDownHandler: ((e: PointerEvent) => void) | null = null;
@@ -1570,6 +1572,14 @@ import { PANE_STYLES } from "./styles";
         video.removeEventListener("pause", videoPauseHandler);
         videoPauseHandler = null;
       }
+      if (videoPlayHandler) {
+        video.removeEventListener("play", videoPlayHandler);
+        videoPlayHandler = null;
+      }
+      if (videoSeekingHandler) {
+        video.removeEventListener("seeking", videoSeekingHandler);
+        videoSeekingHandler = null;
+      }
     }
   }
 
@@ -1850,6 +1860,8 @@ import { PANE_STYLES } from "./styles";
     // Store handlers for cleanup
     videoTimeupdateHandler = handleTimeUpdate;
     videoPauseHandler = handlePause;
+    videoPlayHandler = handlePlay;
+    videoSeekingHandler = handleSeeking;
 
     video.addEventListener("timeupdate", handleTimeUpdate);
     video.addEventListener("pause", handlePause);
