@@ -11,7 +11,7 @@ export const PANE_STYLES = `
     border: 1px solid rgba(85, 85, 85, 0.8); /* Add a thin grey border */
     opacity: 0.9;
     z-index: 5000;
-    font-family: Arial, "Segoe UI Emoji", "Segoe UI Symbol", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+    font-family: Arial, sans-serif;
     width: 300px;
     user-select: none; /* Prevent text selection in pane */
     display: flex;
@@ -77,13 +77,6 @@ export const PANE_STYLES = `
     text-decoration: none;
     border: none;
     outline: none;
-  }
-  /* Ensure inputs allow text selection and emoji picker insertion */
-  #ytls-pane input {
-    user-select: text;
-    -webkit-user-select: text;
-    -ms-user-select: text;
-    caret-color: auto;
   }
   #ytls-buttons {
     display: flex;

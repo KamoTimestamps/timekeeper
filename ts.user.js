@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.0.10
+// @version      4.0.9
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -31,7 +31,7 @@ const PANE_STYLES = `
     border: 1px solid rgba(85, 85, 85, 0.8); /* Add a thin grey border */
     opacity: 0.9;
     z-index: 5000;
-    font-family: Arial, "Segoe UI Emoji", "Segoe UI Symbol", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+    font-family: Arial, sans-serif;
     width: 300px;
     user-select: none; /* Prevent text selection in pane */
     display: flex;
@@ -97,13 +97,6 @@ const PANE_STYLES = `
     text-decoration: none;
     border: none;
     outline: none;
-  }
-  /* Ensure inputs allow text selection and emoji picker insertion */
-  #ytls-pane input {
-    user-select: text;
-    -webkit-user-select: text;
-    -ms-user-select: text;
-    caret-color: auto;
   }
   #ytls-buttons {
     display: flex;
@@ -1130,7 +1123,7 @@ const PANE_STYLES = `
             indentToggle.style.display = "none";
         });
         commentInput.value = comment || "";
-        commentInput.style.cssText = "width:100%;margin-top:5px;display:block;user-select:text;caret-color:auto;font-family:inherit;";
+        commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
         commentInput.addEventListener("input", () => {
             // Debounce comment saves with 500ms delay
             const existingTimeout = commentSaveTimeouts.get(timestampGuid);
