@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.0.14
+// @version      4.0.16
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -586,10 +586,6 @@ const PANE_STYLES = `
     let docPointerDownHandler = null;
     let docPointerUpHandler = null;
     let lastPointerDownTs = 0;
-    // Cache selection positions for inputs to restore after refocus
-    const selectionCache = new WeakMap();
-    // Cache horizontal scroll for inputs so we can restore it after value changes/focus changes
-    const scrollCache = new WeakMap();
     // Suppress list-driven sorts while focus is temporarily lost to OS UI (e.g., emoji picker)
     let suppressSortUntilRefocus = false;
     // Track the most recently modified timestamp (GUID) for negative-diff-based sorting
@@ -713,21 +709,7 @@ const PANE_STYLES = `
                 const newValue = `${marker}${cleanComment}`;
                 // If the marker changed, track that we made a change
                 if (commentInput.value !== newValue) {
-                    // Preserve caret and horizontal scroll if this is the active element
-                    const wasActive = document.activeElement === commentInput;
-                    const selStart = commentInput.selectionStart ?? commentInput.value.length;
-                    const selEnd = commentInput.selectionEnd ?? selStart;
-                    const prevScroll = commentInput.scrollLeft;
                     commentInput.value = newValue;
-                    if (wasActive) {
-                        try {
-                            commentInput.setSelectionRange(selStart, selEnd);
-                        }
-                        catch { }
-                        commentInput.scrollLeft = prevScroll;
-                        selectionCache.set(commentInput, { start: selStart, end: selEnd });
-                        scrollCache.set(commentInput, prevScroll);
-                    }
                     changed = true;
                 }
             });
@@ -1128,24 +1110,10 @@ const PANE_STYLES = `
                 const currentIndex = items.indexOf(li);
                 marker = determineIndentMarkerForIndex(currentIndex);
             }
-            // Preserve caret and horizontal scroll for the active input
-            const wasActive = document.activeElement === commentInput;
-            const selStart = commentInput.selectionStart ?? commentInput.value.length;
-            const selEnd = commentInput.selectionEnd ?? selStart;
-            const prevScroll = commentInput.scrollLeft;
             commentInput.value = `${marker}${cleanComment}`;
             // Immediately update arrow icon
             updateArrowIcon();
             updateIndentMarkers();
-            if (wasActive) {
-                try {
-                    commentInput.setSelectionRange(selStart, selEnd);
-                }
-                catch { }
-                commentInput.scrollLeft = prevScroll;
-                scrollCache.set(commentInput, prevScroll);
-                selectionCache.set(commentInput, { start: selStart, end: selEnd });
-            }
             const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
             saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
         };
@@ -1175,19 +1143,6 @@ const PANE_STYLES = `
         commentInput.autocapitalize = "off";
         commentInput.autocomplete = "off";
         commentInput.spellcheck = false;
-        // Keep selection cached to restore after OS-driven blur (e.g., emoji picker)
-        const updateSelectionCache = () => {
-            const start = commentInput.selectionStart ?? commentInput.value.length;
-            const end = commentInput.selectionEnd ?? start;
-            selectionCache.set(commentInput, { start, end });
-        };
-        const updateScrollCache = () => {
-            scrollCache.set(commentInput, commentInput.scrollLeft);
-        };
-        commentInput.addEventListener("keyup", updateSelectionCache);
-        commentInput.addEventListener("select", updateSelectionCache);
-        commentInput.addEventListener("scroll", updateScrollCache);
-        commentInput.addEventListener("input", updateScrollCache);
         commentInput.addEventListener("focusin", () => {
             suppressSortUntilRefocus = false;
         });
@@ -1202,17 +1157,6 @@ const PANE_STYLES = `
                     // If nothing else took focus, restore here
                     if (document.activeElement === document.body || document.activeElement == null) {
                         commentInput.focus({ preventScroll: true });
-                        const sel = selectionCache.get(commentInput);
-                        if (sel) {
-                            try {
-                                commentInput.setSelectionRange(sel.start, sel.end);
-                            }
-                            catch { }
-                        }
-                        const sl = scrollCache.get(commentInput);
-                        if (typeof sl === 'number') {
-                            commentInput.scrollLeft = sl;
-                        }
                         suppressSortUntilRefocus = false;
                     }
                 }, 0);
@@ -1222,11 +1166,6 @@ const PANE_STYLES = `
         commentInput.addEventListener("input", (ev) => {
             const ie = ev;
             if (ie && (ie.isComposing || ie.inputType === "insertCompositionText")) {
-                // Still refresh caret/scroll caches so focus restoration lands correctly post-emoji
-                const start = commentInput.selectionStart ?? commentInput.value.length;
-                const end = commentInput.selectionEnd ?? start;
-                selectionCache.set(commentInput, { start, end });
-                scrollCache.set(commentInput, commentInput.scrollLeft);
                 return;
             }
             // Debounce comment saves with 500ms delay
@@ -1244,12 +1183,8 @@ const PANE_STYLES = `
         // Commit a quick save when composition ends (e.g., emoji/IME finalized)
         commentInput.addEventListener("compositionend", () => {
             const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
-            // Let the finalized character land, then refresh caret and save
+            // Let the finalized character land, then save
             setTimeout(() => {
-                const start = commentInput.selectionStart ?? commentInput.value.length;
-                const end = commentInput.selectionEnd ?? start;
-                selectionCache.set(commentInput, { start, end });
-                scrollCache.set(commentInput, commentInput.scrollLeft);
                 saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
             }, 50);
         });
@@ -1537,20 +1472,16 @@ const PANE_STYLES = `
         updateTimeDifferences();
         updateIndentMarkers();
         updateSeekbarMarkers();
-        // Restore caret/scroll to the previously focused input if it still exists
+        // Restore focus to the previously focused input if it still exists
         if (restoreState) {
             const targetLi = getTimestampItems().find(li => li.dataset.guid === restoreState.guid);
             const targetInput = targetLi?.querySelector('input');
             if (targetInput) {
                 try {
                     targetInput.focus({ preventScroll: true });
-                    targetInput.setSelectionRange(restoreState.start, restoreState.end);
-                    targetInput.scrollLeft = restoreState.scroll;
-                    selectionCache.set(targetInput, { start: restoreState.start, end: restoreState.end });
-                    scrollCache.set(targetInput, restoreState.scroll);
                 }
                 catch {
-                    // If focus/selection fails, continue without breaking sort
+                    // If focus fails, continue without breaking sort
                 }
             }
         }
@@ -2623,21 +2554,7 @@ const PANE_STYLES = `
                             if (existingLi) {
                                 const commentInput = existingLi.querySelector('input');
                                 if (commentInput) {
-                                    // Preserve horizontal scroll if focused element matches this input
-                                    const wasActive = document.activeElement === commentInput;
-                                    const selStart = commentInput.selectionStart ?? commentInput.value.length;
-                                    const selEnd = commentInput.selectionEnd ?? selStart;
-                                    const prevScroll = commentInput.scrollLeft;
                                     commentInput.value = ts.comment;
-                                    if (wasActive) {
-                                        try {
-                                            commentInput.setSelectionRange(selStart, selEnd);
-                                        }
-                                        catch { }
-                                        commentInput.scrollLeft = prevScroll;
-                                        selectionCache.set(commentInput, { start: selStart, end: selEnd });
-                                        scrollCache.set(commentInput, prevScroll);
-                                    }
                                 }
                             }
                             else {
