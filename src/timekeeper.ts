@@ -647,6 +647,7 @@ import { PANE_STYLES } from "./styles";
     }
 
     updateTimeDifferences();
+    updateIndentMarkers();
     updateSeekbarMarkers();
     saveTimestamps(currentLoadedVideoId);
     return true;
@@ -781,6 +782,7 @@ import { PANE_STYLES } from "./styles";
       }, 500);
 
       updateTimeDifferences();
+      updateIndentMarkers();
       updateSeekbarMarkers();
 
       // Save the modified timestamp
@@ -857,6 +859,7 @@ import { PANE_STYLES } from "./styles";
 
       // Immediately update arrow icon
       updateArrowIcon();
+      updateIndentMarkers();
       const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
       saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
     };
@@ -934,6 +937,7 @@ import { PANE_STYLES } from "./styles";
         log(`Timestamps changedset to current playback time ${currentTime}`);
         formatTime(anchor, currentTime);
         updateTimeDifferences();
+        updateIndentMarkers();
         saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
       }
     };
@@ -956,6 +960,7 @@ import { PANE_STYLES } from "./styles";
         li.remove();
         invalidateLatestTimestampValue();
         updateTimeDifferences();
+        updateIndentMarkers();
         updateSeekbarMarkers();
         updateScroll();
         deleteSingleTimestamp(currentLoadedVideoId, guid);
@@ -1088,6 +1093,7 @@ import { PANE_STYLES } from "./styles";
     li.scrollIntoView({ behavior: "smooth", block: "center" });
 
     updateScroll();
+    updateIndentMarkers();
     updateSeekbarMarkers();
     if (!doNotSave) {
       saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, sanitizedStart, comment);

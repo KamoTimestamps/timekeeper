@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.0.6
+// @version      4.0.7
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -893,6 +893,7 @@ const PANE_STYLES = `
             return false;
         }
         updateTimeDifferences();
+        updateIndentMarkers();
         updateSeekbarMarkers();
         saveTimestamps(currentLoadedVideoId);
         return true;
@@ -1008,6 +1009,7 @@ const PANE_STYLES = `
                 setTimeout(() => { isSeeking = false; }, 500);
             }, 500);
             updateTimeDifferences();
+            updateIndentMarkers();
             updateSeekbarMarkers();
             // Save the modified timestamp
             if (timestampLi) {
@@ -1072,6 +1074,7 @@ const PANE_STYLES = `
             commentInput.value = `${marker}${cleanComment}`;
             // Immediately update arrow icon
             updateArrowIcon();
+            updateIndentMarkers();
             const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
             saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
         };
@@ -1139,6 +1142,7 @@ const PANE_STYLES = `
                 log(`Timestamps changedset to current playback time ${currentTime}`);
                 formatTime(anchor, currentTime);
                 updateTimeDifferences();
+                updateIndentMarkers();
                 saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
             }
         };
@@ -1159,6 +1163,7 @@ const PANE_STYLES = `
                 li.remove();
                 invalidateLatestTimestampValue();
                 updateTimeDifferences();
+                updateIndentMarkers();
                 updateSeekbarMarkers();
                 updateScroll();
                 deleteSingleTimestamp(currentLoadedVideoId, guid);
@@ -1278,6 +1283,7 @@ const PANE_STYLES = `
         }
         li.scrollIntoView({ behavior: "smooth", block: "center" });
         updateScroll();
+        updateIndentMarkers();
         updateSeekbarMarkers();
         if (!doNotSave) {
             saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, sanitizedStart, comment);
