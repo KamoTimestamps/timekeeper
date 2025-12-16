@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.0.11
+// @version      4.0.13
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -588,6 +588,12 @@ const PANE_STYLES = `
     let lastPointerDownTs = 0;
     // Cache selection positions for inputs to restore after refocus
     const selectionCache = new WeakMap();
+    // Cache horizontal scroll for inputs so we can restore it after value changes/focus changes
+    const scrollCache = new WeakMap();
+    // Suppress list-driven sorts while focus is temporarily lost to OS UI (e.g., emoji picker)
+    let suppressSortUntilRefocus = false;
+    // Track the most recently modified timestamp (GUID) for negative-diff-based sorting
+    let mostRecentlyModifiedTimestampGuid = null;
     // Global cache for latest timestamp value
     let latestTimestampValue = null;
     function getTimestampItems() {
@@ -628,6 +634,13 @@ const PANE_STYLES = `
     }
     function invalidateLatestTimestampValue() {
         latestTimestampValue = null;
+    }
+    function hasNegativeTimeDifference(li) {
+        const timeDiffSpan = li.querySelector('.time-diff');
+        if (!timeDiffSpan)
+            return false;
+        const text = timeDiffSpan.textContent?.trim() || '';
+        return text.startsWith('-');
     }
     function getIndentMarker(isIndented, isLast) {
         if (!isIndented)
@@ -700,7 +713,21 @@ const PANE_STYLES = `
                 const newValue = `${marker}${cleanComment}`;
                 // If the marker changed, track that we made a change
                 if (commentInput.value !== newValue) {
+                    // Preserve caret and horizontal scroll if this is the active element
+                    const wasActive = document.activeElement === commentInput;
+                    const selStart = commentInput.selectionStart ?? commentInput.value.length;
+                    const selEnd = commentInput.selectionEnd ?? selStart;
+                    const prevScroll = commentInput.scrollLeft;
                     commentInput.value = newValue;
+                    if (wasActive) {
+                        try {
+                            commentInput.setSelectionRange(selStart, selEnd);
+                        }
+                        catch { }
+                        commentInput.scrollLeft = prevScroll;
+                        selectionCache.set(commentInput, { start: selStart, end: selEnd });
+                        scrollCache.set(commentInput, prevScroll);
+                    }
                     changed = true;
                 }
             });
@@ -826,8 +853,6 @@ const PANE_STYLES = `
     // Debounce state for seeking
     let seekTimeoutId = null;
     let pendingSeekTime = null;
-    let manualHighlightGuid = null;
-    let manualHighlightTimeoutId = null;
     let lastAutoHighlightedGuid = null;
     let isSeeking = false;
     // Detect whether playback is behind the live edge using YouTube player internals.
@@ -855,6 +880,10 @@ const PANE_STYLES = `
         if (!Number.isFinite(currentSeconds)) {
             return;
         }
+        // Only change highlight while seeking is not happening and mouse is OFF the timestamps UI
+        if (isSeeking || isMouseOverTimestamps) {
+            return;
+        }
         const nearestLi = findNearestTimestamp(currentSeconds);
         const nearestGuid = nearestLi?.dataset.guid ?? null;
         if (nearestGuid) {
@@ -872,7 +901,7 @@ const PANE_STYLES = `
             return null;
         }
         let nearestLi = null;
-        let smallestDifference = Infinity;
+        let largestTimestamp = -Infinity;
         for (const li of items) {
             const timeLink = li.querySelector('a[data-time]');
             const timeValue = timeLink?.dataset.time;
@@ -883,9 +912,9 @@ const PANE_STYLES = `
             if (!Number.isFinite(timestamp)) {
                 continue;
             }
-            const difference = Math.abs(currentTime - timestamp);
-            if (difference < smallestDifference) {
-                smallestDifference = difference;
+            // Only consider timestamps at or before the current time
+            if (timestamp <= currentTime && timestamp > largestTimestamp) {
+                largestTimestamp = timestamp;
                 nearestLi = li;
             }
         }
@@ -943,6 +972,7 @@ const PANE_STYLES = `
         updateIndentMarkers();
         updateSeekbarMarkers();
         saveTimestamps(currentLoadedVideoId);
+        mostRecentlyModifiedTimestampGuid = null;
         return true;
     }
     function applyOffsetToAllTimestamps(delta, options = {}) {
@@ -994,14 +1024,6 @@ const PANE_STYLES = `
                 });
                 if (!clickedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
                     clickedLi.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
-                    manualHighlightGuid = clickedLi.dataset.guid ?? null;
-                    if (manualHighlightTimeoutId) {
-                        clearTimeout(manualHighlightTimeoutId);
-                    }
-                    manualHighlightTimeoutId = setTimeout(() => {
-                        manualHighlightGuid = null;
-                        manualHighlightTimeoutId = null;
-                    }, 10000); // Clear manual highlight after 10 seconds
                     clickedLi.scrollIntoView({ behavior: "smooth", block: "center" });
                 }
             }
@@ -1030,16 +1052,6 @@ const PANE_STYLES = `
             invalidateLatestTimestampValue();
             // Keep the timestamp highlighted while adjusting its time
             const timestampLi = target.closest('li');
-            if (timestampLi) {
-                manualHighlightGuid = timestampLi.dataset.guid ?? null;
-                if (manualHighlightTimeoutId) {
-                    clearTimeout(manualHighlightTimeoutId);
-                }
-                manualHighlightTimeoutId = setTimeout(() => {
-                    manualHighlightGuid = null;
-                    manualHighlightTimeoutId = null;
-                }, 10000);
-            }
             pendingSeekTime = newTime;
             if (seekTimeoutId) {
                 clearTimeout(seekTimeoutId);
@@ -1064,6 +1076,7 @@ const PANE_STYLES = `
                 const tsGuid = timestampLi.dataset.guid;
                 if (tsCommentInput && tsGuid) {
                     saveSingleTimestampDirect(currentLoadedVideoId, tsGuid, newTime, tsCommentInput.value);
+                    mostRecentlyModifiedTimestampGuid = tsGuid;
                 }
             }
         }
@@ -1075,6 +1088,7 @@ const PANE_STYLES = `
             updateSeekbarMarkers();
             updateScroll();
             saveTimestamps(currentLoadedVideoId);
+            mostRecentlyModifiedTimestampGuid = null;
         }
     }
     function addTimestamp(start, comment = "", doNotSave = false, guid = null) {
@@ -1118,10 +1132,24 @@ const PANE_STYLES = `
                 const currentIndex = items.indexOf(li);
                 marker = determineIndentMarkerForIndex(currentIndex);
             }
+            // Preserve caret and horizontal scroll for the active input
+            const wasActive = document.activeElement === commentInput;
+            const selStart = commentInput.selectionStart ?? commentInput.value.length;
+            const selEnd = commentInput.selectionEnd ?? selStart;
+            const prevScroll = commentInput.scrollLeft;
             commentInput.value = `${marker}${cleanComment}`;
             // Immediately update arrow icon
             updateArrowIcon();
             updateIndentMarkers();
+            if (wasActive) {
+                try {
+                    commentInput.setSelectionRange(selStart, selEnd);
+                }
+                catch { }
+                commentInput.scrollLeft = prevScroll;
+                scrollCache.set(commentInput, prevScroll);
+                selectionCache.set(commentInput, { start: selStart, end: selEnd });
+            }
             const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
             saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
         };
@@ -1137,6 +1165,13 @@ const PANE_STYLES = `
         li.addEventListener("mouseleave", () => {
             indentToggle.style.display = "none";
         });
+        // Add mouseleave listener to check for negative time diff and sort if needed
+        li.addEventListener("mouseleave", () => {
+            // Only sort immediately if this is the most recently modified timestamp and it has a negative diff
+            if (li.dataset.guid === mostRecentlyModifiedTimestampGuid && hasNegativeTimeDifference(li)) {
+                sortTimestampsAndUpdateDisplay();
+            }
+        });
         commentInput.value = comment || "";
         commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
         commentInput.type = "text";
@@ -1150,14 +1185,23 @@ const PANE_STYLES = `
             const end = commentInput.selectionEnd ?? start;
             selectionCache.set(commentInput, { start, end });
         };
+        const updateScrollCache = () => {
+            scrollCache.set(commentInput, commentInput.scrollLeft);
+        };
         commentInput.addEventListener("keyup", updateSelectionCache);
         commentInput.addEventListener("select", updateSelectionCache);
+        commentInput.addEventListener("scroll", updateScrollCache);
+        commentInput.addEventListener("input", updateScrollCache);
+        commentInput.addEventListener("focusin", () => {
+            suppressSortUntilRefocus = false;
+        });
         // If blur occurs without recent pointer interaction and without a local focus target, restore focus
         commentInput.addEventListener("focusout", (ev) => {
             const rt = ev.relatedTarget;
             const recentPointer = Date.now() - lastPointerDownTs < 250;
             const movingWithinPane = !!rt && !!pane && pane.contains(rt);
             if (!recentPointer && !movingWithinPane) {
+                suppressSortUntilRefocus = true;
                 setTimeout(() => {
                     // If nothing else took focus, restore here
                     if (document.activeElement === document.body || document.activeElement == null) {
@@ -1169,6 +1213,11 @@ const PANE_STYLES = `
                             }
                             catch { }
                         }
+                        const sl = scrollCache.get(commentInput);
+                        if (typeof sl === 'number') {
+                            commentInput.scrollLeft = sl;
+                        }
+                        suppressSortUntilRefocus = false;
                     }
                 }, 0);
             }
@@ -1177,6 +1226,11 @@ const PANE_STYLES = `
         commentInput.addEventListener("input", (ev) => {
             const ie = ev;
             if (ie && (ie.isComposing || ie.inputType === "insertCompositionText")) {
+                // Still refresh caret/scroll caches so focus restoration lands correctly post-emoji
+                const start = commentInput.selectionStart ?? commentInput.value.length;
+                const end = commentInput.selectionEnd ?? start;
+                selectionCache.set(commentInput, { start, end });
+                scrollCache.set(commentInput, commentInput.scrollLeft);
                 return;
             }
             // Debounce comment saves with 500ms delay
@@ -1194,8 +1248,12 @@ const PANE_STYLES = `
         // Commit a quick save when composition ends (e.g., emoji/IME finalized)
         commentInput.addEventListener("compositionend", () => {
             const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
-            // Use a small delay to let the finalized character land in the value
+            // Let the finalized character land, then refresh caret and save
             setTimeout(() => {
+                const start = commentInput.selectionStart ?? commentInput.value.length;
+                const end = commentInput.selectionEnd ?? start;
+                selectionCache.set(commentInput, { start, end });
+                scrollCache.set(commentInput, commentInput.scrollLeft);
                 saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
             }, 50);
         });
@@ -1232,13 +1290,12 @@ const PANE_STYLES = `
         record.onclick = () => {
             const player = getActivePlayer();
             const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
-            if (Number.isFinite(currentTime)) {
-                log(`Timestamps changedset to current playback time ${currentTime}`);
-                formatTime(anchor, currentTime);
-                updateTimeDifferences();
-                updateIndentMarkers();
-                saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
-            }
+            log(`Timestamps changedset to current playback time ${currentTime}`);
+            formatTime(anchor, currentTime);
+            updateTimeDifferences();
+            updateIndentMarkers();
+            saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+            mostRecentlyModifiedTimestampGuid = timestampGuid;
         };
         formatTime(anchor, sanitizedStart);
         invalidateLatestTimestampValue();
@@ -1261,6 +1318,7 @@ const PANE_STYLES = `
                 updateSeekbarMarkers();
                 updateScroll();
                 deleteSingleTimestamp(currentLoadedVideoId, guid);
+                mostRecentlyModifiedTimestampGuid = null;
             }
             else {
                 li.dataset.deleteConfirmed = "true";
@@ -1381,6 +1439,7 @@ const PANE_STYLES = `
         updateSeekbarMarkers();
         if (!doNotSave) {
             saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, sanitizedStart, comment);
+            mostRecentlyModifiedTimestampGuid = timestampGuid;
         }
         return commentInput;
     }
@@ -1430,6 +1489,19 @@ const PANE_STYLES = `
         if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
             return;
         }
+        // Capture caret/scroll for the currently focused input so we can restore after sorting
+        let restoreState = null;
+        if (document.activeElement instanceof HTMLInputElement && list.contains(document.activeElement)) {
+            const activeInput = document.activeElement;
+            const activeLi = activeInput.closest('li');
+            const guid = activeLi?.dataset.guid;
+            if (guid) {
+                const start = activeInput.selectionStart ?? activeInput.value.length;
+                const end = activeInput.selectionEnd ?? start;
+                const scroll = activeInput.scrollLeft;
+                restoreState = { guid, start, end, scroll };
+            }
+        }
         const items = getTimestampItems();
         const sortedItems = items
             .map(li => {
@@ -1465,6 +1537,23 @@ const PANE_STYLES = `
         updateTimeDifferences();
         updateIndentMarkers();
         updateSeekbarMarkers();
+        // Restore caret/scroll to the previously focused input if it still exists
+        if (restoreState) {
+            const targetLi = getTimestampItems().find(li => li.dataset.guid === restoreState.guid);
+            const targetInput = targetLi?.querySelector('input');
+            if (targetInput) {
+                try {
+                    targetInput.focus({ preventScroll: true });
+                    targetInput.setSelectionRange(restoreState.start, restoreState.end);
+                    targetInput.scrollLeft = restoreState.scroll;
+                    selectionCache.set(targetInput, { start: restoreState.start, end: restoreState.end });
+                    scrollCache.set(targetInput, restoreState.scroll);
+                }
+                catch {
+                    // If focus/selection fails, continue without breaking sort
+                }
+            }
+        }
         log('Timestamps changed: Timestamps sorted');
         saveTimestamps(currentLoadedVideoId);
     }
@@ -1730,11 +1819,6 @@ const PANE_STYLES = `
             clearTimeout(visibilityAnimationTimeoutId);
             visibilityAnimationTimeoutId = null;
         }
-        if (manualHighlightTimeoutId) {
-            clearTimeout(manualHighlightTimeoutId);
-            manualHighlightTimeoutId = null;
-        }
-        manualHighlightGuid = null;
         lastAutoHighlightedGuid = null;
         // Remove all event listeners to prevent memory leaks
         removeAllEventListeners();
@@ -2539,7 +2623,21 @@ const PANE_STYLES = `
                             if (existingLi) {
                                 const commentInput = existingLi.querySelector('input');
                                 if (commentInput) {
+                                    // Preserve horizontal scroll if focused element matches this input
+                                    const wasActive = document.activeElement === commentInput;
+                                    const selStart = commentInput.selectionStart ?? commentInput.value.length;
+                                    const selEnd = commentInput.selectionEnd ?? selStart;
+                                    const prevScroll = commentInput.scrollLeft;
                                     commentInput.value = ts.comment;
+                                    if (wasActive) {
+                                        try {
+                                            commentInput.setSelectionRange(selStart, selEnd);
+                                        }
+                                        catch { }
+                                        commentInput.scrollLeft = prevScroll;
+                                        selectionCache.set(commentInput, { start: selStart, end: selEnd });
+                                        scrollCache.set(commentInput, prevScroll);
+                                    }
                                 }
                             }
                             else {
@@ -2648,13 +2746,36 @@ const PANE_STYLES = `
         // Add event listeners to `list` after it is initialized
         list.addEventListener("mouseenter", () => {
             isMouseOverTimestamps = true;
+            suppressSortUntilRefocus = false;
         });
         list.addEventListener("mouseleave", () => {
             isMouseOverTimestamps = false;
+            if (suppressSortUntilRefocus) {
+                return;
+            }
             const player = getActivePlayer();
             const currentTime = player ? Math.floor(player.getCurrentTime()) : getLatestTimestampValue();
             highlightNearestTimestampAtTime(currentTime, true);
+            // Preserve focus on the currently focused timestamp when sorting
+            let focusedTimestampGuid = null;
+            if (document.activeElement instanceof HTMLInputElement && list.contains(document.activeElement)) {
+                const activeLi = document.activeElement.closest('li');
+                focusedTimestampGuid = activeLi?.dataset.guid ?? null;
+            }
+            // Sort and restore focus
             sortTimestampsAndUpdateDisplay();
+            if (focusedTimestampGuid) {
+                const targetLi = getTimestampItems().find(li => li.dataset.guid === focusedTimestampGuid);
+                const targetInput = targetLi?.querySelector('input');
+                if (targetInput) {
+                    try {
+                        targetInput.focus({ preventScroll: true });
+                    }
+                    catch {
+                        // Focus restoration failed, continue
+                    }
+                }
+            }
         });
         pane.id = "ytls-pane";
         header.id = "ytls-pane-header";
@@ -2746,9 +2867,6 @@ const PANE_STYLES = `
             const offset = typeof configuredOffset !== 'undefined' ? configuredOffset : 0;
             const player = getActivePlayer();
             const currentTime = player ? Math.floor(player.getCurrentTime() + offset) : 0;
-            if (!Number.isFinite(currentTime)) {
-                return;
-            }
             const newCommentInput = addTimestamp(currentTime, "");
             if (newCommentInput) {
                 newCommentInput.focus();

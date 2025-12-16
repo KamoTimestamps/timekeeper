@@ -282,6 +282,12 @@ import { PANE_STYLES } from "./styles";
   let lastPointerDownTs = 0;
   // Cache selection positions for inputs to restore after refocus
   const selectionCache = new WeakMap<HTMLInputElement, { start: number; end: number }>();
+  // Cache horizontal scroll for inputs so we can restore it after value changes/focus changes
+  const scrollCache = new WeakMap<HTMLInputElement, number>();
+  // Suppress list-driven sorts while focus is temporarily lost to OS UI (e.g., emoji picker)
+  let suppressSortUntilRefocus = false;
+  // Track the most recently modified timestamp (GUID) for negative-diff-based sorting
+  let mostRecentlyModifiedTimestampGuid: string | null = null;
 
   type TimestampRecord = {
     start: number;
@@ -332,6 +338,13 @@ import { PANE_STYLES } from "./styles";
 
   function invalidateLatestTimestampValue() {
     latestTimestampValue = null;
+  }
+
+  function hasNegativeTimeDifference(li: HTMLLIElement): boolean {
+    const timeDiffSpan = li.querySelector<HTMLSpanElement>('.time-diff');
+    if (!timeDiffSpan) return false;
+    const text = timeDiffSpan.textContent?.trim() || '';
+    return text.startsWith('-');
   }
 
   function getIndentMarker(isIndented: boolean, isLast: boolean): string {
@@ -416,7 +429,20 @@ import { PANE_STYLES } from "./styles";
 
         // If the marker changed, track that we made a change
         if (commentInput.value !== newValue) {
+          // Preserve caret and horizontal scroll if this is the active element
+          const wasActive = document.activeElement === commentInput;
+          const selStart = commentInput.selectionStart ?? commentInput.value.length;
+          const selEnd = commentInput.selectionEnd ?? selStart;
+          const prevScroll = commentInput.scrollLeft;
+
           commentInput.value = newValue;
+
+          if (wasActive) {
+            try { commentInput.setSelectionRange(selStart, selEnd); } catch {}
+            commentInput.scrollLeft = prevScroll;
+            selectionCache.set(commentInput, { start: selStart, end: selEnd });
+            scrollCache.set(commentInput, prevScroll);
+          }
           changed = true;
         }
       });
@@ -555,8 +581,6 @@ import { PANE_STYLES } from "./styles";
   // Debounce state for seeking
   let seekTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let pendingSeekTime: number | null = null;
-  let manualHighlightGuid: string | null = null;
-  let manualHighlightTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let lastAutoHighlightedGuid: string | null = null;
   let isSeeking = false;
 
@@ -590,6 +614,11 @@ import { PANE_STYLES } from "./styles";
       return;
     }
 
+    // Only change highlight while seeking is not happening and mouse is OFF the timestamps UI
+    if (isSeeking || isMouseOverTimestamps) {
+      return;
+    }
+
     const nearestLi = findNearestTimestamp(currentSeconds);
     const nearestGuid = nearestLi?.dataset.guid ?? null;
 
@@ -612,7 +641,7 @@ import { PANE_STYLES } from "./styles";
     }
 
     let nearestLi: HTMLLIElement | null = null;
-    let smallestDifference = Infinity;
+    let largestTimestamp = -Infinity;
 
     for (const li of items) {
       const timeLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
@@ -624,9 +653,9 @@ import { PANE_STYLES } from "./styles";
       if (!Number.isFinite(timestamp)) {
         continue;
       }
-      const difference = Math.abs(currentTime - timestamp);
-      if (difference < smallestDifference) {
-        smallestDifference = difference;
+      // Only consider timestamps at or before the current time
+      if (timestamp <= currentTime && timestamp > largestTimestamp) {
+        largestTimestamp = timestamp;
         nearestLi = li;
       }
     }
@@ -696,6 +725,7 @@ import { PANE_STYLES } from "./styles";
     updateIndentMarkers();
     updateSeekbarMarkers();
     saveTimestamps(currentLoadedVideoId);
+    mostRecentlyModifiedTimestampGuid = null;
     return true;
   }
 
@@ -760,14 +790,6 @@ import { PANE_STYLES } from "./styles";
         });
         if (!clickedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
           clickedLi.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
-          manualHighlightGuid = clickedLi.dataset.guid ?? null;
-          if (manualHighlightTimeoutId) {
-            clearTimeout(manualHighlightTimeoutId);
-          }
-          manualHighlightTimeoutId = setTimeout(() => {
-            manualHighlightGuid = null;
-            manualHighlightTimeoutId = null;
-          }, 10000); // Clear manual highlight after 10 seconds
           clickedLi.scrollIntoView({ behavior: "smooth", block: "center" });
         }
       }
@@ -801,16 +823,6 @@ import { PANE_STYLES } from "./styles";
 
       // Keep the timestamp highlighted while adjusting its time
       const timestampLi = target.closest('li');
-      if (timestampLi) {
-        manualHighlightGuid = timestampLi.dataset.guid ?? null;
-        if (manualHighlightTimeoutId) {
-          clearTimeout(manualHighlightTimeoutId);
-        }
-        manualHighlightTimeoutId = setTimeout(() => {
-          manualHighlightGuid = null;
-          manualHighlightTimeoutId = null;
-        }, 10000);
-      }
 
       pendingSeekTime = newTime;
       if (seekTimeoutId) {
@@ -837,6 +849,7 @@ import { PANE_STYLES } from "./styles";
         const tsGuid = timestampLi.dataset.guid;
         if (tsCommentInput && tsGuid) {
           saveSingleTimestampDirect(currentLoadedVideoId, tsGuid, newTime, tsCommentInput.value);
+          mostRecentlyModifiedTimestampGuid = tsGuid;
         }
       }
     } else if (target.dataset.action === "clear") {
@@ -847,6 +860,7 @@ import { PANE_STYLES } from "./styles";
       updateSeekbarMarkers();
       updateScroll();
       saveTimestamps(currentLoadedVideoId);
+      mostRecentlyModifiedTimestampGuid = null;
     }
   }
 
@@ -901,11 +915,23 @@ import { PANE_STYLES } from "./styles";
         marker = determineIndentMarkerForIndex(currentIndex);
       }
 
+      // Preserve caret and horizontal scroll for the active input
+      const wasActive = document.activeElement === commentInput;
+      const selStart = commentInput.selectionStart ?? commentInput.value.length;
+      const selEnd = commentInput.selectionEnd ?? selStart;
+      const prevScroll = commentInput.scrollLeft;
+
       commentInput.value = `${marker}${cleanComment}`;
 
       // Immediately update arrow icon
       updateArrowIcon();
       updateIndentMarkers();
+      if (wasActive) {
+        try { commentInput.setSelectionRange(selStart, selEnd); } catch {}
+        commentInput.scrollLeft = prevScroll;
+        scrollCache.set(commentInput, prevScroll);
+        selectionCache.set(commentInput, { start: selStart, end: selEnd });
+      }
       const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
       saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
     };
@@ -926,6 +952,14 @@ import { PANE_STYLES } from "./styles";
       indentToggle.style.display = "none";
     });
 
+    // Add mouseleave listener to check for negative time diff and sort if needed
+    li.addEventListener("mouseleave", () => {
+      // Only sort immediately if this is the most recently modified timestamp and it has a negative diff
+      if (li.dataset.guid === mostRecentlyModifiedTimestampGuid && hasNegativeTimeDifference(li)) {
+        sortTimestampsAndUpdateDisplay();
+      }
+    });
+
     commentInput.value = comment || "";
     commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
     commentInput.type = "text";
@@ -939,14 +973,23 @@ import { PANE_STYLES } from "./styles";
       const end = commentInput.selectionEnd ?? start;
       selectionCache.set(commentInput, { start, end });
     };
+    const updateScrollCache = () => {
+      scrollCache.set(commentInput, commentInput.scrollLeft);
+    };
     commentInput.addEventListener("keyup", updateSelectionCache);
     commentInput.addEventListener("select", updateSelectionCache);
+    commentInput.addEventListener("scroll", updateScrollCache);
+    commentInput.addEventListener("input", updateScrollCache);
+    commentInput.addEventListener("focusin", () => {
+      suppressSortUntilRefocus = false;
+    });
     // If blur occurs without recent pointer interaction and without a local focus target, restore focus
     commentInput.addEventListener("focusout", (ev) => {
       const rt = (ev as FocusEvent).relatedTarget as Element | null;
       const recentPointer = Date.now() - lastPointerDownTs < 250;
       const movingWithinPane = !!rt && !!pane && pane.contains(rt);
       if (!recentPointer && !movingWithinPane) {
+        suppressSortUntilRefocus = true;
         setTimeout(() => {
           // If nothing else took focus, restore here
           if (document.activeElement === document.body || document.activeElement == null) {
@@ -955,6 +998,11 @@ import { PANE_STYLES } from "./styles";
             if (sel) {
               try { commentInput.setSelectionRange(sel.start, sel.end); } catch {}
             }
+            const sl = scrollCache.get(commentInput);
+            if (typeof sl === 'number') {
+              commentInput.scrollLeft = sl;
+            }
+            suppressSortUntilRefocus = false;
           }
         }, 0);
       }
@@ -963,6 +1011,11 @@ import { PANE_STYLES } from "./styles";
     commentInput.addEventListener("input", (ev) => {
       const ie = ev as InputEvent;
       if (ie && (ie.isComposing || ie.inputType === "insertCompositionText")) {
+        // Still refresh caret/scroll caches so focus restoration lands correctly post-emoji
+        const start = commentInput.selectionStart ?? commentInput.value.length;
+        const end = commentInput.selectionEnd ?? start;
+        selectionCache.set(commentInput, { start, end });
+        scrollCache.set(commentInput, commentInput.scrollLeft);
         return;
       }
       // Debounce comment saves with 500ms delay
@@ -982,8 +1035,12 @@ import { PANE_STYLES } from "./styles";
     // Commit a quick save when composition ends (e.g., emoji/IME finalized)
     commentInput.addEventListener("compositionend", () => {
       const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
-      // Use a small delay to let the finalized character land in the value
+      // Let the finalized character land, then refresh caret and save
       setTimeout(() => {
+        const start = commentInput.selectionStart ?? commentInput.value.length;
+        const end = commentInput.selectionEnd ?? start;
+        selectionCache.set(commentInput, { start, end });
+        scrollCache.set(commentInput, commentInput.scrollLeft);
         saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
       }, 50);
     });
@@ -1029,6 +1086,7 @@ import { PANE_STYLES } from "./styles";
         updateTimeDifferences();
         updateIndentMarkers();
         saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+        mostRecentlyModifiedTimestampGuid = timestampGuid;
       }
     };
 
@@ -1054,6 +1112,7 @@ import { PANE_STYLES } from "./styles";
         updateSeekbarMarkers();
         updateScroll();
         deleteSingleTimestamp(currentLoadedVideoId, guid);
+        mostRecentlyModifiedTimestampGuid = null;
       } else {
         li.dataset.deleteConfirmed = "true";
         li.classList.add(TIMESTAMP_DELETE_CLASS);
@@ -1187,6 +1246,7 @@ import { PANE_STYLES } from "./styles";
     updateSeekbarMarkers();
     if (!doNotSave) {
       saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, sanitizedStart, comment);
+      mostRecentlyModifiedTimestampGuid = timestampGuid;
     }
     return commentInput;
   }
@@ -1240,6 +1300,20 @@ import { PANE_STYLES } from "./styles";
       return;
     }
 
+    // Capture caret/scroll for the currently focused input so we can restore after sorting
+    let restoreState: { guid: string; start: number; end: number; scroll: number } | null = null;
+    if (document.activeElement instanceof HTMLInputElement && list.contains(document.activeElement)) {
+      const activeInput = document.activeElement as HTMLInputElement;
+      const activeLi = activeInput.closest('li');
+      const guid = activeLi?.dataset.guid;
+      if (guid) {
+        const start = activeInput.selectionStart ?? activeInput.value.length;
+        const end = activeInput.selectionEnd ?? start;
+        const scroll = activeInput.scrollLeft;
+        restoreState = { guid, start, end, scroll };
+      }
+    }
+
     const items = getTimestampItems();
     const sortedItems = items
       .map(li => {
@@ -1278,6 +1352,23 @@ import { PANE_STYLES } from "./styles";
     updateIndentMarkers();
 
     updateSeekbarMarkers();
+
+    // Restore caret/scroll to the previously focused input if it still exists
+    if (restoreState) {
+      const targetLi = getTimestampItems().find(li => li.dataset.guid === restoreState!.guid);
+      const targetInput = targetLi?.querySelector<HTMLInputElement>('input');
+      if (targetInput) {
+        try {
+          targetInput.focus({ preventScroll: true });
+          targetInput.setSelectionRange(restoreState.start, restoreState.end);
+          targetInput.scrollLeft = restoreState.scroll;
+          selectionCache.set(targetInput, { start: restoreState.start, end: restoreState.end });
+          scrollCache.set(targetInput, restoreState.scroll);
+        } catch {
+          // If focus/selection fails, continue without breaking sort
+        }
+      }
+    }
     log('Timestamps changed: Timestamps sorted');
     saveTimestamps(currentLoadedVideoId);
   }
@@ -1568,12 +1659,6 @@ import { PANE_STYLES } from "./styles";
       visibilityAnimationTimeoutId = null;
     }
 
-    if (manualHighlightTimeoutId) {
-      clearTimeout(manualHighlightTimeoutId);
-      manualHighlightTimeoutId = null;
-    }
-
-    manualHighlightGuid = null;
     lastAutoHighlightedGuid = null;
 
     // Remove all event listeners to prevent memory leaks
@@ -2473,7 +2558,18 @@ import { PANE_STYLES } from "./styles";
               if (existingLi) {
                 const commentInput = existingLi.querySelector<HTMLInputElement>('input');
                 if (commentInput) {
+                  // Preserve horizontal scroll if focused element matches this input
+                  const wasActive = document.activeElement === commentInput;
+                  const selStart = commentInput.selectionStart ?? commentInput.value.length;
+                  const selEnd = commentInput.selectionEnd ?? selStart;
+                  const prevScroll = commentInput.scrollLeft;
                   commentInput.value = ts.comment;
+                  if (wasActive) {
+                    try { commentInput.setSelectionRange(selStart, selEnd); } catch {}
+                    commentInput.scrollLeft = prevScroll;
+                    selectionCache.set(commentInput, { start: selStart, end: selEnd });
+                    scrollCache.set(commentInput, prevScroll);
+                  }
                 }
               } else {
                 addTimestamp(ts.start, ts.comment, false, ts.guid);
@@ -2584,14 +2680,39 @@ import { PANE_STYLES } from "./styles";
     // Add event listeners to `list` after it is initialized
     list.addEventListener("mouseenter", () => {
       isMouseOverTimestamps = true;
+      suppressSortUntilRefocus = false;
        });
 
     list.addEventListener("mouseleave", () => {
       isMouseOverTimestamps = false;
+      if (suppressSortUntilRefocus) {
+        return;
+      }
       const player = getActivePlayer();
       const currentTime = player ? Math.floor(player.getCurrentTime()) : getLatestTimestampValue();
       highlightNearestTimestampAtTime(currentTime, true);
+
+      // Preserve focus on the currently focused timestamp when sorting
+      let focusedTimestampGuid: string | null = null;
+      if (document.activeElement instanceof HTMLInputElement && list.contains(document.activeElement)) {
+        const activeLi = document.activeElement.closest('li');
+        focusedTimestampGuid = activeLi?.dataset.guid ?? null;
+      }
+
+      // Sort and restore focus
       sortTimestampsAndUpdateDisplay();
+
+      if (focusedTimestampGuid) {
+        const targetLi = getTimestampItems().find(li => li.dataset.guid === focusedTimestampGuid);
+        const targetInput = targetLi?.querySelector<HTMLInputElement>('input');
+        if (targetInput) {
+          try {
+            targetInput.focus({ preventScroll: true });
+          } catch {
+            // Focus restoration failed, continue
+          }
+        }
+      }
     });
 
   pane.id = "ytls-pane";
