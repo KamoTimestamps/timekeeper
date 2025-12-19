@@ -178,7 +178,23 @@
   }
 
   /* Shared modal container styles */
-  #ytls-settings-modal,
+  #ytls-settings-modal {
+    position:fixed;
+    top:50%;
+    left:50%;
+    transform:translate(-50%, -50%);
+    background:#1a1a1a;
+    padding:8px;
+    border-radius:10px;
+    z-index:10000;
+    color:white;
+    text-align:center;
+    width:200px;
+    box-shadow:0 0 10px rgba(0,0,0,0.5);
+  }
+  #ytls-settings-modal {
+    position:fixed;
+  }
   #ytls-save-modal,
   #ytls-load-modal {
     position:fixed;
@@ -186,13 +202,48 @@
     left:50%;
     transform:translate(-50%, -50%);
     background:#333;
-    padding:20px;
+    padding:8px;
     border-radius:10px;
     z-index:10000;
     color:white;
     text-align:center;
-    width:300px;
+    width:fit-content;
+    max-width:90vw;
     box-shadow:0 0 10px rgba(0,0,0,0.5);
+  }
+
+  /* Modal header with tabs and close button */
+  .ytls-modal-header {
+    display:flex;
+    align-items:flex-end;
+    margin-bottom:0;
+    gap:10px;
+  }
+
+  /* Modal close button (X in header) */
+  .ytls-modal-close-button {
+    position:absolute;
+    top:8px;
+    right:8px;
+    width:16px;
+    height:16px;
+    background:#ff4444;
+    color:white;
+    border:none;
+    border-radius:3px;
+    font-size:14px;
+    font-weight:bold;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    line-height:1;
+    padding:0;
+    flex-shrink:0;
+    z-index:1;
+  }
+  .ytls-modal-close-button:hover {
+    background:#ff6666;
   }
 
   /* Styles for settings modal */
@@ -201,40 +252,89 @@
     flex-direction:column;
     gap:10px;
     align-items:center;
+    background:#2a2a2a;
+    border:2px solid #3a3a3a;
+    border-radius:0 4px 4px 4px;
+    padding:10px;
+    margin-top:-2px;
+    min-height:220px;
+    position:relative;
+    z-index:1;
+  }
+
+  /* Section heading */
+  .ytls-section-heading {
+    margin:0 0 10px 0;
+    padding:0;
+    font-size:16px;
+    font-weight:bold;
+    color:#fff;
+    text-align:center;
   }
 
   /* Settings nav (tabs) */
   #ytls-settings-nav {
     display:flex;
-    gap:8px;
-    width:100%;
-    margin-bottom:10px;
+    gap:6px;
+    flex:0;
   }
   #ytls-settings-nav .ytls-settings-modal-button {
-    flex:1;
-    width:auto; /* override 100% for nav */
-    height:40px; /* slightly smaller tabs */
-    margin-bottom:0; /* no vertical gap in nav */
+    flex:0;
+    width:auto;
+    height:24px;
+    margin-bottom:0;
+    background: #2a2a2a;
+    font-size:13px;
+    padding:0 8px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    line-height:1;
+    border:2px solid transparent;
+    border-radius:4px 4px 0 0;
+    border-bottom:2px solid transparent;
+    white-space:nowrap;
+    position:relative;
+  }
+  #ytls-settings-nav .ytls-settings-modal-button .ytls-tab-text {
+    display:none;
+  }
+  #ytls-settings-nav .ytls-settings-modal-button.active .ytls-tab-text {
+    display:inline;
+  }
+  #ytls-settings-nav .ytls-settings-modal-button:hover {
+    background: #3a3a3a;
   }
   #ytls-settings-nav .ytls-settings-modal-button.active {
-    background:#777;
-    border:1px solid #999;
+    background:#2a2a2a;
+    border:2px solid #3a3a3a;
+    border-bottom:2px solid #2a2a2a;
+    z-index:2;
+  }
+
+  /* Button grid container */
+  .ytls-button-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 5px;
+    width: 100%;
   }
 
   /* Styles for buttons in the settings modal */
   .ytls-settings-modal-button {
     width: 100%;
-    height: 50px;
+    height: 32px;
     background: #555;
     color: white;
     border: none;
     border-radius: 5px;
     cursor: pointer;
-    font-size: 16px;
+    font-size: 13px;
     display: flex;
     justify-content: center;
     align-items: center;
-    margin-bottom: 5px; /* Add some spacing if needed */
+    margin-bottom: 5px;
+    padding: 0 8px;
   }
   .ytls-settings-modal-button:hover {
     background: #777; /* Example hover effect */
@@ -416,7 +516,9 @@
       const style = document.createElement("style");
       style.textContent = `
 @keyframes tk-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+@keyframes tk-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 .tk-auth-spinner { display:inline-block; width:12px; height:12px; border:2px solid rgba(255,165,0,0.3); border-top-color:#ffa500; border-radius:50%; margin-right:6px; vertical-align:-2px; animation: tk-spin 0.9s linear infinite; }
+.tk-auth-blink { animation: tk-blink 0.4s ease-in-out 3; }
 `;
       document.head.appendChild(style);
       authSpinnerStylesInjected = true;
@@ -504,6 +606,16 @@
         authStatusDisplay.title = googleAuthState.email;
       }
     }
+  }
+  function blinkAuthStatusDisplay() {
+    if (!authStatusDisplay) return;
+    ensureAuthSpinnerStyles();
+    authStatusDisplay.classList.remove("tk-auth-blink");
+    void authStatusDisplay.offsetWidth;
+    authStatusDisplay.classList.add("tk-auth-blink");
+    setTimeout(() => {
+      authStatusDisplay.classList.remove("tk-auth-blink");
+    }, 1200);
   }
   function monitorOAuthPopup(popup) {
     return new Promise((resolve, reject) => {
@@ -887,7 +999,12 @@
     backupStatusDisplay.style.display = text ? "inline" : "none";
   }
   async function runAutoBackupOnce(silent = true) {
-    if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) return;
+    if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
+      if (!silent) {
+        blinkAuthStatusDisplay();
+      }
+      return;
+    }
     if (isAutoBackupRunning) return;
     isAutoBackupRunning = true;
     updateBackupStatusDisplay();
@@ -938,7 +1055,6 @@
     autoBackupEnabled = !autoBackupEnabled;
     await saveAutoBackupSettings();
     await scheduleAutoBackup();
-    alert(`Auto Backup ${autoBackupEnabled ? "Enabled" : "Disabled"}`);
     updateBackupStatusDisplay();
   }
   async function setAutoBackupIntervalPrompt() {
@@ -952,7 +1068,6 @@
     autoBackupIntervalMinutes = minutes;
     await saveAutoBackupSettings();
     await scheduleAutoBackup();
-    alert(`Auto Backup interval set to ${minutes} minutes.`);
     updateBackupStatusDisplay();
   }
 
@@ -3410,27 +3525,15 @@
         settingsModalInstance.id = "ytls-settings-modal";
         settingsModalInstance.classList.remove("ytls-fade-out");
         settingsModalInstance.classList.add("ytls-fade-in");
-        const settingsContent = document.createElement("div");
-        settingsContent.id = "ytls-settings-content";
+        const header2 = document.createElement("div");
+        header2.className = "ytls-modal-header";
         const nav = document.createElement("div");
         nav.id = "ytls-settings-nav";
-        const generalSection = document.createElement("div");
-        const driveSection = document.createElement("div");
-        function showSection(section) {
-          generalSection.style.display = section === "general" ? "block" : "none";
-          driveSection.style.display = section === "drive" ? "block" : "none";
-          generalTab.classList.toggle("active", section === "general");
-          driveTab.classList.toggle("active", section === "drive");
-        }
-        const generalTab = createButton("\u{1F6E0}\uFE0F General", "General settings", () => showSection("general"));
-        const driveTab = createButton("\u2601\uFE0F Google Drive", "Google Drive sign-in and backup", () => showSection("drive"));
-        nav.appendChild(generalTab);
-        nav.appendChild(driveTab);
-        generalSection.appendChild(createButton("\u{1F4BE} Save", "Save As...", saveBtn.onclick));
-        generalSection.appendChild(createButton("\u{1F4C2} Load", "Load", loadBtn.onclick));
-        generalSection.appendChild(createButton("\u{1F4E4} Export All", "Export All Data", exportBtn.onclick));
-        generalSection.appendChild(createButton("\u{1F4E5} Import All", "Import All Data", importBtn.onclick));
-        generalSection.appendChild(createButton("Close", "Close", () => {
+        const closeButton = document.createElement("button");
+        closeButton.className = "ytls-modal-close-button";
+        closeButton.textContent = "\u2715";
+        closeButton.title = "Close";
+        closeButton.onclick = () => {
           if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
             settingsModalInstance.classList.remove("ytls-fade-in");
             settingsModalInstance.classList.add("ytls-fade-out");
@@ -3442,7 +3545,51 @@
               document.removeEventListener("click", handleClickOutsideSettingsModal, true);
             }, 300);
           }
-        }));
+        };
+        const settingsContent = document.createElement("div");
+        settingsContent.id = "ytls-settings-content";
+        const sectionHeading = document.createElement("h3");
+        sectionHeading.className = "ytls-section-heading";
+        sectionHeading.textContent = "General";
+        sectionHeading.style.display = "none";
+        const generalSection = document.createElement("div");
+        const driveSection = document.createElement("div");
+        driveSection.className = "ytls-button-grid";
+        function showSection(section) {
+          generalSection.style.display = section === "general" ? "block" : "none";
+          driveSection.style.display = section === "drive" ? "block" : "none";
+          generalTab.classList.toggle("active", section === "general");
+          driveTab.classList.toggle("active", section === "drive");
+          sectionHeading.textContent = section === "general" ? "General" : "Google Drive";
+        }
+        const generalTab = document.createElement("button");
+        generalTab.textContent = "\u{1F6E0}\uFE0F";
+        const generalTabText = document.createElement("span");
+        generalTabText.className = "ytls-tab-text";
+        generalTabText.textContent = " General";
+        generalTab.appendChild(generalTabText);
+        generalTab.title = "General settings";
+        generalTab.classList.add("ytls-settings-modal-button");
+        generalTab.onclick = () => showSection("general");
+        const driveTab = document.createElement("button");
+        driveTab.textContent = "\u2601\uFE0F";
+        const driveTabText = document.createElement("span");
+        driveTabText.className = "ytls-tab-text";
+        driveTabText.textContent = " Backup";
+        driveTab.appendChild(driveTabText);
+        driveTab.title = "Google Drive sign-in and backup";
+        driveTab.classList.add("ytls-settings-modal-button");
+        driveTab.onclick = () => showSection("drive");
+        nav.appendChild(generalTab);
+        nav.appendChild(driveTab);
+        header2.appendChild(nav);
+        header2.appendChild(closeButton);
+        settingsModalInstance.appendChild(header2);
+        generalSection.className = "ytls-button-grid";
+        generalSection.appendChild(createButton("\u{1F4BE} Save", "Save As...", saveBtn.onclick));
+        generalSection.appendChild(createButton("\u{1F4C2} Load", "Load", loadBtn.onclick));
+        generalSection.appendChild(createButton("\u{1F4E4} Export All", "Export All Data", exportBtn.onclick));
+        generalSection.appendChild(createButton("\u{1F4E5} Import All", "Import All Data", importBtn.onclick));
         const signButton = createButton(
           googleAuthState.isSignedIn ? "\u{1F513} Sign Out" : "\u{1F510} Sign In",
           googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive",
@@ -3500,7 +3647,7 @@
         updateAuthStatusDisplay();
         updateGoogleUserDisplay();
         updateBackupStatusDisplay();
-        settingsContent.appendChild(nav);
+        settingsContent.appendChild(sectionHeading);
         settingsContent.appendChild(generalSection);
         settingsContent.appendChild(driveSection);
         showSection("general");

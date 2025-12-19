@@ -3086,33 +3086,18 @@ if (hash && hash.length > 1) {
       settingsModalInstance.classList.remove("ytls-fade-out");
       settingsModalInstance.classList.add("ytls-fade-in");
 
-      const settingsContent = document.createElement("div");
-      settingsContent.id = "ytls-settings-content";
+      // Create header container with tabs and close button
+      const header = document.createElement("div");
+      header.className = "ytls-modal-header";
 
       const nav = document.createElement("div");
       nav.id = "ytls-settings-nav";
 
-      const generalSection = document.createElement("div");
-      const driveSection = document.createElement("div");
-
-      function showSection(section: 'general' | 'drive') {
-        generalSection.style.display = section === 'general' ? 'block' : 'none';
-        driveSection.style.display = section === 'drive' ? 'block' : 'none';
-        generalTab.classList.toggle('active', section === 'general');
-        driveTab.classList.toggle('active', section === 'drive');
-      }
-
-      const generalTab = createButton("🛠️ General", "General settings", () => showSection('general'));
-      const driveTab = createButton("☁️ Google Drive", "Google Drive sign-in and backup", () => showSection('drive'));
-      nav.appendChild(generalTab);
-      nav.appendChild(driveTab);
-
-      // Build General section
-      generalSection.appendChild(createButton("💾 Save", "Save As...", saveBtn.onclick));
-      generalSection.appendChild(createButton("📂 Load", "Load", loadBtn.onclick));
-      generalSection.appendChild(createButton("📤 Export All", "Export All Data", exportBtn.onclick));
-      generalSection.appendChild(createButton("📥 Import All", "Import All Data", importBtn.onclick));
-      generalSection.appendChild(createButton("Close", "Close", () => {
+      const closeButton = document.createElement("button");
+      closeButton.className = "ytls-modal-close-button";
+      closeButton.textContent = "✕";
+      closeButton.title = "Close";
+      closeButton.onclick = () => {
         if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
           settingsModalInstance.classList.remove("ytls-fade-in");
           settingsModalInstance.classList.add("ytls-fade-out");
@@ -3124,7 +3109,60 @@ if (hash && hash.length > 1) {
             document.removeEventListener('click', handleClickOutsideSettingsModal, true);
           }, 300);
         }
-      }));
+      };
+
+      const settingsContent = document.createElement("div");
+      settingsContent.id = "ytls-settings-content";
+
+      const sectionHeading = document.createElement("h3");
+      sectionHeading.className = "ytls-section-heading";
+      sectionHeading.textContent = "General";
+      sectionHeading.style.display = "none";
+
+      const generalSection = document.createElement("div");
+      const driveSection = document.createElement("div");
+      driveSection.className = "ytls-button-grid";
+
+      function showSection(section: 'general' | 'drive') {
+        generalSection.style.display = section === 'general' ? 'block' : 'none';
+        driveSection.style.display = section === 'drive' ? 'block' : 'none';
+        generalTab.classList.toggle('active', section === 'general');
+        driveTab.classList.toggle('active', section === 'drive');
+        sectionHeading.textContent = section === 'general' ? 'General' : 'Google Drive';
+      }
+
+      const generalTab = document.createElement("button");
+      generalTab.textContent = '🛠️';
+      const generalTabText = document.createElement("span");
+      generalTabText.className = "ytls-tab-text";
+      generalTabText.textContent = " General";
+      generalTab.appendChild(generalTabText);
+      generalTab.title = "General settings";
+      generalTab.classList.add("ytls-settings-modal-button");
+      generalTab.onclick = () => showSection('general');
+
+      const driveTab = document.createElement("button");
+      driveTab.textContent = '☁️';
+      const driveTabText = document.createElement("span");
+      driveTabText.className = "ytls-tab-text";
+      driveTabText.textContent = " Backup";
+      driveTab.appendChild(driveTabText);
+      driveTab.title = "Google Drive sign-in and backup";
+      driveTab.classList.add("ytls-settings-modal-button");
+      driveTab.onclick = () => showSection('drive');
+      nav.appendChild(generalTab);
+      nav.appendChild(driveTab);
+
+      header.appendChild(nav);
+      header.appendChild(closeButton);
+      settingsModalInstance.appendChild(header);
+
+      // Build General section
+      generalSection.className = "ytls-button-grid";
+      generalSection.appendChild(createButton("💾 Save", "Save As...", saveBtn.onclick));
+      generalSection.appendChild(createButton("📂 Load", "Load", loadBtn.onclick));
+      generalSection.appendChild(createButton("📤 Export All", "Export All Data", exportBtn.onclick));
+      generalSection.appendChild(createButton("📥 Import All", "Import All Data", importBtn.onclick));
 
       // Build Google Drive section
       const signButton = createButton(
@@ -3200,9 +3238,9 @@ if (hash && hash.length > 1) {
       GoogleDrive.updateGoogleUserDisplay();
       GoogleDrive.updateBackupStatusDisplay();
 
-      // Append nav and sections
-      settingsContent.appendChild(nav);
-      settingsContent.appendChild(generalSection);
+      // Append sections
+      settingsContent.appendChild(sectionHeading);
+      settingsContent.appendChild(generalSection)
       settingsContent.appendChild(driveSection);
       showSection('general');
 

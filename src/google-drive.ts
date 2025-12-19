@@ -63,7 +63,9 @@ function ensureAuthSpinnerStyles() {
     const style = document.createElement('style');
     style.textContent = `
 @keyframes tk-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+@keyframes tk-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 .tk-auth-spinner { display:inline-block; width:12px; height:12px; border:2px solid rgba(255,165,0,0.3); border-top-color:#ffa500; border-radius:50%; margin-right:6px; vertical-align:-2px; animation: tk-spin 0.9s linear infinite; }
+.tk-auth-blink { animation: tk-blink 0.4s ease-in-out 3; }
 `;
     document.head.appendChild(style);
     authSpinnerStylesInjected = true;
@@ -170,6 +172,18 @@ export function updateAuthStatusDisplay(status?: 'authenticating' | 'error', mes
       authStatusDisplay.title = googleAuthState.email;
     }
   }
+}
+
+export function blinkAuthStatusDisplay() {
+  if (!authStatusDisplay) return;
+  ensureAuthSpinnerStyles();
+  authStatusDisplay.classList.remove('tk-auth-blink');
+  // Trigger reflow to restart animation
+  void authStatusDisplay.offsetWidth;
+  authStatusDisplay.classList.add('tk-auth-blink');
+  setTimeout(() => {
+    authStatusDisplay.classList.remove('tk-auth-blink');
+  }, 1200); // 3 blinks * 0.4s
 }
 
 // Monitor popup for OAuth token via BroadcastChannel and localStorage fallback
@@ -605,7 +619,12 @@ export function updateBackupStatusDisplay() {
 }
 
 export async function runAutoBackupOnce(silent = true) {
-  if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) return;
+  if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
+    if (!silent) {
+      blinkAuthStatusDisplay();
+    }
+    return;
+  }
   if (isAutoBackupRunning) return;
   isAutoBackupRunning = true;
   updateBackupStatusDisplay();
@@ -660,7 +679,6 @@ export async function toggleAutoBackup() {
   autoBackupEnabled = !autoBackupEnabled;
   await saveAutoBackupSettings();
   await scheduleAutoBackup();
-  alert(`Auto Backup ${autoBackupEnabled ? 'Enabled' : 'Disabled'}`);
   updateBackupStatusDisplay();
 }
 
@@ -675,6 +693,5 @@ export async function setAutoBackupIntervalPrompt() {
   autoBackupIntervalMinutes = minutes;
   await saveAutoBackupSettings();
   await scheduleAutoBackup();
-  alert(`Auto Backup interval set to ${minutes} minutes.`);
   updateBackupStatusDisplay();
 }

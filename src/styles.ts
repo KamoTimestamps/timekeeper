@@ -156,7 +156,23 @@ export const PANE_STYLES = `
   }
 
   /* Shared modal container styles */
-  #ytls-settings-modal,
+  #ytls-settings-modal {
+    position:fixed;
+    top:50%;
+    left:50%;
+    transform:translate(-50%, -50%);
+    background:#1a1a1a;
+    padding:8px;
+    border-radius:10px;
+    z-index:10000;
+    color:white;
+    text-align:center;
+    width:200px;
+    box-shadow:0 0 10px rgba(0,0,0,0.5);
+  }
+  #ytls-settings-modal {
+    position:fixed;
+  }
   #ytls-save-modal,
   #ytls-load-modal {
     position:fixed;
@@ -164,13 +180,48 @@ export const PANE_STYLES = `
     left:50%;
     transform:translate(-50%, -50%);
     background:#333;
-    padding:20px;
+    padding:8px;
     border-radius:10px;
     z-index:10000;
     color:white;
     text-align:center;
-    width:300px;
+    width:fit-content;
+    max-width:90vw;
     box-shadow:0 0 10px rgba(0,0,0,0.5);
+  }
+
+  /* Modal header with tabs and close button */
+  .ytls-modal-header {
+    display:flex;
+    align-items:flex-end;
+    margin-bottom:0;
+    gap:10px;
+  }
+
+  /* Modal close button (X in header) */
+  .ytls-modal-close-button {
+    position:absolute;
+    top:8px;
+    right:8px;
+    width:16px;
+    height:16px;
+    background:#ff4444;
+    color:white;
+    border:none;
+    border-radius:3px;
+    font-size:14px;
+    font-weight:bold;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    line-height:1;
+    padding:0;
+    flex-shrink:0;
+    z-index:1;
+  }
+  .ytls-modal-close-button:hover {
+    background:#ff6666;
   }
 
   /* Styles for settings modal */
@@ -179,40 +230,89 @@ export const PANE_STYLES = `
     flex-direction:column;
     gap:10px;
     align-items:center;
+    background:#2a2a2a;
+    border:2px solid #3a3a3a;
+    border-radius:0 4px 4px 4px;
+    padding:10px;
+    margin-top:-2px;
+    min-height:220px;
+    position:relative;
+    z-index:1;
+  }
+
+  /* Section heading */
+  .ytls-section-heading {
+    margin:0 0 10px 0;
+    padding:0;
+    font-size:16px;
+    font-weight:bold;
+    color:#fff;
+    text-align:center;
   }
 
   /* Settings nav (tabs) */
   #ytls-settings-nav {
     display:flex;
-    gap:8px;
-    width:100%;
-    margin-bottom:10px;
+    gap:6px;
+    flex:0;
   }
   #ytls-settings-nav .ytls-settings-modal-button {
-    flex:1;
-    width:auto; /* override 100% for nav */
-    height:40px; /* slightly smaller tabs */
-    margin-bottom:0; /* no vertical gap in nav */
+    flex:0;
+    width:auto;
+    height:24px;
+    margin-bottom:0;
+    background: #2a2a2a;
+    font-size:13px;
+    padding:0 8px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    line-height:1;
+    border:2px solid transparent;
+    border-radius:4px 4px 0 0;
+    border-bottom:2px solid transparent;
+    white-space:nowrap;
+    position:relative;
+  }
+  #ytls-settings-nav .ytls-settings-modal-button .ytls-tab-text {
+    display:none;
+  }
+  #ytls-settings-nav .ytls-settings-modal-button.active .ytls-tab-text {
+    display:inline;
+  }
+  #ytls-settings-nav .ytls-settings-modal-button:hover {
+    background: #3a3a3a;
   }
   #ytls-settings-nav .ytls-settings-modal-button.active {
-    background:#777;
-    border:1px solid #999;
+    background:#2a2a2a;
+    border:2px solid #3a3a3a;
+    border-bottom:2px solid #2a2a2a;
+    z-index:2;
+  }
+
+  /* Button grid container */
+  .ytls-button-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 5px;
+    width: 100%;
   }
 
   /* Styles for buttons in the settings modal */
   .ytls-settings-modal-button {
     width: 100%;
-    height: 50px;
+    height: 32px;
     background: #555;
     color: white;
     border: none;
     border-radius: 5px;
     cursor: pointer;
-    font-size: 16px;
+    font-size: 13px;
     display: flex;
     justify-content: center;
     align-items: center;
-    margin-bottom: 5px; /* Add some spacing if needed */
+    margin-bottom: 5px;
+    padding: 0 8px;
   }
   .ytls-settings-modal-button:hover {
     background: #777; /* Example hover effect */
