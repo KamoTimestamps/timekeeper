@@ -2859,6 +2859,20 @@ if (hash && hash.length > 1) {
       }, 0);
     };
 
+    const createClickOutsideHandler = (modal: HTMLElement, closeHandler: () => void) => {
+      return (event: MouseEvent) => {
+        if (!modal.contains(event.target as Node)) {
+          closeHandler();
+        }
+      };
+    };
+
+    const registerModalClickOutsideHandler = (clickOutsideHandler: (event: MouseEvent) => void) => {
+      setTimeout(() => {
+        document.addEventListener('click', clickOutsideHandler, true);
+      }, 0);
+    };
+
     // Define handlers for main buttons
     const handleAddTimestamp = () => {
       if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
@@ -2957,7 +2971,7 @@ if (hash && hash.length > 1) {
 
         // Create a styled modal for confirmation
         const modal = document.createElement("div");
-        modal.id = "ytls-save-modal";
+        modal.id = "ytls-delete-all-modal";
         modal.classList.remove("ytls-fade-out");
         modal.classList.add("ytls-fade-in");
 
@@ -3053,14 +3067,19 @@ if (hash && hash.length > 1) {
         confirmButton.onmouseleave = resetButton;
 
         let escapeHandler: ((event: KeyboardEvent) => void) | null = null;
+        let clickOutsideHandler: ((event: MouseEvent) => void) | null = null;
         const closeDeleteModal = createModalCloseHandler(modal, () => {
           resetButton();
           if (escapeHandler) {
             document.removeEventListener('keydown', escapeHandler);
           }
+          if (clickOutsideHandler) {
+            document.removeEventListener('click', clickOutsideHandler, true);
+          }
         });
 
         escapeHandler = createEscapeKeyHandler(closeDeleteModal);
+        clickOutsideHandler = createClickOutsideHandler(modal, closeDeleteModal);
 
         const cancelButton = document.createElement("button");
         cancelButton.textContent = "Cancel";
@@ -3074,6 +3093,7 @@ if (hash && hash.length > 1) {
         document.body.appendChild(modal);
 
         registerModalEscapeHandler(escapeHandler);
+        registerModalClickOutsideHandler(clickOutsideHandler);
       };
 
     // Configuration for main buttons
@@ -3128,6 +3148,20 @@ if (hash && hash.length > 1) {
     // Function to create and toggle the settings modal
     function toggleSettingsModal(initialTab: 'general' | 'drive' = 'general') {
       if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
+        // Close all subdialogs first
+        const saveModal = document.getElementById('ytls-save-modal');
+        const loadModal = document.getElementById('ytls-load-modal');
+        const deleteModal = document.getElementById('ytls-delete-all-modal');
+        if (saveModal && document.body.contains(saveModal)) {
+          document.body.removeChild(saveModal);
+        }
+        if (loadModal && document.body.contains(loadModal)) {
+          document.body.removeChild(loadModal);
+        }
+        if (deleteModal && document.body.contains(deleteModal)) {
+          document.body.removeChild(deleteModal);
+        }
+
         // Modal exists and is visible, so close it with fade-out
         settingsModalInstance.classList.remove("ytls-fade-in");
         settingsModalInstance.classList.add("ytls-fade-out");
@@ -3161,6 +3195,20 @@ if (hash && hash.length > 1) {
       addTooltip(closeButton, "Close");
       closeButton.onclick = () => {
         if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
+          // Close all subdialogs first
+          const saveModal = document.getElementById('ytls-save-modal');
+          const loadModal = document.getElementById('ytls-load-modal');
+          const deleteModal = document.getElementById('ytls-delete-all-modal');
+          if (saveModal && document.body.contains(saveModal)) {
+            document.body.removeChild(saveModal);
+          }
+          if (loadModal && document.body.contains(loadModal)) {
+            document.body.removeChild(loadModal);
+          }
+          if (deleteModal && document.body.contains(deleteModal)) {
+            document.body.removeChild(deleteModal);
+          }
+
           settingsModalInstance.classList.remove("ytls-fade-in");
           settingsModalInstance.classList.add("ytls-fade-out");
           setTimeout(() => {
@@ -3338,12 +3386,25 @@ if (hash && hash.length > 1) {
         // Check if any subdialogs are open - if so, let their handlers deal with it
         const saveModal = document.getElementById('ytls-save-modal');
         const loadModal = document.getElementById('ytls-load-modal');
-        if (saveModal || loadModal) {
+        const deleteModal = document.getElementById('ytls-delete-all-modal');
+        if (saveModal || loadModal || deleteModal) {
           // Let the subdialog's escape handler handle this
           return;
         }
 
         event.preventDefault();
+
+        // Close all subdialogs before closing settings
+        if (saveModal && document.body.contains(saveModal)) {
+          document.body.removeChild(saveModal);
+        }
+        if (loadModal && document.body.contains(loadModal)) {
+          document.body.removeChild(loadModal);
+        }
+        if (deleteModal && document.body.contains(deleteModal)) {
+          document.body.removeChild(deleteModal);
+        }
+
         settingsModalInstance.classList.remove("ytls-fade-in");
         settingsModalInstance.classList.add("ytls-fade-out");
         setTimeout(() => {
@@ -3366,9 +3427,11 @@ if (hash && hash.length > 1) {
       // Check if clicked outside all modals
       const saveModal = document.getElementById('ytls-save-modal');
       const loadModal = document.getElementById('ytls-load-modal');
+      const deleteModal = document.getElementById('ytls-delete-all-modal');
 
       const clickedInsideAnyModal = (saveModal && saveModal.contains(event.target)) ||
                                     (loadModal && loadModal.contains(event.target)) ||
+                                    (deleteModal && deleteModal.contains(event.target)) ||
                                     (settingsModalInstance && settingsModalInstance.contains(event.target));
 
       if (!clickedInsideAnyModal) {
@@ -3378,6 +3441,9 @@ if (hash && hash.length > 1) {
         }
         if (loadModal && document.body.contains(loadModal)) {
           document.body.removeChild(loadModal);
+        }
+        if (deleteModal && document.body.contains(deleteModal)) {
+          document.body.removeChild(deleteModal);
         }
 
         // Then close settings modal
@@ -3412,13 +3478,18 @@ if (hash && hash.length > 1) {
       message.textContent = "Save as:";
 
       let escapeHandler: ((event: KeyboardEvent) => void) | null = null;
+      let clickOutsideHandler: ((event: MouseEvent) => void) | null = null;
       const closeSaveModal = createModalCloseHandler(modal, () => {
         if (escapeHandler) {
           document.removeEventListener('keydown', escapeHandler);
         }
+        if (clickOutsideHandler) {
+          document.removeEventListener('click', clickOutsideHandler, true);
+        }
       });
 
       escapeHandler = createEscapeKeyHandler(closeSaveModal);
+      clickOutsideHandler = createClickOutsideHandler(modal, closeSaveModal);
 
       const jsonButton = document.createElement("button");
       jsonButton.textContent = "JSON";
@@ -3426,6 +3497,9 @@ if (hash && hash.length > 1) {
       jsonButton.onclick = () => {
         if (escapeHandler) {
           document.removeEventListener('keydown', escapeHandler);
+        }
+        if (clickOutsideHandler) {
+          document.removeEventListener('click', clickOutsideHandler, true);
         }
         createModalCloseHandler(modal, () => saveTimestampsAs("json"))();
       };
@@ -3436,6 +3510,9 @@ if (hash && hash.length > 1) {
       textButton.onclick = () => {
         if (escapeHandler) {
           document.removeEventListener('keydown', escapeHandler);
+        }
+        if (clickOutsideHandler) {
+          document.removeEventListener('click', clickOutsideHandler, true);
         }
         createModalCloseHandler(modal, () => saveTimestampsAs("text"))();
       };
@@ -3452,6 +3529,7 @@ if (hash && hash.length > 1) {
       document.body.appendChild(modal);
 
       registerModalEscapeHandler(escapeHandler);
+      registerModalClickOutsideHandler(clickOutsideHandler);
     };
 
     // Add a load button to the buttons section
@@ -3469,13 +3547,18 @@ if (hash && hash.length > 1) {
       loadMessage.textContent = "Load from:";
 
       let escapeHandler: ((event: KeyboardEvent) => void) | null = null;
+      let clickOutsideHandler: ((event: MouseEvent) => void) | null = null;
       const closeLoadModal = createModalCloseHandler(loadModal, () => {
         if (escapeHandler) {
           document.removeEventListener('keydown', escapeHandler);
         }
+        if (clickOutsideHandler) {
+          document.removeEventListener('click', clickOutsideHandler, true);
+        }
       });
 
       escapeHandler = createEscapeKeyHandler(closeLoadModal);
+      clickOutsideHandler = createClickOutsideHandler(loadModal, closeLoadModal);
 
       const fromFileButton = document.createElement("button");
       fromFileButton.textContent = "File";
@@ -3495,6 +3578,9 @@ if (hash && hash.length > 1) {
           if (escapeHandler) {
             document.removeEventListener('keydown', escapeHandler);
           }
+          if (clickOutsideHandler) {
+            document.removeEventListener('click', clickOutsideHandler, true);
+          }
           closeLoadModal();
 
           const reader = new FileReader();
@@ -3513,6 +3599,9 @@ if (hash && hash.length > 1) {
       fromClipboardButton.onclick = async () => {
         if (escapeHandler) {
           document.removeEventListener('keydown', escapeHandler);
+        }
+        if (clickOutsideHandler) {
+          document.removeEventListener('click', clickOutsideHandler, true);
         }
         createModalCloseHandler(loadModal, async () => {
           try {
@@ -3541,6 +3630,7 @@ if (hash && hash.length > 1) {
       document.body.appendChild(loadModal);
 
       registerModalEscapeHandler(escapeHandler);
+      registerModalClickOutsideHandler(clickOutsideHandler);
     };
 
     // Add export button to the buttons section

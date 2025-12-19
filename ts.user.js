@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.1.7
+// @version      4.1.8
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -392,7 +392,8 @@
     box-shadow:0 0 10px rgba(0,0,0,0.5);
   }
   #ytls-save-modal,
-  #ytls-load-modal {
+  #ytls-load-modal,
+  #ytls-delete-all-modal {
     position:fixed;
     top:50%;
     left:50%;
@@ -537,7 +538,8 @@
 
   /* Shared styles for modal copy */
   #ytls-save-modal p,
-  #ytls-load-modal p {
+  #ytls-load-modal p,
+  #ytls-delete-all-modal p {
     margin-bottom:15px;
     font-size:16px;
   }
@@ -3746,6 +3748,18 @@ Next backup: ${nextBackupTime}`;
           document.addEventListener("keydown", escapeHandler);
         }, 0);
       };
+      const createClickOutsideHandler = (modal, closeHandler) => {
+        return (event) => {
+          if (!modal.contains(event.target)) {
+            closeHandler();
+          }
+        };
+      };
+      const registerModalClickOutsideHandler = (clickOutsideHandler) => {
+        setTimeout(() => {
+          document.addEventListener("click", clickOutsideHandler, true);
+        }, 0);
+      };
       const handleAddTimestamp = () => {
         if (!list || list.querySelector(".ytls-error-message") || isLoadingTimestamps) {
           return;
@@ -3836,7 +3850,7 @@ Next backup: ${nextBackupTime}`;
           return;
         }
         const modal = document.createElement("div");
-        modal.id = "ytls-save-modal";
+        modal.id = "ytls-delete-all-modal";
         modal.classList.remove("ytls-fade-out");
         modal.classList.add("ytls-fade-in");
         const message = document.createElement("p");
@@ -3918,13 +3932,18 @@ Next backup: ${nextBackupTime}`;
         confirmButton.onmouseup = resetButton;
         confirmButton.onmouseleave = resetButton;
         let escapeHandler = null;
+        let clickOutsideHandler = null;
         const closeDeleteModal = createModalCloseHandler(modal, () => {
           resetButton();
           if (escapeHandler) {
             document.removeEventListener("keydown", escapeHandler);
           }
+          if (clickOutsideHandler) {
+            document.removeEventListener("click", clickOutsideHandler, true);
+          }
         });
         escapeHandler = createEscapeKeyHandler(closeDeleteModal);
+        clickOutsideHandler = createClickOutsideHandler(modal, closeDeleteModal);
         const cancelButton = document.createElement("button");
         cancelButton.textContent = "Cancel";
         cancelButton.classList.add("ytls-save-modal-cancel-button");
@@ -3935,6 +3954,7 @@ Next backup: ${nextBackupTime}`;
         modal.appendChild(cancelButton);
         document.body.appendChild(modal);
         registerModalEscapeHandler(escapeHandler);
+        registerModalClickOutsideHandler(clickOutsideHandler);
       };
       const mainButtonConfigs = [
         { label: "\u{1F423}", title: "Add timestamp", action: handleAddTimestamp },
@@ -3978,6 +3998,18 @@ Next backup: ${nextBackupTime}`;
       }
       function toggleSettingsModal(initialTab = "general") {
         if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
+          const saveModal = document.getElementById("ytls-save-modal");
+          const loadModal = document.getElementById("ytls-load-modal");
+          const deleteModal = document.getElementById("ytls-delete-all-modal");
+          if (saveModal && document.body.contains(saveModal)) {
+            document.body.removeChild(saveModal);
+          }
+          if (loadModal && document.body.contains(loadModal)) {
+            document.body.removeChild(loadModal);
+          }
+          if (deleteModal && document.body.contains(deleteModal)) {
+            document.body.removeChild(deleteModal);
+          }
           settingsModalInstance.classList.remove("ytls-fade-in");
           settingsModalInstance.classList.add("ytls-fade-out");
           setTimeout(() => {
@@ -4004,6 +4036,18 @@ Next backup: ${nextBackupTime}`;
         addTooltip(closeButton, "Close");
         closeButton.onclick = () => {
           if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
+            const saveModal = document.getElementById("ytls-save-modal");
+            const loadModal = document.getElementById("ytls-load-modal");
+            const deleteModal = document.getElementById("ytls-delete-all-modal");
+            if (saveModal && document.body.contains(saveModal)) {
+              document.body.removeChild(saveModal);
+            }
+            if (loadModal && document.body.contains(loadModal)) {
+              document.body.removeChild(loadModal);
+            }
+            if (deleteModal && document.body.contains(deleteModal)) {
+              document.body.removeChild(deleteModal);
+            }
             settingsModalInstance.classList.remove("ytls-fade-in");
             settingsModalInstance.classList.add("ytls-fade-out");
             setTimeout(() => {
@@ -4144,10 +4188,20 @@ Next backup: ${nextBackupTime}`;
         if (event.key === "Escape" && settingsModalInstance && settingsModalInstance.parentNode === document.body) {
           const saveModal = document.getElementById("ytls-save-modal");
           const loadModal = document.getElementById("ytls-load-modal");
-          if (saveModal || loadModal) {
+          const deleteModal = document.getElementById("ytls-delete-all-modal");
+          if (saveModal || loadModal || deleteModal) {
             return;
           }
           event.preventDefault();
+          if (saveModal && document.body.contains(saveModal)) {
+            document.body.removeChild(saveModal);
+          }
+          if (loadModal && document.body.contains(loadModal)) {
+            document.body.removeChild(loadModal);
+          }
+          if (deleteModal && document.body.contains(deleteModal)) {
+            document.body.removeChild(deleteModal);
+          }
           settingsModalInstance.classList.remove("ytls-fade-in");
           settingsModalInstance.classList.add("ytls-fade-out");
           setTimeout(() => {
@@ -4166,13 +4220,17 @@ Next backup: ${nextBackupTime}`;
         }
         const saveModal = document.getElementById("ytls-save-modal");
         const loadModal = document.getElementById("ytls-load-modal");
-        const clickedInsideAnyModal = saveModal && saveModal.contains(event.target) || loadModal && loadModal.contains(event.target) || settingsModalInstance && settingsModalInstance.contains(event.target);
+        const deleteModal = document.getElementById("ytls-delete-all-modal");
+        const clickedInsideAnyModal = saveModal && saveModal.contains(event.target) || loadModal && loadModal.contains(event.target) || deleteModal && deleteModal.contains(event.target) || settingsModalInstance && settingsModalInstance.contains(event.target);
         if (!clickedInsideAnyModal) {
           if (saveModal && document.body.contains(saveModal)) {
             document.body.removeChild(saveModal);
           }
           if (loadModal && document.body.contains(loadModal)) {
             document.body.removeChild(loadModal);
+          }
+          if (deleteModal && document.body.contains(deleteModal)) {
+            document.body.removeChild(deleteModal);
           }
           if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
             settingsModalInstance.classList.remove("ytls-fade-in");
@@ -4199,18 +4257,26 @@ Next backup: ${nextBackupTime}`;
         const message = document.createElement("p");
         message.textContent = "Save as:";
         let escapeHandler = null;
+        let clickOutsideHandler = null;
         const closeSaveModal = createModalCloseHandler(modal, () => {
           if (escapeHandler) {
             document.removeEventListener("keydown", escapeHandler);
           }
+          if (clickOutsideHandler) {
+            document.removeEventListener("click", clickOutsideHandler, true);
+          }
         });
         escapeHandler = createEscapeKeyHandler(closeSaveModal);
+        clickOutsideHandler = createClickOutsideHandler(modal, closeSaveModal);
         const jsonButton = document.createElement("button");
         jsonButton.textContent = "JSON";
         jsonButton.classList.add("ytls-save-modal-button");
         jsonButton.onclick = () => {
           if (escapeHandler) {
             document.removeEventListener("keydown", escapeHandler);
+          }
+          if (clickOutsideHandler) {
+            document.removeEventListener("click", clickOutsideHandler, true);
           }
           createModalCloseHandler(modal, () => saveTimestampsAs("json"))();
         };
@@ -4220,6 +4286,9 @@ Next backup: ${nextBackupTime}`;
         textButton.onclick = () => {
           if (escapeHandler) {
             document.removeEventListener("keydown", escapeHandler);
+          }
+          if (clickOutsideHandler) {
+            document.removeEventListener("click", clickOutsideHandler, true);
           }
           createModalCloseHandler(modal, () => saveTimestampsAs("text"))();
         };
@@ -4233,6 +4302,7 @@ Next backup: ${nextBackupTime}`;
         modal.appendChild(cancelButton);
         document.body.appendChild(modal);
         registerModalEscapeHandler(escapeHandler);
+        registerModalClickOutsideHandler(clickOutsideHandler);
       };
       const loadBtn = document.createElement("button");
       loadBtn.textContent = "\u{1F4C2} Load";
@@ -4245,12 +4315,17 @@ Next backup: ${nextBackupTime}`;
         const loadMessage = document.createElement("p");
         loadMessage.textContent = "Load from:";
         let escapeHandler = null;
+        let clickOutsideHandler = null;
         const closeLoadModal = createModalCloseHandler(loadModal, () => {
           if (escapeHandler) {
             document.removeEventListener("keydown", escapeHandler);
           }
+          if (clickOutsideHandler) {
+            document.removeEventListener("click", clickOutsideHandler, true);
+          }
         });
         escapeHandler = createEscapeKeyHandler(closeLoadModal);
+        clickOutsideHandler = createClickOutsideHandler(loadModal, closeLoadModal);
         const fromFileButton = document.createElement("button");
         fromFileButton.textContent = "File";
         fromFileButton.classList.add("ytls-save-modal-button");
@@ -4264,6 +4339,9 @@ Next backup: ${nextBackupTime}`;
             if (!file) return;
             if (escapeHandler) {
               document.removeEventListener("keydown", escapeHandler);
+            }
+            if (clickOutsideHandler) {
+              document.removeEventListener("click", clickOutsideHandler, true);
             }
             closeLoadModal();
             const reader = new FileReader();
@@ -4281,6 +4359,9 @@ Next backup: ${nextBackupTime}`;
         fromClipboardButton.onclick = async () => {
           if (escapeHandler) {
             document.removeEventListener("keydown", escapeHandler);
+          }
+          if (clickOutsideHandler) {
+            document.removeEventListener("click", clickOutsideHandler, true);
           }
           createModalCloseHandler(loadModal, async () => {
             try {
@@ -4306,6 +4387,7 @@ Next backup: ${nextBackupTime}`;
         loadModal.appendChild(cancelLoadButton);
         document.body.appendChild(loadModal);
         registerModalEscapeHandler(escapeHandler);
+        registerModalClickOutsideHandler(clickOutsideHandler);
       };
       const exportBtn = document.createElement("button");
       exportBtn.textContent = "\u{1F4E4} Export";

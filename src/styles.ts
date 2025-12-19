@@ -190,7 +190,8 @@ export const PANE_STYLES = `
     box-shadow:0 0 10px rgba(0,0,0,0.5);
   }
   #ytls-save-modal,
-  #ytls-load-modal {
+  #ytls-load-modal,
+  #ytls-delete-all-modal {
     position:fixed;
     top:50%;
     left:50%;
@@ -335,7 +336,8 @@ export const PANE_STYLES = `
 
   /* Shared styles for modal copy */
   #ytls-save-modal p,
-  #ytls-load-modal p {
+  #ytls-load-modal p,
+  #ytls-delete-all-modal p {
     margin-bottom:15px;
     font-size:16px;
   }
