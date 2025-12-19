@@ -128,9 +128,17 @@
     border-radius: 5px;
     padding: 5px;
     cursor: pointer;
+    position: relative;
   }
   .ytls-main-button:hover {
     background: rgb(63, 63, 63);
+  }
+  .ytls-holiday-emoji {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    font-size: 0.25em;
+    pointer-events: none;
   }
 
   /* Pane header and utility styles */
@@ -3608,12 +3616,10 @@
         button.classList.add("ytls-main-button");
         const holidayEmoji = getHolidayEmojiForBase(config.label);
         if (holidayEmoji) {
-          button.addEventListener("mouseenter", () => {
-            button.textContent = holidayEmoji;
-          });
-          button.addEventListener("mouseleave", () => {
-            button.textContent = config.label;
-          });
+          const holidayEmojiSpan = document.createElement("span");
+          holidayEmojiSpan.textContent = holidayEmoji;
+          holidayEmojiSpan.classList.add("ytls-holiday-emoji");
+          button.appendChild(holidayEmojiSpan);
         }
         if (config.label === "\u{1F4CB}") {
           button.onclick = function(e) {

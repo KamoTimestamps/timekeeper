@@ -106,9 +106,17 @@ export const PANE_STYLES = `
     border-radius: 5px;
     padding: 5px;
     cursor: pointer;
+    position: relative;
   }
   .ytls-main-button:hover {
     background: rgb(63, 63, 63);
+  }
+  .ytls-holiday-emoji {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    font-size: 0.25em;
+    pointer-events: none;
   }
 
   /* Pane header and utility styles */

@@ -3135,12 +3135,10 @@ if (hash && hash.length > 1) {
       // Check if this button has a holiday emoji variant
       const holidayEmoji = getHolidayEmojiForBase(config.label);
       if (holidayEmoji) {
-        button.addEventListener("mouseenter", () => {
-          button.textContent = holidayEmoji;
-        });
-        button.addEventListener("mouseleave", () => {
-          button.textContent = config.label;
-        });
+        const holidayEmojiSpan = document.createElement("span");
+        holidayEmojiSpan.textContent = holidayEmoji;
+        holidayEmojiSpan.classList.add("ytls-holiday-emoji");
+        button.appendChild(holidayEmojiSpan);
       }
 
       if (config.label === "📋") {
