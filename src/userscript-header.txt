@@ -13,7 +13,7 @@
 // @grant        GM.setClipboard
 // @homepageURL  https://github.com/KamoTimestamps/timekeeper
 // @supportURL   https://github.com/KamoTimestamps/timekeeper/issues
-// @downloadURL  https://raw.githubusercontent.com/KamoTimestamps/timekeeper/main/ts.user.js
-// @updateURL    https://raw.githubusercontent.com/KamoTimestamps/timekeeper/main/ts.user.js
+// @downloadURL  https://raw.githubusercontent.com/KamoTimestamps/timekeeper/main/timekeeper.user.js
+// @updateURL    https://raw.githubusercontent.com/KamoTimestamps/timekeeper/main/timekeeper.user.js
 // @license MIT
 // ==/UserScript==

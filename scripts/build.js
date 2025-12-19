@@ -6,7 +6,8 @@ const repoRoot = path.join(__dirname, '..');
 const headerTemplateFile = path.join(repoRoot, 'src', 'userscript-header.txt');
 const packageJsonFile = path.join(repoRoot, 'package.json');
 const distDir = path.join(repoRoot, 'dist');
-const userscriptFile = path.join(repoRoot, 'ts.user.js');
+const userscriptFile = path.join(repoRoot, 'timekeeper.user.js');
+const legacyUserscriptFile = path.join(repoRoot, 'ts.user.js');
 
 function readHeaderTemplate() {
   if (!fs.existsSync(headerTemplateFile)) {
@@ -58,8 +59,9 @@ async function buildUserscript() {
 
   fs.writeFileSync(path.join(distDir, 'timekeeper.js'), `${finalContent}\n`, 'utf8');
   fs.writeFileSync(userscriptFile, `${finalContent}\n`, 'utf8');
+  fs.writeFileSync(legacyUserscriptFile, `${finalContent}\n`, 'utf8');
 
-  console.log('✓ Built single bundled userscript to ts.user.js');
+  console.log('✓ Built single bundled userscript to timekeeper.user.js and ts.user.js');
 }
 
 buildUserscript().catch(err => {
