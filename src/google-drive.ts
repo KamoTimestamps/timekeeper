@@ -44,6 +44,7 @@ export let autoBackupBackoffMs: number | null = null;
 export let googleUserDisplay: any = null;
 export let backupStatusDisplay: any = null;
 export let authStatusDisplay: any = null;
+export let backupStatusIndicator: any = null;
 
 // Helper functions to set display elements
 export function setGoogleUserDisplay(el: HTMLElement | null) {
@@ -56,6 +57,10 @@ export function setBackupStatusDisplay(el: HTMLElement | null) {
 
 export function setAuthStatusDisplay(el: HTMLElement | null) {
   authStatusDisplay = el;
+}
+
+export function setBackupStatusIndicator(el: HTMLElement | null) {
+  backupStatusIndicator = el;
 }
 
 let authSpinnerStylesInjected = false;
@@ -150,20 +155,34 @@ export function updateAuthStatusDisplay(status?: 'authenticating' | 'error', mes
   if (status === 'error') {
     authStatusDisplay.textContent = `❌ ${message || 'Authorization failed'}`;
     authStatusDisplay.style.color = '#ff4d4f';
+    updateBackupStatusIndicator();
     return;
   }
   if (!googleAuthState.isSignedIn) {
     authStatusDisplay.textContent = '❌ Not signed in';
     authStatusDisplay.style.color = '#ff4d4f';
     authStatusDisplay.removeAttribute('title');
+    authStatusDisplay.onmouseenter = null;
+    authStatusDisplay.onmouseleave = null;
   } else {
-    const displayName = googleAuthState.userName || 'Signed in';
-    authStatusDisplay.textContent = `✅ ${displayName}`;
+    authStatusDisplay.textContent = `✅ Signed in`;
     authStatusDisplay.style.color = '#52c41a';
-    if (googleAuthState.email) {
-      authStatusDisplay.title = googleAuthState.email;
+    authStatusDisplay.removeAttribute('title');
+
+    // Change text on hover to show username
+    if (googleAuthState.userName) {
+      authStatusDisplay.onmouseenter = () => {
+        authStatusDisplay.textContent = `✅ Signed in as ${googleAuthState.userName}`;
+      };
+      authStatusDisplay.onmouseleave = () => {
+        authStatusDisplay.textContent = `✅ Signed in`;
+      };
+    } else {
+      authStatusDisplay.onmouseenter = null;
+      authStatusDisplay.onmouseleave = null;
     }
   }
+  updateBackupStatusIndicator();
 }
 
 export function blinkAuthStatusDisplay() {
@@ -671,20 +690,86 @@ export function formatBackupTime(ts: number): string {
 export function updateBackupStatusDisplay() {
   if (!backupStatusDisplay) return;
   let text = '';
+  let hoverText = '';
+
   if (!autoBackupEnabled) {
     text = '🔁 Backup: Off';
+    backupStatusDisplay.onmouseenter = null;
+    backupStatusDisplay.onmouseleave = null;
   } else if (isAutoBackupRunning) {
     text = '🔁 Backing up…';
+    backupStatusDisplay.onmouseenter = null;
+    backupStatusDisplay.onmouseleave = null;
   } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
     const mins = Math.ceil(autoBackupBackoffMs / 60000);
     text = `⚠️ Retry in ${mins}m`;
+    backupStatusDisplay.onmouseenter = null;
+    backupStatusDisplay.onmouseleave = null;
   } else if (lastAutoBackupAt) {
     text = `🗄️ Last backup: ${formatBackupTime(lastAutoBackupAt)}`;
+    const nextBackupAt = lastAutoBackupAt + (Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
+    const nextBackupTime = formatBackupTime(nextBackupAt);
+    hoverText = `🗄️ Next backup: ${nextBackupTime}`;
+
+    backupStatusDisplay.onmouseenter = () => {
+      backupStatusDisplay.textContent = hoverText;
+    };
+    backupStatusDisplay.onmouseleave = () => {
+      backupStatusDisplay.textContent = text;
+    };
   } else {
     text = '🗄️ Last backup: never';
+    const nextBackupAt = Date.now() + (Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
+    const nextBackupTime = formatBackupTime(nextBackupAt);
+    hoverText = `🗄️ Next backup: ${nextBackupTime}`;
+
+    backupStatusDisplay.onmouseenter = () => {
+      backupStatusDisplay.textContent = hoverText;
+    };
+    backupStatusDisplay.onmouseleave = () => {
+      backupStatusDisplay.textContent = text;
+    };
   }
+
   backupStatusDisplay.textContent = text;
   backupStatusDisplay.style.display = text ? 'inline' : 'none';
+
+  updateBackupStatusIndicator();
+}
+
+export function updateBackupStatusIndicator() {
+  if (!backupStatusIndicator) return;
+
+  let color = '';
+  let tooltip = '';
+
+  if (!autoBackupEnabled) {
+    color = '#ff4d4f'; // Red - off
+    tooltip = 'Auto backup is disabled';
+  } else if (isAutoBackupRunning) {
+    color = '#ffa500'; // Yellow - in progress
+    tooltip = 'Backup in progress';
+  } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
+    color = '#ffa500'; // Yellow - retrying
+    const mins = Math.ceil(autoBackupBackoffMs / 60000);
+    tooltip = `Retrying backup in ${mins}m`;
+  } else if (googleAuthState.isSignedIn && lastAutoBackupAt) {
+    color = '#52c41a'; // Green - healthy
+    const nextBackupAt = lastAutoBackupAt + (Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
+    const nextBackupTime = formatBackupTime(nextBackupAt);
+    tooltip = `Last backup: ${formatBackupTime(lastAutoBackupAt)}\nNext backup: ${nextBackupTime}`;
+  } else if (googleAuthState.isSignedIn) {
+    color = '#ffa500'; // Yellow - no backup yet
+    const nextBackupAt = Date.now() + (Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
+    const nextBackupTime = formatBackupTime(nextBackupAt);
+    tooltip = `No backup yet\nNext backup: ${nextBackupTime}`;
+  } else {
+    color = '#ff4d4f'; // Red - not signed in
+    tooltip = 'Not signed in to Google Drive';
+  }
+
+  backupStatusIndicator.style.backgroundColor = color;
+  backupStatusIndicator.title = tooltip;
 }
 
 export async function runAutoBackupOnce(silent = true) {

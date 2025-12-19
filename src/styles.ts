@@ -163,6 +163,17 @@ export const PANE_STYLES = `
     position:relative;
   }
 
+  /* Backup status indicator (colored dot) */
+  .ytls-backup-indicator {
+    display:inline-block;
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background-color:#666;
+    cursor:help;
+    flex-shrink:0;
+  }
+
   /* Shared modal container styles */
   #ytls-settings-modal {
     position:fixed;

@@ -126,6 +126,7 @@ if (hash && hash.length > 1) {
   let timeDisplay: HTMLSpanElement | null = null;
   let style: HTMLStyleElement | null = null;
   let versionDisplay: HTMLSpanElement | null = null;
+  let backupStatusIndicator: HTMLSpanElement | null = null;
   let timeUpdateIntervalId: ReturnType<typeof setInterval> | null = null;
   let isLoadingTimestamps = false; // Track if timestamps are currently loading
   const TIMESTAMP_DELETE_CLASS = "ytls-timestamp-pending-delete";
@@ -2678,6 +2679,14 @@ if (hash && hash.length > 1) {
     timeDisplay = document.createElement("span");
     style = document.createElement("style");
     versionDisplay = document.createElement("span");
+    backupStatusIndicator = document.createElement("span");
+    backupStatusIndicator.classList.add("ytls-backup-indicator");
+    backupStatusIndicator.style.cursor = "pointer";
+    backupStatusIndicator.style.backgroundColor = "#666"; // Default gray color
+    backupStatusIndicator.onclick = (e) => {
+      e.stopPropagation();
+      toggleSettingsModal('drive');
+    };
 
     // Add event listeners to `list` after it is initialized
     list.addEventListener("mouseenter", () => {
@@ -2722,7 +2731,7 @@ if (hash && hash.length > 1) {
 
   header.addEventListener("dblclick", (event) => {
     const target = event.target instanceof HTMLElement ? event.target : null;
-    if (target && (target.closest("a") || target.closest("button") || target.closest("#ytls-current-time") || target.closest(".ytls-version-display"))) {
+    if (target && (target.closest("a") || target.closest("button") || target.closest("#ytls-current-time") || target.closest(".ytls-version-display") || target.closest(".ytls-backup-indicator"))) {
       return;
     }
     event.preventDefault();
@@ -2732,6 +2741,14 @@ if (hash && hash.length > 1) {
     const scriptVersion = GM_info.script.version; // Get script version
     versionDisplay.textContent = `v${scriptVersion}`;
     versionDisplay.classList.add("ytls-version-display"); // Add class for CSS targeting
+
+    // Create a wrapper for version and backup indicator
+    const versionWrapper = document.createElement("span");
+    versionWrapper.style.display = "inline-flex";
+    versionWrapper.style.alignItems = "center";
+    versionWrapper.style.gap = "6px";
+    versionWrapper.appendChild(versionDisplay);
+    versionWrapper.appendChild(backupStatusIndicator);
 
     timeDisplay.id = "ytls-current-time";
     timeDisplay.textContent = "⏳";
@@ -3025,7 +3042,7 @@ if (hash && hash.length > 1) {
     // Configuration for main buttons
     const mainButtonConfigs = [
       { label: "🐣", title: "Add timestamp", action: handleAddTimestamp },
-      { label: "⚙️", title: "Settings", action: toggleSettingsModal }, // Changed action
+      { label: "⚙️", title: "Settings", action: () => toggleSettingsModal() }, // Changed action
       { label: "📋", title: "Copy timestamps to clipboard", action: handleCopyTimestamps },
         { label: "⏱️", title: "Offset all timestamps", action: handleBulkOffset },
       { label: "🗑️", title: "Delete all timestamps for current video", action: handleDeleteAll }
@@ -3072,7 +3089,7 @@ if (hash && hash.length > 1) {
     }
 
     // Function to create and toggle the settings modal
-    function toggleSettingsModal() {
+    function toggleSettingsModal(initialTab: 'general' | 'drive' = 'general') {
       if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
         // Modal exists and is visible, so close it with fade-out
         settingsModalInstance.classList.remove("ytls-fade-in");
@@ -3249,7 +3266,7 @@ if (hash && hash.length > 1) {
       settingsContent.appendChild(sectionHeading);
       settingsContent.appendChild(generalSection)
       settingsContent.appendChild(driveSection);
-      showSection('general');
+      showSection(initialTab);
 
       settingsModalInstance.appendChild(settingsContent);
       document.body.appendChild(settingsModalInstance);
@@ -3691,7 +3708,7 @@ if (hash && hash.length > 1) {
     });
 
     header.appendChild(timeDisplay); // Add timeDisplay
-    header.appendChild(versionDisplay); // Add versionDisplay to header
+    header.appendChild(versionWrapper); // Add version wrapper with indicator to header
 
     const content = document.createElement("div"); content.id = "ytls-content";
     content.append(list, btns); // list and btns are now directly in content; header is separate
@@ -3728,6 +3745,9 @@ if (hash && hash.length > 1) {
     if (typeof (GoogleDrive as any).setLoadGlobalSettings === 'function') {
       (GoogleDrive as any).setLoadGlobalSettings(loadGlobalSettings);
     }
+    if (typeof (GoogleDrive as any).setBackupStatusIndicator === 'function') {
+      (GoogleDrive as any).setBackupStatusIndicator(backupStatusIndicator);
+    }
 
     // Load Google auth state
     await GoogleDrive.loadGoogleAuthState();
@@ -3735,6 +3755,11 @@ if (hash && hash.length > 1) {
     // Load auto backup settings and schedule if applicable
     await GoogleDrive.loadAutoBackupSettings();
     await GoogleDrive.scheduleAutoBackup();
+
+    // Update backup status indicator after everything is loaded
+    if (typeof (GoogleDrive as any).updateBackupStatusIndicator === 'function') {
+      (GoogleDrive as any).updateBackupStatusIndicator();
+    }
 
     // Now append the pane with the correct minimized state already applied
     document.body.appendChild(pane);

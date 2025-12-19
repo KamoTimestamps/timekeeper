@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.1.2
+// @version      4.1.3
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -272,6 +272,17 @@
     font-size:14px;
     cursor:pointer;
     position:relative;
+  }
+
+  /* Backup status indicator (colored dot) */
+  .ytls-backup-indicator {
+    display:inline-block;
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background-color:#666;
+    cursor:help;
+    flex-shrink:0;
   }
 
   /* Shared modal container styles */
@@ -593,6 +604,7 @@
   var googleUserDisplay = null;
   var backupStatusDisplay = null;
   var authStatusDisplay = null;
+  var backupStatusIndicator = null;
   function setGoogleUserDisplay(el) {
     googleUserDisplay = el;
   }
@@ -601,6 +613,9 @@
   }
   function setAuthStatusDisplay(el) {
     authStatusDisplay = el;
+  }
+  function setBackupStatusIndicator(el) {
+    backupStatusIndicator = el;
   }
   var authSpinnerStylesInjected = false;
   function ensureAuthSpinnerStyles() {
@@ -677,20 +692,32 @@
     if (status === "error") {
       authStatusDisplay.textContent = `\u274C ${message || "Authorization failed"}`;
       authStatusDisplay.style.color = "#ff4d4f";
+      updateBackupStatusIndicator();
       return;
     }
     if (!googleAuthState.isSignedIn) {
       authStatusDisplay.textContent = "\u274C Not signed in";
       authStatusDisplay.style.color = "#ff4d4f";
       authStatusDisplay.removeAttribute("title");
+      authStatusDisplay.onmouseenter = null;
+      authStatusDisplay.onmouseleave = null;
     } else {
-      const displayName = googleAuthState.userName || "Signed in";
-      authStatusDisplay.textContent = `\u2705 ${displayName}`;
+      authStatusDisplay.textContent = `\u2705 Signed in`;
       authStatusDisplay.style.color = "#52c41a";
-      if (googleAuthState.email) {
-        authStatusDisplay.title = googleAuthState.email;
+      authStatusDisplay.removeAttribute("title");
+      if (googleAuthState.userName) {
+        authStatusDisplay.onmouseenter = () => {
+          authStatusDisplay.textContent = `\u2705 Signed in as ${googleAuthState.userName}`;
+        };
+        authStatusDisplay.onmouseleave = () => {
+          authStatusDisplay.textContent = `\u2705 Signed in`;
+        };
+      } else {
+        authStatusDisplay.onmouseenter = null;
+        authStatusDisplay.onmouseleave = null;
       }
     }
+    updateBackupStatusIndicator();
   }
   function blinkAuthStatusDisplay() {
     if (!authStatusDisplay) return;
@@ -1128,20 +1155,79 @@
   function updateBackupStatusDisplay() {
     if (!backupStatusDisplay) return;
     let text = "";
+    let hoverText = "";
     if (!autoBackupEnabled) {
       text = "\u{1F501} Backup: Off";
+      backupStatusDisplay.onmouseenter = null;
+      backupStatusDisplay.onmouseleave = null;
     } else if (isAutoBackupRunning) {
       text = "\u{1F501} Backing up\u2026";
+      backupStatusDisplay.onmouseenter = null;
+      backupStatusDisplay.onmouseleave = null;
     } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
       const mins = Math.ceil(autoBackupBackoffMs / 6e4);
       text = `\u26A0\uFE0F Retry in ${mins}m`;
+      backupStatusDisplay.onmouseenter = null;
+      backupStatusDisplay.onmouseleave = null;
     } else if (lastAutoBackupAt) {
       text = `\u{1F5C4}\uFE0F Last backup: ${formatBackupTime(lastAutoBackupAt)}`;
+      const nextBackupAt = lastAutoBackupAt + Math.max(1, autoBackupIntervalMinutes) * 60 * 1e3;
+      const nextBackupTime = formatBackupTime(nextBackupAt);
+      hoverText = `\u{1F5C4}\uFE0F Next backup: ${nextBackupTime}`;
+      backupStatusDisplay.onmouseenter = () => {
+        backupStatusDisplay.textContent = hoverText;
+      };
+      backupStatusDisplay.onmouseleave = () => {
+        backupStatusDisplay.textContent = text;
+      };
     } else {
       text = "\u{1F5C4}\uFE0F Last backup: never";
+      const nextBackupAt = Date.now() + Math.max(1, autoBackupIntervalMinutes) * 60 * 1e3;
+      const nextBackupTime = formatBackupTime(nextBackupAt);
+      hoverText = `\u{1F5C4}\uFE0F Next backup: ${nextBackupTime}`;
+      backupStatusDisplay.onmouseenter = () => {
+        backupStatusDisplay.textContent = hoverText;
+      };
+      backupStatusDisplay.onmouseleave = () => {
+        backupStatusDisplay.textContent = text;
+      };
     }
     backupStatusDisplay.textContent = text;
     backupStatusDisplay.style.display = text ? "inline" : "none";
+    updateBackupStatusIndicator();
+  }
+  function updateBackupStatusIndicator() {
+    if (!backupStatusIndicator) return;
+    let color = "";
+    let tooltip = "";
+    if (!autoBackupEnabled) {
+      color = "#ff4d4f";
+      tooltip = "Auto backup is disabled";
+    } else if (isAutoBackupRunning) {
+      color = "#ffa500";
+      tooltip = "Backup in progress";
+    } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
+      color = "#ffa500";
+      const mins = Math.ceil(autoBackupBackoffMs / 6e4);
+      tooltip = `Retrying backup in ${mins}m`;
+    } else if (googleAuthState.isSignedIn && lastAutoBackupAt) {
+      color = "#52c41a";
+      const nextBackupAt = lastAutoBackupAt + Math.max(1, autoBackupIntervalMinutes) * 60 * 1e3;
+      const nextBackupTime = formatBackupTime(nextBackupAt);
+      tooltip = `Last backup: ${formatBackupTime(lastAutoBackupAt)}
+Next backup: ${nextBackupTime}`;
+    } else if (googleAuthState.isSignedIn) {
+      color = "#ffa500";
+      const nextBackupAt = Date.now() + Math.max(1, autoBackupIntervalMinutes) * 60 * 1e3;
+      const nextBackupTime = formatBackupTime(nextBackupAt);
+      tooltip = `No backup yet
+Next backup: ${nextBackupTime}`;
+    } else {
+      color = "#ff4d4f";
+      tooltip = "Not signed in to Google Drive";
+    }
+    backupStatusIndicator.style.backgroundColor = color;
+    backupStatusIndicator.title = tooltip;
   }
   async function runAutoBackupOnce(silent = true) {
     if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
@@ -1303,6 +1389,7 @@
     let timeDisplay = null;
     let style = null;
     let versionDisplay = null;
+    let backupStatusIndicator2 = null;
     let timeUpdateIntervalId = null;
     let isLoadingTimestamps = false;
     const TIMESTAMP_DELETE_CLASS = "ytls-timestamp-pending-delete";
@@ -3326,6 +3413,14 @@
       timeDisplay = document.createElement("span");
       style = document.createElement("style");
       versionDisplay = document.createElement("span");
+      backupStatusIndicator2 = document.createElement("span");
+      backupStatusIndicator2.classList.add("ytls-backup-indicator");
+      backupStatusIndicator2.style.cursor = "pointer";
+      backupStatusIndicator2.style.backgroundColor = "#666";
+      backupStatusIndicator2.onclick = (e) => {
+        e.stopPropagation();
+        toggleSettingsModal("drive");
+      };
       list.addEventListener("mouseenter", () => {
         isMouseOverTimestamps = true;
         suppressSortUntilRefocus = false;
@@ -3359,7 +3454,7 @@
       header.id = "ytls-pane-header";
       header.addEventListener("dblclick", (event) => {
         const target = event.target instanceof HTMLElement ? event.target : null;
-        if (target && (target.closest("a") || target.closest("button") || target.closest("#ytls-current-time") || target.closest(".ytls-version-display"))) {
+        if (target && (target.closest("a") || target.closest("button") || target.closest("#ytls-current-time") || target.closest(".ytls-version-display") || target.closest(".ytls-backup-indicator"))) {
           return;
         }
         event.preventDefault();
@@ -3368,6 +3463,12 @@
       const scriptVersion = GM_info.script.version;
       versionDisplay.textContent = `v${scriptVersion}`;
       versionDisplay.classList.add("ytls-version-display");
+      const versionWrapper = document.createElement("span");
+      versionWrapper.style.display = "inline-flex";
+      versionWrapper.style.alignItems = "center";
+      versionWrapper.style.gap = "6px";
+      versionWrapper.appendChild(versionDisplay);
+      versionWrapper.appendChild(backupStatusIndicator2);
       timeDisplay.id = "ytls-current-time";
       timeDisplay.textContent = "\u23F3";
       timeDisplay.onclick = () => {
@@ -3622,7 +3723,7 @@
       };
       const mainButtonConfigs = [
         { label: "\u{1F423}", title: "Add timestamp", action: handleAddTimestamp },
-        { label: "\u2699\uFE0F", title: "Settings", action: toggleSettingsModal },
+        { label: "\u2699\uFE0F", title: "Settings", action: () => toggleSettingsModal() },
         // Changed action
         { label: "\u{1F4CB}", title: "Copy timestamps to clipboard", action: handleCopyTimestamps },
         { label: "\u23F1\uFE0F", title: "Offset all timestamps", action: handleBulkOffset },
@@ -3660,7 +3761,7 @@
         button.onclick = onClick;
         return button;
       }
-      function toggleSettingsModal() {
+      function toggleSettingsModal(initialTab = "general") {
         if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
           settingsModalInstance.classList.remove("ytls-fade-in");
           settingsModalInstance.classList.add("ytls-fade-out");
@@ -3802,7 +3903,7 @@
         settingsContent.appendChild(sectionHeading);
         settingsContent.appendChild(generalSection);
         settingsContent.appendChild(driveSection);
-        showSection("general");
+        showSection(initialTab);
         settingsModalInstance.appendChild(settingsContent);
         document.body.appendChild(settingsModalInstance);
         requestAnimationFrame(() => {
@@ -4159,7 +4260,7 @@
         }, 200);
       });
       header.appendChild(timeDisplay);
-      header.appendChild(versionDisplay);
+      header.appendChild(versionWrapper);
       const content = document.createElement("div");
       content.id = "ytls-content";
       content.append(list, btns);
@@ -4186,9 +4287,15 @@
       if (typeof setLoadGlobalSettings === "function") {
         setLoadGlobalSettings(loadGlobalSettings2);
       }
+      if (typeof setBackupStatusIndicator === "function") {
+        setBackupStatusIndicator(backupStatusIndicator2);
+      }
       await loadGoogleAuthState();
       await loadAutoBackupSettings();
       await scheduleAutoBackup();
+      if (typeof updateBackupStatusIndicator === "function") {
+        updateBackupStatusIndicator();
+      }
       document.body.appendChild(pane);
     }
     function addHeaderButton(attempt = 0) {
