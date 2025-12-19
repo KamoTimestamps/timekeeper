@@ -32,7 +32,7 @@ export let googleAuthState: GoogleAuthState = {
 };
 
 export let autoBackupEnabled = true;
-export let autoBackupIntervalMinutes = 15;
+export let autoBackupIntervalMinutes = 30;
 export let lastAutoBackupAt: number | null = null;
 export let isAutoBackupRunning = false;
 export let autoBackupRetryAttempts = 0;

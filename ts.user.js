@@ -488,7 +488,7 @@
     email: null
   };
   var autoBackupEnabled = true;
-  var autoBackupIntervalMinutes = 15;
+  var autoBackupIntervalMinutes = 30;
   var lastAutoBackupAt = null;
   var isAutoBackupRunning = false;
   var autoBackupRetryAttempts = 0;
