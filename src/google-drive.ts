@@ -3,6 +3,8 @@
  * Handles OAuth2 authentication, backup scheduling, and Drive uploads
  */
 
+import { log, getTimestampSuffix } from './util';
+
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
   setValue<T = unknown>(key: string, value: T): Promise<void>;
@@ -76,8 +78,6 @@ function ensureAuthSpinnerStyles() {
 export let buildExportPayload: any = null;
 export let saveGlobalSettings: any = null;
 export let loadGlobalSettings: any = null;
-export let log: any = null;
-export let getTimestampSuffix: any = null;
 
 // Helper functions to set callbacks
 export function setBuildExportPayload(fn: any) {
@@ -90,14 +90,6 @@ export function setSaveGlobalSettings(fn: any) {
 
 export function setLoadGlobalSettings(fn: any) {
   loadGlobalSettings = fn;
-}
-
-export function setLog(fn: any) {
-  log = fn;
-}
-
-export function setGetTimestampSuffix(fn: any) {
-  getTimestampSuffix = fn;
 }
 
 // Google OAuth2 Configuration
@@ -607,6 +599,15 @@ export async function exportAllTimestampsToGoogleDrive(opts?: { silent?: boolean
   }
   try {
     const { json, filename, totalVideos, totalTimestamps } = await buildExportPayload();
+
+    // Don't export if there are no entries
+    if (totalTimestamps === 0) {
+      if (!opts?.silent) {
+        log('Skipping export: no timestamps to back up');
+      }
+      return;
+    }
+
     const folderId = await ensureDriveFolder(googleAuthState.accessToken);
     await uploadJsonToDrive(filename, json, folderId, googleAuthState.accessToken);
     log(`Exported to Google Drive (${filename}) with ${totalVideos} videos / ${totalTimestamps} timestamps.`);

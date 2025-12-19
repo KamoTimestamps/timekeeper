@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.1.1
+// @version      4.1.2
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -621,8 +621,6 @@
   var buildExportPayload = null;
   var saveGlobalSettings = null;
   var loadGlobalSettings = null;
-  var log2 = null;
-  var getTimestampSuffix2 = null;
   function setBuildExportPayload(fn) {
     buildExportPayload = fn;
   }
@@ -631,12 +629,6 @@
   }
   function setLoadGlobalSettings(fn) {
     loadGlobalSettings = fn;
-  }
-  function setLog(fn) {
-    log2 = fn;
-  }
-  function setGetTimestampSuffix(fn) {
-    getTimestampSuffix2 = fn;
   }
   var GOOGLE_CLIENT_ID = "1023528652072-45cu3dr7o5j79vsdn8643bhle9ee8kds.apps.googleusercontent.com";
   var GOOGLE_SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile";
@@ -654,14 +646,14 @@
         updateGoogleUserDisplay();
       }
     } catch (err) {
-      log2("Failed to load Google auth state:", err, "error");
+      log("Failed to load Google auth state:", err, "error");
     }
   }
   async function saveGoogleAuthState() {
     try {
       await saveGlobalSettings("googleAuthState", googleAuthState);
     } catch (err) {
-      log2("Failed to save Google auth state:", err, "error");
+      log("Failed to save Google auth state:", err, "error");
     }
   }
   function updateGoogleUserDisplay() {
@@ -713,11 +705,11 @@
   function monitorOAuthPopup(popup) {
     return new Promise((resolve, reject) => {
       if (!popup) {
-        if (log2) log2("OAuth monitor: popup is null", null, "error");
+        if (log) log("OAuth monitor: popup is null", null, "error");
         reject(new Error("Failed to open popup"));
         return;
       }
-      if (log2) log2("OAuth monitor: starting to monitor popup for token");
+      if (log) log("OAuth monitor: starting to monitor popup for token");
       const start = Date.now();
       const timeoutMs = 5 * 60 * 1e3;
       const channelName = "timekeeper_oauth";
@@ -743,11 +735,11 @@
       };
       try {
         channel = new BroadcastChannel(channelName);
-        if (log2) log2("OAuth monitor: BroadcastChannel created successfully");
+        if (log) log("OAuth monitor: BroadcastChannel created successfully");
         channel.onmessage = (event) => {
-          if (log2) log2("OAuth monitor: received BroadcastChannel message", event.data);
+          if (log) log("OAuth monitor: received BroadcastChannel message", event.data);
           if (event.data?.type === "timekeeper_oauth_token" && event.data?.token) {
-            if (log2) log2("OAuth monitor: token received via BroadcastChannel");
+            if (log) log("OAuth monitor: token received via BroadcastChannel");
             cleanup();
             try {
               popup.close();
@@ -755,7 +747,7 @@
             }
             resolve(event.data.token);
           } else if (event.data?.type === "timekeeper_oauth_error") {
-            if (log2) log2("OAuth monitor: error received via BroadcastChannel", event.data.error, "error");
+            if (log) log("OAuth monitor: error received via BroadcastChannel", event.data.error, "error");
             cleanup();
             try {
               popup.close();
@@ -765,9 +757,9 @@
           }
         };
       } catch (err) {
-        if (log2) log2("OAuth monitor: BroadcastChannel not supported, using IndexedDB fallback", err);
+        if (log) log("OAuth monitor: BroadcastChannel not supported, using IndexedDB fallback", err);
       }
-      if (log2) log2("OAuth monitor: setting up IndexedDB polling");
+      if (log) log("OAuth monitor: setting up IndexedDB polling");
       let lastCheckedTimestamp = Date.now();
       const pollIndexedDB = async () => {
         try {
@@ -782,9 +774,9 @@
               if (result && result.value) {
                 const data = result.value;
                 if (data.timestamp && data.timestamp > lastCheckedTimestamp) {
-                  if (log2) log2("OAuth monitor: received IndexedDB message", data);
+                  if (log) log("OAuth monitor: received IndexedDB message", data);
                   if (data.type === "timekeeper_oauth_token" && data.token) {
-                    if (log2) log2("OAuth monitor: token received via IndexedDB");
+                    if (log) log("OAuth monitor: token received via IndexedDB");
                     cleanup();
                     try {
                       popup.close();
@@ -794,7 +786,7 @@
                     delTx.objectStore("settings").delete("oauth_message");
                     resolve(data.token);
                   } else if (data.type === "timekeeper_oauth_error") {
-                    if (log2) log2("OAuth monitor: error received via IndexedDB", data.error, "error");
+                    if (log) log("OAuth monitor: error received via IndexedDB", data.error, "error");
                     cleanup();
                     try {
                       popup.close();
@@ -811,14 +803,14 @@
             };
           };
         } catch (err) {
-          if (log2) log2("OAuth monitor: IndexedDB polling error", err, "error");
+          if (log) log("OAuth monitor: IndexedDB polling error", err, "error");
         }
       };
       storageListener = setInterval(pollIndexedDB, 500);
       checkInterval = setInterval(() => {
         const elapsed = Date.now() - start;
         if (elapsed > timeoutMs) {
-          if (log2) log2("OAuth monitor: popup timed out after 5 minutes", null, "error");
+          if (log) log("OAuth monitor: popup timed out after 5 minutes", null, "error");
           cleanup();
           try {
             popup.close();
@@ -836,7 +828,7 @@
       return;
     }
     try {
-      if (log2) log2("OAuth signin: starting OAuth flow");
+      if (log) log("OAuth signin: starting OAuth flow");
       updateAuthStatusDisplay("authenticating", "Opening authentication window...");
       const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
       authUrl.searchParams.set("client_id", GOOGLE_CLIENT_ID);
@@ -845,18 +837,18 @@
       authUrl.searchParams.set("scope", GOOGLE_SCOPES);
       authUrl.searchParams.set("include_granted_scopes", "true");
       authUrl.searchParams.set("state", "timekeeper_auth");
-      if (log2) log2("OAuth signin: opening popup");
+      if (log) log("OAuth signin: opening popup");
       const popup = window.open(
         authUrl.toString(),
         "TimekeeperGoogleAuth",
         "width=500,height=600,menubar=no,toolbar=no,location=no"
       );
       if (!popup) {
-        if (log2) log2("OAuth signin: popup blocked by browser", null, "error");
+        if (log) log("OAuth signin: popup blocked by browser", null, "error");
         updateAuthStatusDisplay("error", "Popup blocked. Please enable popups for YouTube.");
         return;
       }
-      if (log2) log2("OAuth signin: popup opened successfully");
+      if (log) log("OAuth signin: popup opened successfully");
       updateAuthStatusDisplay("authenticating", "Waiting for authentication...");
       try {
         const accessToken = await monitorOAuthPopup(popup);
@@ -872,8 +864,8 @@
           await saveGoogleAuthState();
           updateGoogleUserDisplay();
           updateAuthStatusDisplay();
-          if (log2) {
-            log2(`Successfully authenticated as ${userInfo.name}`);
+          if (log) {
+            log(`Successfully authenticated as ${userInfo.name}`);
           } else {
             console.log(`[Timekeeper] Successfully authenticated as ${userInfo.name}`);
           }
@@ -882,8 +874,8 @@
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Authentication failed";
-        if (log2) {
-          log2("OAuth failed:", err, "error");
+        if (log) {
+          log("OAuth failed:", err, "error");
         } else {
           console.error("[Timekeeper] OAuth failed:", err);
         }
@@ -892,8 +884,8 @@
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Sign in failed";
-      if (log2) {
-        log2("Failed to sign in to Google:", err, "error");
+      if (log) {
+        log("Failed to sign in to Google:", err, "error");
       } else {
         console.error("[Timekeeper] Failed to sign in to Google:", err);
       }
@@ -904,18 +896,18 @@
     if (!window.opener || window.opener === window) {
       return false;
     }
-    if (log2) log2("OAuth popup: detected popup window, checking for OAuth response");
+    if (log) log("OAuth popup: detected popup window, checking for OAuth response");
     const hash2 = window.location.hash;
     if (!hash2 || hash2.length <= 1) {
-      if (log2) log2("OAuth popup: no hash params found");
+      if (log) log("OAuth popup: no hash params found");
       return false;
     }
     const hashContent = hash2.startsWith("#") ? hash2.substring(1) : hash2;
     const params = new URLSearchParams(hashContent);
     const state = params.get("state");
-    if (log2) log2("OAuth popup: hash params found, state=" + state);
+    if (log) log("OAuth popup: hash params found, state=" + state);
     if (state !== "timekeeper_auth") {
-      if (log2) log2("OAuth popup: not our OAuth flow (wrong state)");
+      if (log) log("OAuth popup: not our OAuth flow (wrong state)");
       return false;
     }
     const error = params.get("error");
@@ -952,7 +944,7 @@
       return true;
     }
     if (token) {
-      if (log2) log2("OAuth popup: access token found, broadcasting to opener");
+      if (log) log("OAuth popup: access token found, broadcasting to opener");
       try {
         const channel = new BroadcastChannel(channelName);
         channel.postMessage({
@@ -960,9 +952,9 @@
           token
         });
         channel.close();
-        if (log2) log2("OAuth popup: token broadcast via BroadcastChannel");
+        if (log) log("OAuth popup: token broadcast via BroadcastChannel");
       } catch (err) {
-        if (log2) log2("OAuth popup: BroadcastChannel failed, using IndexedDB", err);
+        if (log) log("OAuth popup: BroadcastChannel failed, using IndexedDB", err);
         const message = {
           type: "timekeeper_oauth_token",
           token,
@@ -975,7 +967,7 @@
           tx.objectStore("settings").put({ key: "oauth_message", value: message });
           db.close();
         };
-        if (log2) log2("OAuth popup: token broadcast via IndexedDB");
+        if (log) log("OAuth popup: token broadcast via IndexedDB");
       }
       setTimeout(() => {
         try {
@@ -1073,14 +1065,20 @@
     }
     try {
       const { json, filename, totalVideos, totalTimestamps } = await buildExportPayload();
+      if (totalTimestamps === 0) {
+        if (!opts?.silent) {
+          log("Skipping export: no timestamps to back up");
+        }
+        return;
+      }
       const folderId = await ensureDriveFolder(googleAuthState.accessToken);
       await uploadJsonToDrive(filename, json, folderId, googleAuthState.accessToken);
-      log2(`Exported to Google Drive (${filename}) with ${totalVideos} videos / ${totalTimestamps} timestamps.`);
+      log(`Exported to Google Drive (${filename}) with ${totalVideos} videos / ${totalTimestamps} timestamps.`);
     } catch (err) {
       if (err.message === "unauthorized") {
         if (!opts?.silent) updateAuthStatusDisplay("error", "Authorization expired. Please sign in again.");
       } else {
-        log2("Drive export failed:", err, "error");
+        log("Drive export failed:", err, "error");
         if (!opts?.silent) updateAuthStatusDisplay("error", "Failed to export to Google Drive.");
       }
     }
@@ -1094,7 +1092,7 @@
       if (typeof interval === "number" && interval > 0) autoBackupIntervalMinutes = interval;
       if (typeof lastAt === "number" && lastAt > 0) lastAutoBackupAt = lastAt;
     } catch (err) {
-      log2("Failed to load auto backup settings:", err, "error");
+      log("Failed to load auto backup settings:", err, "error");
     }
   }
   async function saveAutoBackupSettings() {
@@ -1103,7 +1101,7 @@
       await saveGlobalSettings("autoBackupIntervalMinutes", autoBackupIntervalMinutes);
       await saveGlobalSettings("lastAutoBackupAt", lastAutoBackupAt ?? 0);
     } catch (err) {
-      log2("Failed to save auto backup settings:", err, "error");
+      log("Failed to save auto backup settings:", err, "error");
     }
   }
   function clearAutoBackupSchedule() {
@@ -1166,7 +1164,7 @@
       }
       await saveAutoBackupSettings();
     } catch (err) {
-      log2("Auto backup failed:", err, "error");
+      log("Auto backup failed:", err, "error");
       if (autoBackupRetryAttempts < AUTO_BACKUP_MAX_RETRY_ATTEMPTS) {
         autoBackupRetryAttempts += 1;
         const base = AUTO_BACKUP_INITIAL_BACKOFF_MS;
@@ -1275,7 +1273,6 @@
     function earlySaveGlobalSettings(key, value) {
       return GM.setValue(`timekeeper_${key}`, JSON.stringify(value));
     }
-    setLog(log);
     setLoadGlobalSettings(earlyLoadGlobalSettings);
     setSaveGlobalSettings(earlySaveGlobalSettings);
     const isOAuthPopup = await handleOAuthPopup();
@@ -4188,12 +4185,6 @@
       }
       if (typeof setLoadGlobalSettings === "function") {
         setLoadGlobalSettings(loadGlobalSettings2);
-      }
-      if (typeof setLog === "function") {
-        setLog(log);
-      }
-      if (typeof setGetTimestampSuffix === "function") {
-        setGetTimestampSuffix(getTimestampSuffix);
       }
       await loadGoogleAuthState();
       await loadAutoBackupSettings();

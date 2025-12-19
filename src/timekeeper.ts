@@ -89,7 +89,6 @@ if (hash && hash.length > 1) {
   }
 
   // Initialize GoogleDrive callbacks early for OAuth handling
-  (GoogleDrive as any).setLog(log);
   (GoogleDrive as any).setLoadGlobalSettings(earlyLoadGlobalSettings);
   (GoogleDrive as any).setSaveGlobalSettings(earlySaveGlobalSettings);
 
@@ -3728,12 +3727,6 @@ if (hash && hash.length > 1) {
     }
     if (typeof (GoogleDrive as any).setLoadGlobalSettings === 'function') {
       (GoogleDrive as any).setLoadGlobalSettings(loadGlobalSettings);
-    }
-    if (typeof (GoogleDrive as any).setLog === 'function') {
-      (GoogleDrive as any).setLog(log);
-    }
-    if (typeof (GoogleDrive as any).setGetTimestampSuffix === 'function') {
-      (GoogleDrive as any).setGetTimestampSuffix(getTimestampSuffix);
     }
 
     // Load Google auth state
