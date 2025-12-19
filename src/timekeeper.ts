@@ -33,15 +33,25 @@ if (hash && hash.length > 1) {
         channel.close();
         console.log('[Timekeeper] Token broadcast via BroadcastChannel completed');
       } catch (e) {
-        console.log('[Timekeeper] BroadcastChannel failed, using localStorage fallback:', e);
-        // Fallback to localStorage for cross-tab communication
+        console.log('[Timekeeper] BroadcastChannel failed, using IndexedDB fallback:', e);
+        // Fallback to IndexedDB for cross-tab communication
         const message = {
           type: 'timekeeper_oauth_token',
           token: token,
           timestamp: Date.now()
         };
-        localStorage.setItem('timekeeper_oauth_message', JSON.stringify(message));
-        console.log('[Timekeeper] Token broadcast via localStorage completed, timestamp:', message.timestamp);
+        // Direct IndexedDB write (can't use async helper here as it's not defined yet)
+        const openReq = indexedDB.open('ytls-timestamps-db', 3);
+        openReq.onsuccess = () => {
+          const db = openReq.result;
+          const tx = db.transaction('settings', 'readwrite');
+          const store = tx.objectStore('settings');
+          store.put({ key: 'oauth_message', value: message });
+          tx.oncomplete = () => {
+            console.log('[Timekeeper] Token broadcast via IndexedDB completed, timestamp:', message.timestamp);
+            db.close();
+          };
+        };
       }
 
       // Clean up the hash from the URL
@@ -2448,6 +2458,39 @@ if (hash && hash.length > 1) {
       log(`Failed to load setting '${key}' from IndexedDB:`, err, 'error');
       return undefined;
     });
+  }
+
+  // IndexedDB-based message passing for OAuth (replaces localStorage)
+  async function saveOAuthMessage(message: { type: string; token?: string; error?: string; timestamp: number }): Promise<void> {
+    try {
+      await executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
+        store.put({ key: 'oauth_message', value: message });
+      });
+    } catch (err) {
+      log('Failed to save OAuth message to IndexedDB:', err, 'error');
+    }
+  }
+
+  async function loadOAuthMessage(): Promise<{ type: string; token?: string; error?: string; timestamp: number } | null> {
+    try {
+      const result = await executeTransaction(SETTINGS_STORE_NAME, 'readonly', (store) => {
+        return store.get('oauth_message');
+      });
+      return (result as { value?: { type: string; token?: string; error?: string; timestamp: number } } | undefined)?.value ?? null;
+    } catch (err) {
+      log('Failed to load OAuth message from IndexedDB:', err, 'error');
+      return null;
+    }
+  }
+
+  async function deleteOAuthMessage(): Promise<void> {
+    try {
+      await executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
+        store.delete('oauth_message');
+      });
+    } catch (err) {
+      log('Failed to delete OAuth message from IndexedDB:', err, 'error');
+    }
   }
 
 

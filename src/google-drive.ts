@@ -209,7 +209,7 @@ function monitorOAuthPopup(popup: Window | null): Promise<string> {
         channel = null;
       }
       if (storageListener) {
-        window.removeEventListener('storage', storageListener);
+        clearInterval(storageListener as any);
         storageListener = null;
       }
       if (checkInterval) {
@@ -237,35 +237,55 @@ function monitorOAuthPopup(popup: Window | null): Promise<string> {
         }
       };
     } catch (err) {
-      if (log) log('OAuth monitor: BroadcastChannel not supported, using localStorage fallback', err);
+      if (log) log('OAuth monitor: BroadcastChannel not supported, using IndexedDB fallback', err);
     }
 
-    // Fallback: localStorage event listener (works across tabs in all browsers)
-    if (log) log('OAuth monitor: setting up localStorage listener');
-    storageListener = (event: StorageEvent) => {
-      if (event.key === 'timekeeper_oauth_message' && event.newValue) {
-        if (log) log('OAuth monitor: received localStorage message', event.newValue);
-        try {
-          const data = JSON.parse(event.newValue);
-          if (data.type === 'timekeeper_oauth_token' && data.token) {
-            if (log) log('OAuth monitor: token received via localStorage');
-            cleanup();
-            try { popup.close(); } catch (_) {}
-            localStorage.removeItem('timekeeper_oauth_message');
-            resolve(data.token);
-          } else if (data.type === 'timekeeper_oauth_error') {
-            if (log) log('OAuth monitor: error received via localStorage', data.error, 'error');
-            cleanup();
-            try { popup.close(); } catch (_) {}
-            localStorage.removeItem('timekeeper_oauth_message');
-            reject(new Error(data.error || 'OAuth failed'));
-          }
-        } catch (err) {
-          if (log) log('OAuth monitor: failed to parse localStorage message', err, 'error');
-        }
+    // Fallback: Poll IndexedDB for messages (works across tabs in all browsers)
+    if (log) log('OAuth monitor: setting up IndexedDB polling');
+    let lastCheckedTimestamp = Date.now();
+    const pollIndexedDB = async () => {
+      try {
+        const openReq = indexedDB.open('ytls-timestamps-db', 3);
+        openReq.onsuccess = () => {
+          const db = openReq.result;
+          const tx = db.transaction('settings', 'readonly');
+          const store = tx.objectStore('settings');
+          const getReq = store.get('oauth_message');
+          getReq.onsuccess = () => {
+            const result = getReq.result;
+            if (result && result.value) {
+              const data = result.value;
+              if (data.timestamp && data.timestamp > lastCheckedTimestamp) {
+                if (log) log('OAuth monitor: received IndexedDB message', data);
+                if (data.type === 'timekeeper_oauth_token' && data.token) {
+                  if (log) log('OAuth monitor: token received via IndexedDB');
+                  cleanup();
+                  try { popup.close(); } catch (_) {}
+                  // Delete the message
+                  const delTx = db.transaction('settings', 'readwrite');
+                  delTx.objectStore('settings').delete('oauth_message');
+                  resolve(data.token);
+                } else if (data.type === 'timekeeper_oauth_error') {
+                  if (log) log('OAuth monitor: error received via IndexedDB', data.error, 'error');
+                  cleanup();
+                  try { popup.close(); } catch (_) {}
+                  // Delete the message
+                  const delTx = db.transaction('settings', 'readwrite');
+                  delTx.objectStore('settings').delete('oauth_message');
+                  reject(new Error(data.error || 'OAuth failed'));
+                }
+                lastCheckedTimestamp = data.timestamp;
+              }
+            }
+            db.close();
+          };
+        };
+      } catch (err) {
+        if (log) log('OAuth monitor: IndexedDB polling error', err, 'error');
       }
     };
-    window.addEventListener('storage', storageListener);
+    // Poll every 500ms
+    storageListener = setInterval(pollIndexedDB, 500) as any;
 
     // Only check for timeout - don't check popup.closed as it's unreliable during cross-origin navigation
     // Rely on BroadcastChannel/localStorage messages to know when OAuth completes or fails
@@ -410,11 +430,19 @@ export async function handleOAuthPopup() {
       });
       channel.close();
     } catch (_) {
-      // Fallback to localStorage
-      localStorage.setItem('timekeeper_oauth_message', JSON.stringify({
+      // Fallback to IndexedDB
+      const message = {
         type: 'timekeeper_oauth_error',
-        error: params.get('error_description') || error
-      }));
+        error: params.get('error_description') || error,
+        timestamp: Date.now()
+      };
+      const openReq = indexedDB.open('ytls-timestamps-db', 3);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction('settings', 'readwrite');
+        tx.objectStore('settings').put({ key: 'oauth_message', value: message });
+        db.close();
+      };
     }
 
     // Close popup after a brief delay
@@ -436,13 +464,21 @@ export async function handleOAuthPopup() {
       channel.close();
       if (log) log('OAuth popup: token broadcast via BroadcastChannel');
     } catch (err) {
-      if (log) log('OAuth popup: BroadcastChannel failed, using localStorage', err);
-      // Fallback to localStorage
-      localStorage.setItem('timekeeper_oauth_message', JSON.stringify({
+      if (log) log('OAuth popup: BroadcastChannel failed, using IndexedDB', err);
+      // Fallback to IndexedDB
+      const message = {
         type: 'timekeeper_oauth_token',
-        token: token
-      }));
-      if (log) log('OAuth popup: token broadcast via localStorage');
+        token: token,
+        timestamp: Date.now()
+      };
+      const openReq = indexedDB.open('ytls-timestamps-db', 3);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction('settings', 'readwrite');
+        tx.objectStore('settings').put({ key: 'oauth_message', value: message });
+        db.close();
+      };
+      if (log) log('OAuth popup: token broadcast via IndexedDB');
     }
 
     // Close popup after a brief delay
