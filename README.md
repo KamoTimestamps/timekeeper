@@ -12,5 +12,5 @@ We're unable to call the functions needed to determine if a stream is live in Gr
 
 [violent]: https://violentmonkey.github.io/
 [tamper]: https://www.tampermonkey.net/
-[install]: https://github.com/KamoTimestamps/timekeeper/raw/refs/heads/main/ts.user.js
+[install]: https://github.com/KamoTimestamps/timekeeper/raw/refs/heads/main/timekeeper.user.js
 [userscript]: https://en.wikipedia.org/wiki/Userscript

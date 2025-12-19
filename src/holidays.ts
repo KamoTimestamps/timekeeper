@@ -7,32 +7,44 @@ export interface HolidayConfig {
   name: string;
 }
 
-// Holiday configuration - can be extended with more holidays
+// Holiday dates and emoji configuration
 export const holidayEmojis: HolidayConfig[] = [
   {
-    emoji: "🌲",
-    month: 12, // December
-    day: 25,
-    name: "Christmas"
-  },
-  {
     emoji: "🥂",
-    month: 1, // January
+    month: 1,
     day: 1,
     name: "New Year's Day"
   },
   {
     emoji: "💝",
-    month: 2, // February
+    month: 2,
     day: 14,
     name: "Valentine's Day"
   },
   {
+    emoji: "🦆",
+    month: 5,
+    day: 25,
+    name: "Kanna's Debut Anniversary"
+  },
+  {
     emoji: "🎃",
-    month: 10, // October
+    month: 10,
     day: 31,
     name: "Halloween"
-  }
+  },
+  {
+    emoji: "🎂",
+    month: 9,
+    day: 15,
+    name: "Kanna's Birthday"
+  },
+  {
+    emoji: "🌲",
+    month: 12,
+    day: 25,
+    name: "Christmas"
+  },
 ];
 
 // Check if current date is within 7 days before or 3 days after any holiday
