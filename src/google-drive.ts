@@ -32,7 +32,7 @@ export let googleAuthState: GoogleAuthState = {
 };
 
 export let autoBackupEnabled = true;
-export let autoBackupIntervalMinutes = 60;
+export let autoBackupIntervalMinutes = 15;
 export let lastAutoBackupAt: number | null = null;
 export let isAutoBackupRunning = false;
 export let autoBackupRetryAttempts = 0;
@@ -135,16 +135,11 @@ export async function saveGoogleAuthState() {
 // Update the username display
 export function updateGoogleUserDisplay() {
   if (!googleUserDisplay) return;
-  if (googleAuthState.isSignedIn && googleAuthState.userName) {
-    googleUserDisplay.textContent = `👤 ${googleAuthState.userName}`;
-    googleUserDisplay.style.display = 'inline';
-    googleUserDisplay.title = googleAuthState.email || googleAuthState.userName;
-  } else {
-    googleUserDisplay.style.display = 'none';
-  }
+  // User info is now shown in auth status display, so hide this separate element
+  googleUserDisplay.style.display = 'none';
 }
 
-export function updateAuthStatusDisplay(status?: 'authenticating' | 'error') {
+export function updateAuthStatusDisplay(status?: 'authenticating' | 'error', message?: string) {
   if (!authStatusDisplay) return;
   authStatusDisplay.style.fontWeight = 'bold';
   if (status === 'authenticating') {
@@ -153,22 +148,27 @@ export function updateAuthStatusDisplay(status?: 'authenticating' | 'error') {
     while (authStatusDisplay.firstChild) authStatusDisplay.removeChild(authStatusDisplay.firstChild);
     const spinner = document.createElement('span');
     spinner.className = 'tk-auth-spinner';
-    const text = document.createTextNode(' Authorizing with Google…');
+    const text = document.createTextNode(` ${message || 'Authorizing with Google…'}`);
     authStatusDisplay.appendChild(spinner);
     authStatusDisplay.appendChild(text);
     return;
   }
   if (status === 'error') {
-    authStatusDisplay.textContent = '❌ Authorization failed';
+    authStatusDisplay.textContent = `❌ ${message || 'Authorization failed'}`;
     authStatusDisplay.style.color = '#ff4d4f';
     return;
   }
   if (!googleAuthState.isSignedIn) {
     authStatusDisplay.textContent = '❌ Not signed in';
     authStatusDisplay.style.color = '#ff4d4f';
+    authStatusDisplay.removeAttribute('title');
   } else {
-    authStatusDisplay.textContent = `✅ ${googleAuthState.userName || 'Signed in'}`;
+    const displayName = googleAuthState.userName || 'Signed in';
+    authStatusDisplay.textContent = `✅ ${displayName}`;
     authStatusDisplay.style.color = '#52c41a';
+    if (googleAuthState.email) {
+      authStatusDisplay.title = googleAuthState.email;
+    }
   }
 }
 
@@ -272,13 +272,13 @@ function monitorOAuthPopup(popup: Window | null): Promise<string> {
 // Sign in to Google Drive using popup (no page redirect)
 export async function signInToGoogle() {
   if (!GOOGLE_CLIENT_ID) {
-    alert('Google Client ID not configured. Please set GOOGLE_CLIENT_ID in the script.');
+    updateAuthStatusDisplay('error', 'Google Client ID not configured');
     return;
   }
 
   try {
     if (log) log('OAuth signin: starting OAuth flow');
-    updateAuthStatusDisplay('authenticating');
+    updateAuthStatusDisplay('authenticating', 'Opening authentication window...');
     // Build the OAuth URL
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
@@ -298,9 +298,11 @@ export async function signInToGoogle() {
 
     if (!popup) {
       if (log) log('OAuth signin: popup blocked by browser', null, 'error');
-      throw new Error('Popup blocked. Please enable popups for YouTube.');
+      updateAuthStatusDisplay('error', 'Popup blocked. Please enable popups for YouTube.');
+      return;
     }
     if (log) log('OAuth signin: popup opened successfully');
+    updateAuthStatusDisplay('authenticating', 'Waiting for authentication...');
 
     try {
       // Wait for OAuth token from popup via postMessage
@@ -334,21 +336,23 @@ export async function signInToGoogle() {
         throw new Error('Failed to fetch user info');
       }
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
       if (log) {
         log('OAuth failed:', err, 'error');
       } else {
         console.error('[Timekeeper] OAuth failed:', err);
       }
-      updateAuthStatusDisplay('error');
-      throw err;
+      updateAuthStatusDisplay('error', errorMessage);
+      return;
     }
   } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : 'Sign in failed';
     if (log) {
       log('Failed to sign in to Google:', err, 'error');
     } else {
       console.error('[Timekeeper] Failed to sign in to Google:', err);
     }
-    alert(`Failed to sign in to Google Drive: ${err.message}`);
+    updateAuthStatusDisplay('error', `Failed to sign in: ${errorMessage}`);
   }
 }
 
@@ -452,7 +456,6 @@ export async function signOutFromGoogle() {
   await saveGoogleAuthState();
   updateGoogleUserDisplay();
   updateAuthStatusDisplay();
-  alert('Signed out from Google Drive.');
 }
 
 // Ensure a folder named "Timekeeper" exists in Google Drive
@@ -515,7 +518,9 @@ async function uploadJsonToDrive(filename: string, json: string, folderId: strin
 // Export all timestamps to Google Drive
 export async function exportAllTimestampsToGoogleDrive(opts?: { silent?: boolean }): Promise<void> {
   if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
-    if (!opts?.silent) alert('Please sign in to Google Drive in Settings first.');
+    if (!opts?.silent) {
+      updateAuthStatusDisplay('error', 'Please sign in to Google Drive first');
+    }
     return;
   }
   try {
@@ -523,13 +528,12 @@ export async function exportAllTimestampsToGoogleDrive(opts?: { silent?: boolean
     const folderId = await ensureDriveFolder(googleAuthState.accessToken);
     await uploadJsonToDrive(filename, json, folderId, googleAuthState.accessToken);
     log(`Exported to Google Drive (${filename}) with ${totalVideos} videos / ${totalTimestamps} timestamps.`);
-    if (!opts?.silent) alert('Exported to Google Drive: ' + filename);
   } catch (err) {
     if ((err as Error).message === 'unauthorized') {
-      if (!opts?.silent) alert('Google authorization expired. Please sign in again in Settings.');
+      if (!opts?.silent) updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
     } else {
       log('Drive export failed:', err, 'error');
-      if (!opts?.silent) alert('Failed to export to Google Drive.');
+      if (!opts?.silent) updateAuthStatusDisplay('error', 'Failed to export to Google Drive.');
     }
   }
 }

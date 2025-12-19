@@ -392,7 +392,7 @@
     email: null
   };
   var autoBackupEnabled = true;
-  var autoBackupIntervalMinutes = 60;
+  var autoBackupIntervalMinutes = 15;
   var lastAutoBackupAt = null;
   var isAutoBackupRunning = false;
   var autoBackupRetryAttempts = 0;
@@ -471,15 +471,9 @@
   }
   function updateGoogleUserDisplay() {
     if (!googleUserDisplay) return;
-    if (googleAuthState.isSignedIn && googleAuthState.userName) {
-      googleUserDisplay.textContent = `\u{1F464} ${googleAuthState.userName}`;
-      googleUserDisplay.style.display = "inline";
-      googleUserDisplay.title = googleAuthState.email || googleAuthState.userName;
-    } else {
-      googleUserDisplay.style.display = "none";
-    }
+    googleUserDisplay.style.display = "none";
   }
-  function updateAuthStatusDisplay(status) {
+  function updateAuthStatusDisplay(status, message) {
     if (!authStatusDisplay) return;
     authStatusDisplay.style.fontWeight = "bold";
     if (status === "authenticating") {
@@ -488,22 +482,27 @@
       while (authStatusDisplay.firstChild) authStatusDisplay.removeChild(authStatusDisplay.firstChild);
       const spinner = document.createElement("span");
       spinner.className = "tk-auth-spinner";
-      const text = document.createTextNode(" Authorizing with Google\u2026");
+      const text = document.createTextNode(` ${message || "Authorizing with Google\u2026"}`);
       authStatusDisplay.appendChild(spinner);
       authStatusDisplay.appendChild(text);
       return;
     }
     if (status === "error") {
-      authStatusDisplay.textContent = "\u274C Authorization failed";
+      authStatusDisplay.textContent = `\u274C ${message || "Authorization failed"}`;
       authStatusDisplay.style.color = "#ff4d4f";
       return;
     }
     if (!googleAuthState.isSignedIn) {
       authStatusDisplay.textContent = "\u274C Not signed in";
       authStatusDisplay.style.color = "#ff4d4f";
+      authStatusDisplay.removeAttribute("title");
     } else {
-      authStatusDisplay.textContent = `\u2705 ${googleAuthState.userName || "Signed in"}`;
+      const displayName = googleAuthState.userName || "Signed in";
+      authStatusDisplay.textContent = `\u2705 ${displayName}`;
       authStatusDisplay.style.color = "#52c41a";
+      if (googleAuthState.email) {
+        authStatusDisplay.title = googleAuthState.email;
+      }
     }
   }
   function monitorOAuthPopup(popup) {
@@ -611,12 +610,12 @@
   }
   async function signInToGoogle() {
     if (!GOOGLE_CLIENT_ID) {
-      alert("Google Client ID not configured. Please set GOOGLE_CLIENT_ID in the script.");
+      updateAuthStatusDisplay("error", "Google Client ID not configured");
       return;
     }
     try {
       if (log) log("OAuth signin: starting OAuth flow");
-      updateAuthStatusDisplay("authenticating");
+      updateAuthStatusDisplay("authenticating", "Opening authentication window...");
       const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
       authUrl.searchParams.set("client_id", GOOGLE_CLIENT_ID);
       authUrl.searchParams.set("redirect_uri", GOOGLE_REDIRECT_URI);
@@ -632,9 +631,11 @@
       );
       if (!popup) {
         if (log) log("OAuth signin: popup blocked by browser", null, "error");
-        throw new Error("Popup blocked. Please enable popups for YouTube.");
+        updateAuthStatusDisplay("error", "Popup blocked. Please enable popups for YouTube.");
+        return;
       }
       if (log) log("OAuth signin: popup opened successfully");
+      updateAuthStatusDisplay("authenticating", "Waiting for authentication...");
       try {
         const accessToken = await monitorOAuthPopup(popup);
         const userInfoResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
@@ -658,21 +659,23 @@
           throw new Error("Failed to fetch user info");
         }
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Authentication failed";
         if (log) {
           log("OAuth failed:", err, "error");
         } else {
           console.error("[Timekeeper] OAuth failed:", err);
         }
-        updateAuthStatusDisplay("error");
-        throw err;
+        updateAuthStatusDisplay("error", errorMessage);
+        return;
       }
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Sign in failed";
       if (log) {
         log("Failed to sign in to Google:", err, "error");
       } else {
         console.error("[Timekeeper] Failed to sign in to Google:", err);
       }
-      alert(`Failed to sign in to Google Drive: ${err.message}`);
+      updateAuthStatusDisplay("error", `Failed to sign in: ${errorMessage}`);
     }
   }
   async function handleOAuthPopup() {
@@ -756,7 +759,6 @@
     await saveGoogleAuthState();
     updateGoogleUserDisplay();
     updateAuthStatusDisplay();
-    alert("Signed out from Google Drive.");
   }
   async function ensureDriveFolder(accessToken) {
     const headers = { Authorization: `Bearer ${accessToken}` };
@@ -805,7 +807,9 @@
   }
   async function exportAllTimestampsToGoogleDrive(opts) {
     if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
-      if (!opts?.silent) alert("Please sign in to Google Drive in Settings first.");
+      if (!opts?.silent) {
+        updateAuthStatusDisplay("error", "Please sign in to Google Drive first");
+      }
       return;
     }
     try {
@@ -813,13 +817,12 @@
       const folderId = await ensureDriveFolder(googleAuthState.accessToken);
       await uploadJsonToDrive(filename, json, folderId, googleAuthState.accessToken);
       log(`Exported to Google Drive (${filename}) with ${totalVideos} videos / ${totalTimestamps} timestamps.`);
-      if (!opts?.silent) alert("Exported to Google Drive: " + filename);
     } catch (err) {
       if (err.message === "unauthorized") {
-        if (!opts?.silent) alert("Google authorization expired. Please sign in again in Settings.");
+        if (!opts?.silent) updateAuthStatusDisplay("error", "Authorization expired. Please sign in again.");
       } else {
         log("Drive export failed:", err, "error");
-        if (!opts?.silent) alert("Failed to export to Google Drive.");
+        if (!opts?.silent) updateAuthStatusDisplay("error", "Failed to export to Google Drive.");
       }
     }
   }
@@ -984,13 +987,9 @@
           const cleanUrl = window.location.pathname + window.location.search;
           history.replaceState(null, "", cleanUrl);
         }
-        if (window.opener && window.opener !== window) {
-          console.log("[Timekeeper] Closing OAuth popup window");
-          setTimeout(() => {
-            window.close();
-          }, 500);
-          throw new Error("OAuth popup - stopping script execution");
-        }
+        console.log("[Timekeeper] Closing window after broadcasting auth token");
+        window.close();
+        throw new Error("OAuth window closed");
       }
     }
   }
@@ -2537,8 +2536,7 @@
           timestamps: timestamps.sort((a, b) => a.start - b.start)
         };
       }
-      const timestampSuffix = getTimestampSuffix2();
-      const filename = `timekeeper-data-${timestampSuffix}.json`;
+      const filename = `timekeeper-data.json`;
       const json = JSON.stringify(exportData, null, 2);
       return { json, filename, totalVideos: videoGroups.size, totalTimestamps: allTimestamps.length };
     }
@@ -3446,7 +3444,7 @@
           }
         }));
         const signButton = createButton(
-          googleAuthState.isSignedIn ? "\u{1F513} Sign Out of Google Drive" : "\u{1F510} Sign In to Google Drive",
+          googleAuthState.isSignedIn ? "\u{1F513} Sign Out" : "\u{1F510} Sign In",
           googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive",
           async () => {
             if (googleAuthState.isSignedIn) {
@@ -3454,12 +3452,11 @@
             } else {
               await signInToGoogle();
             }
-            signButton.textContent = googleAuthState.isSignedIn ? "\u{1F513} Sign Out of Google Drive" : "\u{1F510} Sign In to Google Drive";
+            signButton.textContent = googleAuthState.isSignedIn ? "\u{1F513} Sign Out" : "\u{1F510} Sign In";
             signButton.title = googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive";
           }
         );
         driveSection.appendChild(signButton);
-        driveSection.appendChild(createButton("\u{1F4E4} Export All (Google Drive)", "Export all data to Google Drive", () => exportAllTimestampsToGoogleDrive({ silent: false })));
         const autoToggleButton = createButton(
           autoBackupEnabled ? "\u{1F501} Auto Backup: On" : "\u{1F501} Auto Backup: Off",
           "Toggle Auto Backup",
@@ -3469,9 +3466,15 @@
           }
         );
         driveSection.appendChild(autoToggleButton);
-        driveSection.appendChild(createButton("\u23F1\uFE0F Set Backup Interval", "Set periodic backup interval (minutes)", async () => {
-          await setAutoBackupIntervalPrompt();
-        }));
+        const intervalButton = createButton(
+          `\u23F1\uFE0F Backup Interval: ${autoBackupIntervalMinutes}min`,
+          "Set periodic backup interval (minutes)",
+          async () => {
+            await setAutoBackupIntervalPrompt();
+            intervalButton.textContent = `\u23F1\uFE0F Backup Interval: ${autoBackupIntervalMinutes}min`;
+          }
+        );
+        driveSection.appendChild(intervalButton);
         driveSection.appendChild(createButton("\u{1F5C4}\uFE0F Backup Now", "Run a backup immediately", async () => {
           await runAutoBackupOnce(false);
         }));

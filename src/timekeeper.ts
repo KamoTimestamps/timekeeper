@@ -50,15 +50,11 @@ if (hash && hash.length > 1) {
         history.replaceState(null, '', cleanUrl);
       }
 
-      // Close window if it was opened as a popup
-      if (window.opener && window.opener !== window) {
-        console.log('[Timekeeper] Closing OAuth popup window');
-        setTimeout(() => {
-          window.close();
-        }, 500);
-        // Stop script execution in popup
-        throw new Error('OAuth popup - stopping script execution');
-      }
+      // Close window after broadcasting auth token
+      console.log('[Timekeeper] Closing window after broadcasting auth token');
+      window.close();
+      // Exit the module by throwing - this prevents the IIFE from running
+      throw new Error('OAuth window closed');
     }
   }
 }
@@ -2027,8 +2023,7 @@ if (hash && hash.length > 1) {
       };
     }
 
-    const timestampSuffix = getTimestampSuffix();
-    const filename = `timekeeper-data-${timestampSuffix}.json`;
+    const filename = `timekeeper-data.json`;
     const json = JSON.stringify(exportData, null, 2);
     return { json, filename, totalVideos: videoGroups.size, totalTimestamps: allTimestamps.length };
   }
@@ -3133,7 +3128,7 @@ if (hash && hash.length > 1) {
 
       // Build Google Drive section
       const signButton = createButton(
-        GoogleDrive.googleAuthState.isSignedIn ? "🔓 Sign Out of Google Drive" : "🔐 Sign In to Google Drive",
+        GoogleDrive.googleAuthState.isSignedIn ? "🔓 Sign Out" : "🔐 Sign In",
         GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive",
         async () => {
           if (GoogleDrive.googleAuthState.isSignedIn) {
@@ -3142,13 +3137,11 @@ if (hash && hash.length > 1) {
             await GoogleDrive.signInToGoogle();
           }
           // Update label after action
-          signButton.textContent = GoogleDrive.googleAuthState.isSignedIn ? "🔓 Sign Out of Google Drive" : "🔐 Sign In to Google Drive";
+          signButton.textContent = GoogleDrive.googleAuthState.isSignedIn ? "🔓 Sign Out" : "🔐 Sign In";
           signButton.title = GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive";
         }
       );
       driveSection.appendChild(signButton);
-
-      driveSection.appendChild(createButton("📤 Export All (Google Drive)", "Export all data to Google Drive", () => GoogleDrive.exportAllTimestampsToGoogleDrive({ silent: false })));
 
       const autoToggleButton = createButton(
         GoogleDrive.autoBackupEnabled ? "🔁 Auto Backup: On" : "🔁 Auto Backup: Off",
@@ -3160,15 +3153,21 @@ if (hash && hash.length > 1) {
       );
       driveSection.appendChild(autoToggleButton);
 
-      driveSection.appendChild(createButton("⏱️ Set Backup Interval", "Set periodic backup interval (minutes)", async () => {
-        await GoogleDrive.setAutoBackupIntervalPrompt();
-      }));
+      const intervalButton = createButton(
+        `⏱️ Backup Interval: ${GoogleDrive.autoBackupIntervalMinutes}min`,
+        "Set periodic backup interval (minutes)",
+        async () => {
+          await GoogleDrive.setAutoBackupIntervalPrompt();
+          intervalButton.textContent = `⏱️ Backup Interval: ${GoogleDrive.autoBackupIntervalMinutes}min`;
+        }
+      );
+      driveSection.appendChild(intervalButton);
 
       driveSection.appendChild(createButton("🗄️ Backup Now", "Run a backup immediately", async () => {
         await GoogleDrive.runAutoBackupOnce(false);
       }));
 
-      // Add status info displays
+      // Add status info displays at the bottom
       const infoContainer = document.createElement("div");
       infoContainer.style.marginTop = "15px";
       infoContainer.style.paddingTop = "10px";
