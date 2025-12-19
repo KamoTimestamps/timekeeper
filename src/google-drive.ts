@@ -747,7 +747,7 @@ export function updateBackupStatusIndicator() {
     color = '#ff4d4f'; // Red - off
     tooltip = 'Auto backup is disabled';
   } else if (isAutoBackupRunning) {
-    color = '#ffa500'; // Yellow - in progress
+    color = '#4285f4'; // Blue - in progress
     tooltip = 'Backup in progress';
   } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
     color = '#ffa500'; // Yellow - retrying

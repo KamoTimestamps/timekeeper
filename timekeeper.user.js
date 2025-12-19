@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.1.4
+// @version      4.1.5
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -1212,7 +1212,7 @@
       color = "#ff4d4f";
       tooltip = "Auto backup is disabled";
     } else if (isAutoBackupRunning) {
-      color = "#ffa500";
+      color = "#4285f4";
       tooltip = "Backup in progress";
     } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
       color = "#ffa500";
