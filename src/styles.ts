@@ -170,9 +170,6 @@ export const PANE_STYLES = `
     width:200px;
     box-shadow:0 0 10px rgba(0,0,0,0.5);
   }
-  #ytls-settings-modal {
-    position:fixed;
-  }
   #ytls-save-modal,
   #ytls-load-modal {
     position:fixed;
@@ -235,7 +232,6 @@ export const PANE_STYLES = `
     border-radius:0 4px 4px 4px;
     padding:10px;
     margin-top:-2px;
-    min-height:220px;
     position:relative;
     z-index:1;
   }

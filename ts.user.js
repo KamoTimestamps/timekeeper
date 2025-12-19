@@ -192,9 +192,6 @@
     width:200px;
     box-shadow:0 0 10px rgba(0,0,0,0.5);
   }
-  #ytls-settings-modal {
-    position:fixed;
-  }
   #ytls-save-modal,
   #ytls-load-modal {
     position:fixed;
@@ -257,7 +254,6 @@
     border-radius:0 4px 4px 4px;
     padding:10px;
     margin-top:-2px;
-    min-height:220px;
     position:relative;
     z-index:1;
   }
@@ -2102,6 +2098,7 @@
         }
       }
       const items = getTimestampItems();
+      const originalOrder = items.map((li) => li.dataset.guid);
       const sortedItems = items.map((li) => {
         const timeLink = li.querySelector("a[data-time]");
         const timeValue = timeLink?.dataset.time;
@@ -2121,6 +2118,8 @@
         }
         return a.guid.localeCompare(b.guid);
       });
+      const newOrder = sortedItems.map((item) => item.guid);
+      const orderChanged = originalOrder.length !== newOrder.length || originalOrder.some((guid, idx) => guid !== newOrder[idx]);
       while (list.firstChild) {
         list.removeChild(list.firstChild);
       }
@@ -2140,8 +2139,10 @@
           }
         }
       }
-      log2("Timestamps changed: Timestamps sorted");
-      saveTimestamps(currentLoadedVideoId);
+      if (orderChanged) {
+        log2("Timestamps changed: Timestamps sorted");
+        saveTimestamps(currentLoadedVideoId);
+      }
     }
     function updateScroll() {
       if (!list) return;
@@ -3653,6 +3654,13 @@
         showSection("general");
         settingsModalInstance.appendChild(settingsContent);
         document.body.appendChild(settingsModalInstance);
+        requestAnimationFrame(() => {
+          const rect = settingsModalInstance.getBoundingClientRect();
+          const viewportHeight = window.innerHeight;
+          const centeredTop = (viewportHeight - rect.height) / 2;
+          settingsModalInstance.style.top = `${Math.max(20, centeredTop)}px`;
+          settingsModalInstance.style.transform = "translateX(-50%)";
+        });
         setTimeout(() => {
           document.addEventListener("click", handleClickOutsideSettingsModal, true);
         }, 0);

@@ -1322,6 +1322,10 @@ if (hash && hash.length > 1) {
     }
 
     const items = getTimestampItems();
+
+    // Capture original order to detect if reordering occurred
+    const originalOrder = items.map(li => li.dataset.guid);
+
     const sortedItems = items
       .map(li => {
         const timeLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
@@ -1344,6 +1348,11 @@ if (hash && hash.length > 1) {
         }
         return a.guid.localeCompare(b.guid);
       });
+
+    // Check if order changed
+    const newOrder = sortedItems.map(item => item.guid);
+    const orderChanged = originalOrder.length !== newOrder.length ||
+                        originalOrder.some((guid, idx) => guid !== newOrder[idx]);
 
     // Clear current list
     while (list.firstChild) {
@@ -1372,8 +1381,12 @@ if (hash && hash.length > 1) {
         }
       }
     }
-    log('Timestamps changed: Timestamps sorted');
-    saveTimestamps(currentLoadedVideoId);
+
+    // Only save if order actually changed
+    if (orderChanged) {
+      log('Timestamps changed: Timestamps sorted');
+      saveTimestamps(currentLoadedVideoId);
+    }
   }
 
   function updateScroll() {
@@ -3246,6 +3259,15 @@ if (hash && hash.length > 1) {
 
       settingsModalInstance.appendChild(settingsContent);
       document.body.appendChild(settingsModalInstance);
+
+      // Calculate centered position and fix top edge
+      requestAnimationFrame(() => {
+        const rect = settingsModalInstance.getBoundingClientRect();
+        const viewportHeight = window.innerHeight;
+        const centeredTop = (viewportHeight - rect.height) / 2;
+        settingsModalInstance.style.top = `${Math.max(20, centeredTop)}px`;
+        settingsModalInstance.style.transform = 'translateX(-50%)';
+      });
 
       // Add click-outside listener
       // Use setTimeout to ensure this listener is added after the current click event cycle
