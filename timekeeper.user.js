@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.1.3
+// @version      4.1.4
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -63,32 +63,41 @@
   // src/holidays.ts
   var holidayEmojis = [
     {
-      emoji: "\u{1F332}",
-      month: 12,
-      // December
-      day: 25,
-      name: "Christmas"
-    },
-    {
       emoji: "\u{1F942}",
       month: 1,
-      // January
       day: 1,
       name: "New Year's Day"
     },
     {
       emoji: "\u{1F49D}",
       month: 2,
-      // February
       day: 14,
       name: "Valentine's Day"
+    },
+    ,
+    {
+      emoji: "\u{1F986}",
+      month: 5,
+      day: 25,
+      name: "Kanna's Debut Anniversary"
     },
     {
       emoji: "\u{1F383}",
       month: 10,
-      // October
       day: 31,
       name: "Halloween"
+    },
+    {
+      emoji: "\u{1F382}",
+      month: 9,
+      day: 15,
+      name: "Kanna's Birthday"
+    },
+    {
+      emoji: "\u{1F332}",
+      month: 12,
+      day: 25,
+      name: "Christmas"
     }
   ];
   function getHolidayEmoji() {
