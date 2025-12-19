@@ -10,6 +10,7 @@ declare const GM_info: {
 };
 
 import { PANE_STYLES } from "./styles";
+import * as GoogleDrive from "./google-drive";
 
 (async function () {
   'use strict';
@@ -18,7 +19,7 @@ import { PANE_STYLES } from "./styles";
     return; // Don't run in iframes
   }
 
-  // Forward declaration of checkOAuthRedirect (defined later)
+  // Checking for OAuth redirect is now handled by GoogleDrive module
   // Check if this page load is an OAuth redirect and handle it
   const isOAuthRedirect = window.location.hash.includes('access_token=') &&
                           window.location.hash.includes('state=timekeeper_auth');
@@ -304,145 +305,6 @@ import { PANE_STYLES } from "./styles";
 
   // Global cache for latest timestamp value
   let latestTimestampValue: number | null = null;
-
-  // Google Drive Authentication State
-  let googleUserDisplay: HTMLSpanElement | null = null;
-  let googleAuthState: {
-    isSignedIn: boolean;
-    accessToken: string | null;
-    userName: string | null;
-    email: string | null;
-  } = {
-    isSignedIn: false,
-    accessToken: null,
-    userName: null,
-    email: null
-  };
-
-  // Google OAuth2 Configuration
-  const GOOGLE_CLIENT_ID = '1023528652072-45cu3dr7o5j79vsdn8643bhle9ee8kds.apps.googleusercontent.com'; // Users need to set their own client ID
-  const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile';
-  const GOOGLE_REDIRECT_URI = 'https://www.youtube.com/'; // Userscript runs on YouTube
-
-  // Load Google auth state from storage
-  async function loadGoogleAuthState() {
-    try {
-      const stored = await loadGlobalSettings('googleAuthState');
-      if (stored && typeof stored === 'object') {
-        googleAuthState = { ...googleAuthState, ...stored as typeof googleAuthState };
-        updateGoogleUserDisplay();
-      }
-    } catch (err) {
-      log('Failed to load Google auth state:', err, 'error');
-    }
-  }
-
-  // Save Google auth state to storage
-  async function saveGoogleAuthState() {
-    try {
-      await saveGlobalSettings('googleAuthState', googleAuthState);
-    } catch (err) {
-      log('Failed to save Google auth state:', err, 'error');
-    }
-  }
-
-  // Update the username display in the header
-  function updateGoogleUserDisplay() {
-    if (!googleUserDisplay) return;
-
-    if (googleAuthState.isSignedIn && googleAuthState.userName) {
-      googleUserDisplay.textContent = `👤 ${googleAuthState.userName}`;
-      googleUserDisplay.style.display = 'inline';
-      googleUserDisplay.title = googleAuthState.email || googleAuthState.userName;
-    } else {
-      googleUserDisplay.style.display = 'none';
-    }
-  }
-
-// Check if current page load is an OAuth redirect
-  async function checkOAuthRedirect() {
-    const hash = window.location.hash;
-    if (!hash.includes('access_token=') || !hash.includes('state=timekeeper_auth')) {
-      return false;
-    }
-
-    try {
-      // Extract access token from URL fragment
-      const fragment = hash.substring(1);
-      const params = new URLSearchParams(fragment);
-      const accessToken = params.get('access_token');
-      const state = params.get('state');
-
-      if (accessToken && state === 'timekeeper_auth') {
-        googleAuthState.accessToken = accessToken;
-        googleAuthState.isSignedIn = true;
-
-        // Fetch user info
-        const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-
-        if (userInfoResponse.ok) {
-          const userInfo = await userInfoResponse.json();
-          googleAuthState.userName = userInfo.name;
-          googleAuthState.email = userInfo.email;
-        }
-
-        await saveGoogleAuthState();
-
-        // Get the original video URL before OAuth redirect
-        const returnUrl = await GM.getValue('oauth_return_url', '/watch');
-
-        // Clean up the URL hash and redirect back
-        window.location.replace(returnUrl);
-        return true;
-      }
-    } catch (err) {
-      log('Failed to process OAuth redirect:', err, 'error');
-    }
-    return false;
-  }
-
-  // Sign in to Google Drive
-  async function signInToGoogle() {
-    if (!GOOGLE_CLIENT_ID) {
-      alert('Google Client ID not configured. Please set GOOGLE_CLIENT_ID in the script.');
-      return;
-    }
-
-    try {
-      // Save current URL to return after authentication
-      await GM.setValue('oauth_return_url', window.location.href);
-
-      // Create OAuth2 authorization URL
-      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-      authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
-      authUrl.searchParams.set('redirect_uri', GOOGLE_REDIRECT_URI);
-      authUrl.searchParams.set('response_type', 'token');
-      authUrl.searchParams.set('scope', GOOGLE_SCOPES);
-      authUrl.searchParams.set('include_granted_scopes', 'true');
-      authUrl.searchParams.set('state', 'timekeeper_auth');
-
-      // Redirect to Google OAuth
-      window.location.href = authUrl.toString();
-    } catch (err) {
-      log('Failed to sign in to Google:', err, 'error');
-      alert('Failed to sign in to Google Drive.');
-    }
-  }
-
-  // Sign out from Google Drive
-  async function signOutFromGoogle() {
-    googleAuthState = {
-      isSignedIn: false,
-      accessToken: null,
-      userName: null,
-      email: null
-    };
-    await saveGoogleAuthState();
-    updateGoogleUserDisplay();
-    alert('Signed out from Google Drive.');
-  }
 
 
   function getTimestampItems(): HTMLLIElement[] {
@@ -2074,47 +1936,53 @@ import { PANE_STYLES } from "./styles";
     return dbConnectionPromise;
   }
 
-  // Standalone export function to export all timestamps to a timekeeper-data file
-  async function exportAllTimestamps(): Promise<void> {
+  // Build export JSON and filename for all timestamps
+  async function buildExportPayload(): Promise<{ json: string; filename: string; totalVideos: number; totalTimestamps: number }> {
     const exportData = {} as Record<string, unknown>;
 
+    // Get all timestamps from v2 store
+    const allTimestamps = await getAllFromIndexedDB(STORE_NAME_V2);
+
+    // Group timestamps by video_id
+    const videoGroups = new Map<string, TimestampRecord[]>();
+    for (const record of allTimestamps) {
+      const ts = record as { guid: string; video_id: string; start: number; comment: string };
+      if (!videoGroups.has(ts.video_id)) {
+        videoGroups.set(ts.video_id, []);
+      }
+      videoGroups.get(ts.video_id)!.push({
+        guid: ts.guid,
+        start: ts.start,
+        comment: ts.comment
+      });
+    }
+
+    // Populate exportData with all timestamps in v1 format for compatibility
+    for (const [videoId, timestamps] of videoGroups) {
+      exportData[`ytls-${videoId}`] = {
+        video_id: videoId,
+        timestamps: timestamps.sort((a, b) => a.start - b.start)
+      };
+    }
+
+    const timestampSuffix = getTimestampSuffix();
+    const filename = `timekeeper-data-${timestampSuffix}.json`;
+    const json = JSON.stringify(exportData, null, 2);
+    return { json, filename, totalVideos: videoGroups.size, totalTimestamps: allTimestamps.length };
+  }
+
+  // Standalone export function to export all timestamps to a local file
+  async function exportAllTimestamps(): Promise<void> {
     try {
-      // Get all timestamps from v2 store
-      const allTimestamps = await getAllFromIndexedDB(STORE_NAME_V2);
-
-      // Group timestamps by video_id
-      const videoGroups = new Map<string, TimestampRecord[]>();
-      for (const record of allTimestamps) {
-        const ts = record as {guid: string; video_id: string; start: number; comment: string};
-        if (!videoGroups.has(ts.video_id)) {
-          videoGroups.set(ts.video_id, []);
-        }
-        videoGroups.get(ts.video_id)!.push({
-          guid: ts.guid,
-          start: ts.start,
-          comment: ts.comment
-        });
-      }
-
-      // Populate exportData with all timestamps in v1 format for compatibility
-      for (const [videoId, timestamps] of videoGroups) {
-        exportData[`ytls-${videoId}`] = {
-          video_id: videoId,
-          timestamps: timestamps.sort((a, b) => a.start - b.start)
-        };
-      }
-
-      // Create a JSON file for export
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+      const { json, filename, totalVideos, totalTimestamps } = await buildExportPayload();
+      const blob = new Blob([json], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const timestampSuffix = getTimestampSuffix();
-      a.download = `timekeeper-data-${timestampSuffix}.json`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-
-      log(`Exported ${videoGroups.size} videos with ${allTimestamps.length} timestamps`);
+      log(`Exported ${totalVideos} videos with ${totalTimestamps} timestamps`);
     } catch (err) {
       log("Failed to export data:", err, 'error');
       throw err;
@@ -3164,43 +3032,124 @@ import { PANE_STYLES } from "./styles";
       const settingsContent = document.createElement("div");
       settingsContent.id = "ytls-settings-content";
 
-      const buttonConfigs = [
-        { label: "💾 Save", title: "Save As...", action: saveBtn.onclick }, // Assuming saveBtn.onclick shows another modal
-        { label: "📂 Load", title: "Load", action: loadBtn.onclick },
-        { label: "📤 Export All", title: "Export All Data", action: exportBtn.onclick },
-        { label: "📥 Import All", title: "Import All Data", action: importBtn.onclick },
-        {
-          label: googleAuthState.isSignedIn ? "🔓 Sign Out of Google Drive" : "🔐 Sign In to Google Drive",
-          title: googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive",
-          action: async () => {
-            if (googleAuthState.isSignedIn) {
-              await signOutFromGoogle();
-            } else {
-              await signInToGoogle();
-            }
-          }
-        },
-        {
-          label: "Close", title: "Close", action: () => {
-            if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
-              settingsModalInstance.classList.remove("ytls-fade-in");
-              settingsModalInstance.classList.add("ytls-fade-out");
-              setTimeout(() => {
-                if (document.body.contains(settingsModalInstance)) {
-                  document.body.removeChild(settingsModalInstance);
-                }
-                settingsModalInstance = null;
-                document.removeEventListener('click', handleClickOutsideSettingsModal, true);
-              }, 300); // Match animation duration
-            }
-          }
-        }
-      ];
+      const nav = document.createElement("div");
+      nav.id = "ytls-settings-nav";
 
-      buttonConfigs.forEach(({ label, title, action }) => {
-        const button = createButton(label, title, action);
-        settingsContent.appendChild(button);
-      });
+      const generalSection = document.createElement("div");
+      const driveSection = document.createElement("div");
+
+      function showSection(section: 'general' | 'drive') {
+        generalSection.style.display = section === 'general' ? 'block' : 'none';
+        driveSection.style.display = section === 'drive' ? 'block' : 'none';
+        generalTab.classList.toggle('active', section === 'general');
+        driveTab.classList.toggle('active', section === 'drive');
+      }
+
+      const generalTab = createButton("🛠️ General", "General settings", () => showSection('general'));
+      const driveTab = createButton("☁️ Google Drive", "Google Drive sign-in and backup", () => showSection('drive'));
+      nav.appendChild(generalTab);
+      nav.appendChild(driveTab);
+
+      // Build General section
+      generalSection.appendChild(createButton("💾 Save", "Save As...", saveBtn.onclick));
+      generalSection.appendChild(createButton("📂 Load", "Load", loadBtn.onclick));
+      generalSection.appendChild(createButton("📤 Export All", "Export All Data", exportBtn.onclick));
+      generalSection.appendChild(createButton("📥 Import All", "Import All Data", importBtn.onclick));
+      generalSection.appendChild(createButton("Close", "Close", () => {
+        if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
+          settingsModalInstance.classList.remove("ytls-fade-in");
+          settingsModalInstance.classList.add("ytls-fade-out");
+          setTimeout(() => {
+            if (document.body.contains(settingsModalInstance)) {
+              document.body.removeChild(settingsModalInstance);
+            }
+            settingsModalInstance = null;
+            document.removeEventListener('click', handleClickOutsideSettingsModal, true);
+          }, 300);
+        }
+      }));
+
+      // Build Google Drive section
+      const signButton = createButton(
+        GoogleDrive.googleAuthState.isSignedIn ? "🔓 Sign Out of Google Drive" : "🔐 Sign In to Google Drive",
+        GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive",
+        async () => {
+          if (GoogleDrive.googleAuthState.isSignedIn) {
+            await GoogleDrive.signOutFromGoogle();
+          } else {
+            await GoogleDrive.signInToGoogle();
+          }
+          // Update label after action
+          signButton.textContent = GoogleDrive.googleAuthState.isSignedIn ? "🔓 Sign Out of Google Drive" : "🔐 Sign In to Google Drive";
+          signButton.title = GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive";
+        }
+      );
+      driveSection.appendChild(signButton);
+
+      driveSection.appendChild(createButton("📤 Export All (Google Drive)", "Export all data to Google Drive", () => GoogleDrive.exportAllTimestampsToGoogleDrive({ silent: false })));
+
+      const autoToggleButton = createButton(
+        GoogleDrive.autoBackupEnabled ? "🔁 Auto Backup: On" : "🔁 Auto Backup: Off",
+        "Toggle Auto Backup",
+        async () => {
+          await GoogleDrive.toggleAutoBackup();
+          autoToggleButton.textContent = GoogleDrive.autoBackupEnabled ? "🔁 Auto Backup: On" : "🔁 Auto Backup: Off";
+        }
+      );
+      driveSection.appendChild(autoToggleButton);
+
+      driveSection.appendChild(createButton("⏱️ Set Backup Interval", "Set periodic backup interval (minutes)", async () => {
+        await GoogleDrive.setAutoBackupIntervalPrompt();
+      }));
+
+      driveSection.appendChild(createButton("🗄️ Backup Now", "Run a backup immediately", async () => {
+        await GoogleDrive.runAutoBackupOnce(false);
+      }));
+
+      // Add status info displays
+      const infoContainer = document.createElement("div");
+      infoContainer.style.marginTop = "15px";
+      infoContainer.style.paddingTop = "10px";
+      infoContainer.style.borderTop = "1px solid #555";
+      infoContainer.style.fontSize = "12px";
+      infoContainer.style.color = "#aaa";
+
+      // Sign-in status indicator
+      const statusDiv = document.createElement("div");
+      statusDiv.style.marginBottom = "8px";
+      statusDiv.style.fontWeight = "bold";
+      infoContainer.appendChild(statusDiv);
+
+      // User info
+      const userInfoDiv = document.createElement("div");
+      userInfoDiv.style.marginBottom = "8px";
+      GoogleDrive.setGoogleUserDisplay(userInfoDiv);
+      infoContainer.appendChild(userInfoDiv);
+
+      // Backup status info
+      const backupInfoDiv = document.createElement("div");
+      GoogleDrive.setBackupStatusDisplay(backupInfoDiv);
+      infoContainer.appendChild(backupInfoDiv);
+
+      driveSection.appendChild(infoContainer);
+
+      // Update status display based on sign-in state
+      if (!GoogleDrive.googleAuthState.isSignedIn) {
+        statusDiv.textContent = "❌ Not signed in";
+        statusDiv.style.color = "#ff4d4f";
+      } else {
+        statusDiv.textContent = `✅ ${GoogleDrive.googleAuthState.userName || "Signed in"}`;
+        statusDiv.style.color = "#52c41a";
+      }
+
+      GoogleDrive.updateGoogleUserDisplay();
+      GoogleDrive.updateBackupStatusDisplay();
+
+      // Append nav and sections
+      settingsContent.appendChild(nav);
+      settingsContent.appendChild(generalSection);
+      settingsContent.appendChild(driveSection);
+      showSection('general');
 
       settingsModalInstance.appendChild(settingsContent);
       document.body.appendChild(settingsModalInstance);
@@ -3633,13 +3582,6 @@ import { PANE_STYLES } from "./styles";
     });
 
     header.appendChild(timeDisplay); // Add timeDisplay
-
-    // Create Google user display
-    googleUserDisplay = document.createElement("span");
-    googleUserDisplay.classList.add("ytls-google-user-display");
-    googleUserDisplay.style.display = 'none'; // Hidden by default
-    header.appendChild(googleUserDisplay);
-
     header.appendChild(versionDisplay); // Add versionDisplay to header
 
     const content = document.createElement("div"); content.id = "ytls-content";
@@ -3667,8 +3609,29 @@ import { PANE_STYLES } from "./styles";
     // Load the global UI visibility state BEFORE appending to DOM
     await loadUIVisibilityState();
 
+    // Initialize Google Drive module callbacks using setter functions
+    if (typeof (GoogleDrive as any).setBuildExportPayload === 'function') {
+      (GoogleDrive as any).setBuildExportPayload(buildExportPayload);
+    }
+    if (typeof (GoogleDrive as any).setSaveGlobalSettings === 'function') {
+      (GoogleDrive as any).setSaveGlobalSettings(saveGlobalSettings);
+    }
+    if (typeof (GoogleDrive as any).setLoadGlobalSettings === 'function') {
+      (GoogleDrive as any).setLoadGlobalSettings(loadGlobalSettings);
+    }
+    if (typeof (GoogleDrive as any).setLog === 'function') {
+      (GoogleDrive as any).setLog(log);
+    }
+    if (typeof (GoogleDrive as any).setGetTimestampSuffix === 'function') {
+      (GoogleDrive as any).setGetTimestampSuffix(getTimestampSuffix);
+    }
+
     // Load Google auth state
-    await loadGoogleAuthState();
+    await GoogleDrive.loadGoogleAuthState();
+
+    // Load auto backup settings and schedule if applicable
+    await GoogleDrive.loadAutoBackupSettings();
+    await GoogleDrive.scheduleAutoBackup();
 
     // Now append the pane with the correct minimized state already applied
     document.body.appendChild(pane);
@@ -3808,7 +3771,7 @@ import { PANE_STYLES } from "./styles";
 
   // Check for OAuth redirect early - this handles the redirect and exits if detected
   if (isOAuthRedirect) {
-    const handled = await checkOAuthRedirect();
+    const handled = await GoogleDrive.checkOAuthRedirect();
     if (handled) {
       log("OAuth redirect handled, returning to original page");
       return; // Exit script, redirect will happen

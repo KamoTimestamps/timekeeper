@@ -139,6 +139,15 @@ export const PANE_STYLES = `
     background:rgba(66, 133, 244, 0.1);
     border-radius:4px;
   }
+  #ytls-pane .ytls-backup-status-display {
+    font-size:12px;
+    color:#9acd32; /* yellowgreen */
+    margin-left:8px;
+    padding:2px 6px;
+    cursor:default;
+    background:rgba(154, 205, 50, 0.12);
+    border-radius:4px;
+  }
   #ytls-current-time {
     color:white;
     font-size:14px;
@@ -170,6 +179,24 @@ export const PANE_STYLES = `
     flex-direction:column;
     gap:10px;
     align-items:center;
+  }
+
+  /* Settings nav (tabs) */
+  #ytls-settings-nav {
+    display:flex;
+    gap:8px;
+    width:100%;
+    margin-bottom:10px;
+  }
+  #ytls-settings-nav .ytls-settings-modal-button {
+    flex:1;
+    width:auto; /* override 100% for nav */
+    height:40px; /* slightly smaller tabs */
+    margin-bottom:0; /* no vertical gap in nav */
+  }
+  #ytls-settings-nav .ytls-settings-modal-button.active {
+    background:#777;
+    border:1px solid #999;
   }
 
   /* Styles for buttons in the settings modal */
