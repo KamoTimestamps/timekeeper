@@ -4,7 +4,7 @@ const esbuild = require('esbuild');
 
 const repoRoot = path.join(__dirname, '..');
 const headerTemplateFile = path.join(repoRoot, 'src', 'userscript-header.txt');
-const versionFile = path.join(repoRoot, 'src', 'version.ts');
+const packageJsonFile = path.join(repoRoot, 'package.json');
 const distDir = path.join(repoRoot, 'dist');
 const userscriptFile = path.join(repoRoot, 'ts.user.js');
 
@@ -16,15 +16,14 @@ function readHeaderTemplate() {
 }
 
 function readVersion() {
-  if (!fs.existsSync(versionFile)) {
-    throw new Error('Version file src/version.ts was not found. Run the prebuild step first.');
+  if (!fs.existsSync(packageJsonFile)) {
+    throw new Error('package.json was not found.');
   }
-  const versionSource = fs.readFileSync(versionFile, 'utf8');
-  const match = versionSource.match(/TIMEKEEPER_VERSION\s*=\s*["'`]([^"'`]+)["'`]/);
-  if (!match) {
-    throw new Error('Unable to parse TIMEKEEPER_VERSION from src/version.ts');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonFile, 'utf8'));
+  if (!packageJson.version) {
+    throw new Error('Unable to read version from package.json');
   }
-  return match[1];
+  return packageJson.version;
 }
 
 function removeExistingHeader(content) {

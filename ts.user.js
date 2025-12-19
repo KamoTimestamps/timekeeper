@@ -19,6 +19,95 @@
 // ==/UserScript==
 
 (() => {
+  // src/util.ts
+  function log(message, ...args) {
+    let logLevel = "debug";
+    const consoleArgs = [...args];
+    if (args.length > 0 && typeof args[args.length - 1] === "string" && ["debug", "info", "warn", "error"].includes(args[args.length - 1])) {
+      logLevel = consoleArgs.pop();
+    }
+    const version = GM_info.script.version;
+    const prefix = `[Timekeeper v${version}]`;
+    const methodMap = {
+      "debug": console.log,
+      "info": console.info,
+      "warn": console.warn,
+      "error": console.error
+    };
+    methodMap[logLevel](`${prefix} ${message}`, ...consoleArgs);
+  }
+  function formatTimeString(seconds, videoDuration = seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor(seconds % 3600 / 60);
+    const s = String(seconds % 60).padStart(2, "0");
+    if (videoDuration < 3600) {
+      return `${m < 10 ? m : String(m).padStart(2, "0")}:${s}`;
+    }
+    return `${videoDuration >= 36e3 ? String(h).padStart(2, "0") : h}:${String(m).padStart(2, "0")}:${s}`;
+  }
+  function buildYouTubeUrlWithTimestamp(timeInSeconds, currentUrl = window.location.href) {
+    try {
+      const url = new URL(currentUrl);
+      url.searchParams.set("t", `${timeInSeconds}s`);
+      return url.toString();
+    } catch {
+      const vid = currentUrl.search(/[?&]v=/) >= 0 ? currentUrl.split(/[?&]v=/)[1].split(/&/)[0] : currentUrl.split(/\/live\/|\/shorts\/|\?|&/)[1];
+      return `https://www.youtube.com/watch?v=${vid}&t=${timeInSeconds}s`;
+    }
+  }
+  function getTimestampSuffix() {
+    const now = /* @__PURE__ */ new Date();
+    return now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0") + "-" + String(now.getUTCDate()).padStart(2, "0") + "--" + String(now.getUTCHours()).padStart(2, "0") + "-" + String(now.getUTCMinutes()).padStart(2, "0") + "-" + String(now.getUTCSeconds()).padStart(2, "0");
+  }
+
+  // src/holidays.ts
+  var holidayEmojis = [
+    {
+      emoji: "\u{1F332}",
+      month: 12,
+      // December
+      day: 25,
+      name: "Christmas"
+    },
+    {
+      emoji: "\u{1F942}",
+      month: 1,
+      // January
+      day: 1,
+      name: "New Year's Day"
+    },
+    {
+      emoji: "\u{1F49D}",
+      month: 2,
+      // February
+      day: 14,
+      name: "Valentine's Day"
+    },
+    {
+      emoji: "\u{1F383}",
+      month: 10,
+      // October
+      day: 31,
+      name: "Halloween"
+    }
+  ];
+  function getHolidayEmoji() {
+    const now = /* @__PURE__ */ new Date();
+    const currentYear = now.getFullYear();
+    const currentDate = now.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+    for (const holiday of holidayEmojis) {
+      const holidayDate = new Date(currentYear, holiday.month - 1, holiday.day);
+      const diffTime = holidayDate.getTime() - now.getTime();
+      const diffDays = diffTime / (1e3 * 60 * 60 * 24);
+      if (diffDays <= 7 && diffDays >= -3) {
+        log(`Current date: ${currentDate}, Selected emoji: ${holiday.emoji} (${holiday.name}), Days until holiday: ${Math.ceil(diffDays)}`);
+        return holiday.emoji;
+      }
+    }
+    log(`Current date: ${currentDate}, No holiday emoji (not within range)`);
+    return null;
+  }
+
   // src/styles.ts
   var PANE_STYLES = `
   #ytls-pane {
@@ -532,8 +621,8 @@
   var buildExportPayload = null;
   var saveGlobalSettings = null;
   var loadGlobalSettings = null;
-  var log = null;
-  var getTimestampSuffix = null;
+  var log2 = null;
+  var getTimestampSuffix2 = null;
   function setBuildExportPayload(fn) {
     buildExportPayload = fn;
   }
@@ -544,10 +633,10 @@
     loadGlobalSettings = fn;
   }
   function setLog(fn) {
-    log = fn;
+    log2 = fn;
   }
   function setGetTimestampSuffix(fn) {
-    getTimestampSuffix = fn;
+    getTimestampSuffix2 = fn;
   }
   var GOOGLE_CLIENT_ID = "1023528652072-45cu3dr7o5j79vsdn8643bhle9ee8kds.apps.googleusercontent.com";
   var GOOGLE_SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile";
@@ -565,14 +654,14 @@
         updateGoogleUserDisplay();
       }
     } catch (err) {
-      log("Failed to load Google auth state:", err, "error");
+      log2("Failed to load Google auth state:", err, "error");
     }
   }
   async function saveGoogleAuthState() {
     try {
       await saveGlobalSettings("googleAuthState", googleAuthState);
     } catch (err) {
-      log("Failed to save Google auth state:", err, "error");
+      log2("Failed to save Google auth state:", err, "error");
     }
   }
   function updateGoogleUserDisplay() {
@@ -624,11 +713,11 @@
   function monitorOAuthPopup(popup) {
     return new Promise((resolve, reject) => {
       if (!popup) {
-        if (log) log("OAuth monitor: popup is null", null, "error");
+        if (log2) log2("OAuth monitor: popup is null", null, "error");
         reject(new Error("Failed to open popup"));
         return;
       }
-      if (log) log("OAuth monitor: starting to monitor popup for token");
+      if (log2) log2("OAuth monitor: starting to monitor popup for token");
       const start = Date.now();
       const timeoutMs = 5 * 60 * 1e3;
       const channelName = "timekeeper_oauth";
@@ -654,11 +743,11 @@
       };
       try {
         channel = new BroadcastChannel(channelName);
-        if (log) log("OAuth monitor: BroadcastChannel created successfully");
+        if (log2) log2("OAuth monitor: BroadcastChannel created successfully");
         channel.onmessage = (event) => {
-          if (log) log("OAuth monitor: received BroadcastChannel message", event.data);
+          if (log2) log2("OAuth monitor: received BroadcastChannel message", event.data);
           if (event.data?.type === "timekeeper_oauth_token" && event.data?.token) {
-            if (log) log("OAuth monitor: token received via BroadcastChannel");
+            if (log2) log2("OAuth monitor: token received via BroadcastChannel");
             cleanup();
             try {
               popup.close();
@@ -666,7 +755,7 @@
             }
             resolve(event.data.token);
           } else if (event.data?.type === "timekeeper_oauth_error") {
-            if (log) log("OAuth monitor: error received via BroadcastChannel", event.data.error, "error");
+            if (log2) log2("OAuth monitor: error received via BroadcastChannel", event.data.error, "error");
             cleanup();
             try {
               popup.close();
@@ -676,9 +765,9 @@
           }
         };
       } catch (err) {
-        if (log) log("OAuth monitor: BroadcastChannel not supported, using IndexedDB fallback", err);
+        if (log2) log2("OAuth monitor: BroadcastChannel not supported, using IndexedDB fallback", err);
       }
-      if (log) log("OAuth monitor: setting up IndexedDB polling");
+      if (log2) log2("OAuth monitor: setting up IndexedDB polling");
       let lastCheckedTimestamp = Date.now();
       const pollIndexedDB = async () => {
         try {
@@ -693,9 +782,9 @@
               if (result && result.value) {
                 const data = result.value;
                 if (data.timestamp && data.timestamp > lastCheckedTimestamp) {
-                  if (log) log("OAuth monitor: received IndexedDB message", data);
+                  if (log2) log2("OAuth monitor: received IndexedDB message", data);
                   if (data.type === "timekeeper_oauth_token" && data.token) {
-                    if (log) log("OAuth monitor: token received via IndexedDB");
+                    if (log2) log2("OAuth monitor: token received via IndexedDB");
                     cleanup();
                     try {
                       popup.close();
@@ -705,7 +794,7 @@
                     delTx.objectStore("settings").delete("oauth_message");
                     resolve(data.token);
                   } else if (data.type === "timekeeper_oauth_error") {
-                    if (log) log("OAuth monitor: error received via IndexedDB", data.error, "error");
+                    if (log2) log2("OAuth monitor: error received via IndexedDB", data.error, "error");
                     cleanup();
                     try {
                       popup.close();
@@ -722,14 +811,14 @@
             };
           };
         } catch (err) {
-          if (log) log("OAuth monitor: IndexedDB polling error", err, "error");
+          if (log2) log2("OAuth monitor: IndexedDB polling error", err, "error");
         }
       };
       storageListener = setInterval(pollIndexedDB, 500);
       checkInterval = setInterval(() => {
         const elapsed = Date.now() - start;
         if (elapsed > timeoutMs) {
-          if (log) log("OAuth monitor: popup timed out after 5 minutes", null, "error");
+          if (log2) log2("OAuth monitor: popup timed out after 5 minutes", null, "error");
           cleanup();
           try {
             popup.close();
@@ -747,7 +836,7 @@
       return;
     }
     try {
-      if (log) log("OAuth signin: starting OAuth flow");
+      if (log2) log2("OAuth signin: starting OAuth flow");
       updateAuthStatusDisplay("authenticating", "Opening authentication window...");
       const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
       authUrl.searchParams.set("client_id", GOOGLE_CLIENT_ID);
@@ -756,18 +845,18 @@
       authUrl.searchParams.set("scope", GOOGLE_SCOPES);
       authUrl.searchParams.set("include_granted_scopes", "true");
       authUrl.searchParams.set("state", "timekeeper_auth");
-      if (log) log("OAuth signin: opening popup");
+      if (log2) log2("OAuth signin: opening popup");
       const popup = window.open(
         authUrl.toString(),
         "TimekeeperGoogleAuth",
         "width=500,height=600,menubar=no,toolbar=no,location=no"
       );
       if (!popup) {
-        if (log) log("OAuth signin: popup blocked by browser", null, "error");
+        if (log2) log2("OAuth signin: popup blocked by browser", null, "error");
         updateAuthStatusDisplay("error", "Popup blocked. Please enable popups for YouTube.");
         return;
       }
-      if (log) log("OAuth signin: popup opened successfully");
+      if (log2) log2("OAuth signin: popup opened successfully");
       updateAuthStatusDisplay("authenticating", "Waiting for authentication...");
       try {
         const accessToken = await monitorOAuthPopup(popup);
@@ -783,8 +872,8 @@
           await saveGoogleAuthState();
           updateGoogleUserDisplay();
           updateAuthStatusDisplay();
-          if (log) {
-            log(`Successfully authenticated as ${userInfo.name}`);
+          if (log2) {
+            log2(`Successfully authenticated as ${userInfo.name}`);
           } else {
             console.log(`[Timekeeper] Successfully authenticated as ${userInfo.name}`);
           }
@@ -793,8 +882,8 @@
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Authentication failed";
-        if (log) {
-          log("OAuth failed:", err, "error");
+        if (log2) {
+          log2("OAuth failed:", err, "error");
         } else {
           console.error("[Timekeeper] OAuth failed:", err);
         }
@@ -803,8 +892,8 @@
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Sign in failed";
-      if (log) {
-        log("Failed to sign in to Google:", err, "error");
+      if (log2) {
+        log2("Failed to sign in to Google:", err, "error");
       } else {
         console.error("[Timekeeper] Failed to sign in to Google:", err);
       }
@@ -815,18 +904,18 @@
     if (!window.opener || window.opener === window) {
       return false;
     }
-    if (log) log("OAuth popup: detected popup window, checking for OAuth response");
+    if (log2) log2("OAuth popup: detected popup window, checking for OAuth response");
     const hash2 = window.location.hash;
     if (!hash2 || hash2.length <= 1) {
-      if (log) log("OAuth popup: no hash params found");
+      if (log2) log2("OAuth popup: no hash params found");
       return false;
     }
     const hashContent = hash2.startsWith("#") ? hash2.substring(1) : hash2;
     const params = new URLSearchParams(hashContent);
     const state = params.get("state");
-    if (log) log("OAuth popup: hash params found, state=" + state);
+    if (log2) log2("OAuth popup: hash params found, state=" + state);
     if (state !== "timekeeper_auth") {
-      if (log) log("OAuth popup: not our OAuth flow (wrong state)");
+      if (log2) log2("OAuth popup: not our OAuth flow (wrong state)");
       return false;
     }
     const error = params.get("error");
@@ -863,7 +952,7 @@
       return true;
     }
     if (token) {
-      if (log) log("OAuth popup: access token found, broadcasting to opener");
+      if (log2) log2("OAuth popup: access token found, broadcasting to opener");
       try {
         const channel = new BroadcastChannel(channelName);
         channel.postMessage({
@@ -871,9 +960,9 @@
           token
         });
         channel.close();
-        if (log) log("OAuth popup: token broadcast via BroadcastChannel");
+        if (log2) log2("OAuth popup: token broadcast via BroadcastChannel");
       } catch (err) {
-        if (log) log("OAuth popup: BroadcastChannel failed, using IndexedDB", err);
+        if (log2) log2("OAuth popup: BroadcastChannel failed, using IndexedDB", err);
         const message = {
           type: "timekeeper_oauth_token",
           token,
@@ -886,7 +975,7 @@
           tx.objectStore("settings").put({ key: "oauth_message", value: message });
           db.close();
         };
-        if (log) log("OAuth popup: token broadcast via IndexedDB");
+        if (log2) log2("OAuth popup: token broadcast via IndexedDB");
       }
       setTimeout(() => {
         try {
@@ -986,12 +1075,12 @@
       const { json, filename, totalVideos, totalTimestamps } = await buildExportPayload();
       const folderId = await ensureDriveFolder(googleAuthState.accessToken);
       await uploadJsonToDrive(filename, json, folderId, googleAuthState.accessToken);
-      log(`Exported to Google Drive (${filename}) with ${totalVideos} videos / ${totalTimestamps} timestamps.`);
+      log2(`Exported to Google Drive (${filename}) with ${totalVideos} videos / ${totalTimestamps} timestamps.`);
     } catch (err) {
       if (err.message === "unauthorized") {
         if (!opts?.silent) updateAuthStatusDisplay("error", "Authorization expired. Please sign in again.");
       } else {
-        log("Drive export failed:", err, "error");
+        log2("Drive export failed:", err, "error");
         if (!opts?.silent) updateAuthStatusDisplay("error", "Failed to export to Google Drive.");
       }
     }
@@ -1005,7 +1094,7 @@
       if (typeof interval === "number" && interval > 0) autoBackupIntervalMinutes = interval;
       if (typeof lastAt === "number" && lastAt > 0) lastAutoBackupAt = lastAt;
     } catch (err) {
-      log("Failed to load auto backup settings:", err, "error");
+      log2("Failed to load auto backup settings:", err, "error");
     }
   }
   async function saveAutoBackupSettings() {
@@ -1014,7 +1103,7 @@
       await saveGlobalSettings("autoBackupIntervalMinutes", autoBackupIntervalMinutes);
       await saveGlobalSettings("lastAutoBackupAt", lastAutoBackupAt ?? 0);
     } catch (err) {
-      log("Failed to save auto backup settings:", err, "error");
+      log2("Failed to save auto backup settings:", err, "error");
     }
   }
   function clearAutoBackupSchedule() {
@@ -1077,7 +1166,7 @@
       }
       await saveAutoBackupSettings();
     } catch (err) {
-      log("Auto backup failed:", err, "error");
+      log2("Auto backup failed:", err, "error");
       if (autoBackupRetryAttempts < AUTO_BACKUP_MAX_RETRY_ATTEMPTS) {
         autoBackupRetryAttempts += 1;
         const base = AUTO_BACKUP_INITIAL_BACKOFF_MS;
@@ -1180,34 +1269,18 @@
     if (window.top !== window.self) {
       return;
     }
-    function earlyLog(message, ...args) {
-      let logLevel = "debug";
-      const consoleArgs = [...args];
-      if (args.length > 0 && typeof args[args.length - 1] === "string" && ["debug", "info", "warn", "error"].includes(args[args.length - 1])) {
-        logLevel = consoleArgs.pop();
-      }
-      const version = GM_info.script.version;
-      const prefix = `[Timekeeper v${version}]`;
-      const methodMap = {
-        "debug": console.log,
-        "info": console.info,
-        "warn": console.warn,
-        "error": console.error
-      };
-      methodMap[logLevel](`${prefix} ${message}`, ...consoleArgs);
-    }
     function earlyLoadGlobalSettings(key) {
       return GM.getValue(`timekeeper_${key}`, void 0);
     }
     function earlySaveGlobalSettings(key, value) {
       return GM.setValue(`timekeeper_${key}`, JSON.stringify(value));
     }
-    setLog(earlyLog);
+    setLog(log);
     setLoadGlobalSettings(earlyLoadGlobalSettings);
     setSaveGlobalSettings(earlySaveGlobalSettings);
     const isOAuthPopup = await handleOAuthPopup();
     if (isOAuthPopup) {
-      earlyLog("OAuth popup detected, broadcasting token and closing");
+      log("OAuth popup detected, broadcasting token and closing");
       return;
     }
     await loadGoogleAuthState();
@@ -1222,7 +1295,7 @@
           return parsed.pathname === prefix || parsed.pathname.startsWith(`${prefix}/`);
         });
       } catch (err) {
-        earlyLog("Timekeeper failed to parse URL for support check:", err, "error");
+        log("Timekeeper failed to parse URL for support check:", err, "error");
         return false;
       }
     }
@@ -1332,35 +1405,32 @@
     const DEFAULT_OFFSET = -5;
     const SHIFT_SKIP_KEY = "shiftClickTimeSkipSeconds";
     const DEFAULT_SHIFT_SKIP = 10;
-    function log2(message, ...args) {
-      return earlyLog(message, ...args);
-    }
     let channel = new BroadcastChannel("ytls_timestamp_channel");
     function safePostMessage(message) {
       try {
         channel.postMessage(message);
       } catch (err) {
-        log2("BroadcastChannel error, reopening:", err, "warn");
+        log("BroadcastChannel error, reopening:", err, "warn");
         try {
           channel = new BroadcastChannel("ytls_timestamp_channel");
           channel.onmessage = handleChannelMessage;
           channel.postMessage(message);
         } catch (reopenErr) {
-          log2("Failed to reopen BroadcastChannel:", reopenErr, "error");
+          log("Failed to reopen BroadcastChannel:", reopenErr, "error");
         }
       }
     }
     function handleChannelMessage(event) {
-      log2("Received message from another tab:", event.data);
+      log("Received message from another tab:", event.data);
       if (!isSupportedUrl() || !list || !pane) {
         return;
       }
       if (event.data) {
         if (event.data.type === "timestamps_updated" && event.data.videoId === currentLoadedVideoId) {
-          log2("Debouncing timestamp load due to external update for video:", event.data.videoId);
+          log("Debouncing timestamp load due to external update for video:", event.data.videoId);
           clearTimeout(loadTimeoutId);
           loadTimeoutId = setTimeout(() => {
-            log2("Reloading timestamps due to external update for video:", event.data.videoId);
+            log("Reloading timestamps due to external update for video:", event.data.videoId);
             loadTimestamps();
           }, 500);
         } else if (event.data.type === "window_position_updated" && pane) {
@@ -1509,10 +1579,6 @@
         });
       }
     }
-    function getTimestampSuffix2() {
-      const now = /* @__PURE__ */ new Date();
-      return now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0") + "-" + String(now.getUTCDate()).padStart(2, "0") + "--" + String(now.getUTCHours()).padStart(2, "0") + "-" + String(now.getUTCMinutes()).padStart(2, "0") + "-" + String(now.getUTCSeconds()).padStart(2, "0");
-    }
     function clearTimestampsDisplay() {
       if (!list) return;
       while (list.firstChild) {
@@ -1572,27 +1638,8 @@
       }
       syncToggleButtons();
     }
-    function formatTimeString(seconds, videoDuration = seconds) {
-      const h = Math.floor(seconds / 3600);
-      const m = Math.floor(seconds % 3600 / 60);
-      const s = String(seconds % 60).padStart(2, "0");
-      if (videoDuration < 3600) {
-        return `${m < 10 ? m : String(m).padStart(2, "0")}:${s}`;
-      }
-      return `${videoDuration >= 36e3 ? String(h).padStart(2, "0") : h}:${String(m).padStart(2, "0")}:${s}`;
-    }
     function isTimestampRecord(value) {
       return !!value && Number.isFinite(value.start) && typeof value.comment === "string" && typeof value.guid === "string";
-    }
-    function buildYouTubeUrlWithTimestamp(timeInSeconds, currentUrl = window.location.href) {
-      try {
-        const url = new URL(currentUrl);
-        url.searchParams.set("t", `${timeInSeconds}s`);
-        return url.toString();
-      } catch {
-        const vid = currentUrl.search(/[?&]v=/) >= 0 ? currentUrl.split(/[?&]v=/)[1].split(/&/)[0] : currentUrl.split(/\/live\/|\/shorts\/|\?|&/)[1];
-        return `https://www.youtube.com/watch?v=${vid}&t=${timeInSeconds}s`;
-      }
     }
     function formatTime(anchor, timeInSeconds) {
       anchor.textContent = formatTimeString(timeInSeconds);
@@ -1725,7 +1772,7 @@
         return false;
       }
       const label = options.logLabel ?? "bulk offset";
-      log2(`Timestamps changed: Offset all timestamps by ${delta > 0 ? "+" : ""}${delta} seconds (${label})`);
+      log(`Timestamps changed: Offset all timestamps by ${delta > 0 ? "+" : ""}${delta} seconds (${label})`);
       const player = getActivePlayer();
       const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
       if (Number.isFinite(currentTime)) {
@@ -1784,7 +1831,7 @@
           return;
         }
         const newTime = Math.max(0, currTime + increment);
-        log2(`Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`);
+        log(`Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`);
         formatTime(timeLink, newTime);
         invalidateLatestTimestampValue();
         const timestampLi = target.closest("li");
@@ -1817,7 +1864,7 @@
         }
       } else if (target.dataset.action === "clear") {
         event.preventDefault();
-        log2("Timestamps changed: All timestamps cleared from UI");
+        log("Timestamps changed: All timestamps cleared from UI");
         list.textContent = "";
         invalidateLatestTimestampValue();
         updateSeekbarMarkers();
@@ -1964,7 +2011,7 @@
         const player = getActivePlayer();
         const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
         if (Number.isFinite(currentTime)) {
-          log2(`Timestamps changedset to current playback time ${currentTime}`);
+          log(`Timestamps changedset to current playback time ${currentTime}`);
           formatTime(anchor, currentTime);
           updateTimeDifferences();
           updateIndentMarkers();
@@ -1984,7 +2031,7 @@
       });
       del.onclick = () => {
         if (li.dataset.deleteConfirmed === "true") {
-          log2("Timestamps changed: Timestamp deleted");
+          log("Timestamps changed: Timestamp deleted");
           const guid2 = li.dataset.guid ?? "";
           li.remove();
           invalidateLatestTimestampValue();
@@ -2211,7 +2258,7 @@
         }
       }
       if (orderChanged) {
-        log2("Timestamps changed: Timestamps sorted");
+        log("Timestamps changed: Timestamps sorted");
         saveTimestamps(currentLoadedVideoId);
       }
     }
@@ -2277,12 +2324,12 @@
       if (!list || list.querySelector(".ytls-error-message")) return;
       if (!videoId) return;
       if (isLoadingTimestamps) {
-        log2("Save blocked: timestamps are currently loading");
+        log("Save blocked: timestamps are currently loading");
         return;
       }
       updateIndentMarkers();
       const currentTimestampsFromUI = extractTimestampRecords().sort((a, b) => a.start - b.start);
-      saveToIndexedDB(videoId, currentTimestampsFromUI).then(() => log2(`Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`)).catch((err) => log2(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, "error"));
+      saveToIndexedDB(videoId, currentTimestampsFromUI).then(() => log(`Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`)).catch((err) => log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, "error"));
       safePostMessage({ type: "timestamps_updated", videoId, action: "saved" });
     }
     function extractSingleTimestampFromLi(li) {
@@ -2303,20 +2350,20 @@
       if (!videoId || isLoadingTimestamps) return;
       const timestamp = extractSingleTimestampFromLi(li);
       if (!timestamp) return;
-      saveSingleTimestampToIndexedDB(videoId, timestamp).catch((err) => log2(`Failed to save timestamp ${timestamp.guid}:`, err, "error"));
+      saveSingleTimestampToIndexedDB(videoId, timestamp).catch((err) => log(`Failed to save timestamp ${timestamp.guid}:`, err, "error"));
       safePostMessage({ type: "timestamps_updated", videoId, action: "saved" });
     }
     function saveSingleTimestampDirect(videoId, guid, start, comment) {
       if (!videoId || isLoadingTimestamps) return;
       const timestamp = { guid, start, comment };
-      log2(`Saving timestamp: guid=${guid}, start=${start}, comment="${comment}"`);
-      saveSingleTimestampToIndexedDB(videoId, timestamp).catch((err) => log2(`Failed to save timestamp ${guid}:`, err, "error"));
+      log(`Saving timestamp: guid=${guid}, start=${start}, comment="${comment}"`);
+      saveSingleTimestampToIndexedDB(videoId, timestamp).catch((err) => log(`Failed to save timestamp ${guid}:`, err, "error"));
       safePostMessage({ type: "timestamps_updated", videoId, action: "saved" });
     }
     function deleteSingleTimestamp(videoId, guid) {
       if (!videoId || isLoadingTimestamps) return;
-      log2(`Deleting timestamp: guid=${guid}`);
-      deleteSingleTimestampFromIndexedDB(videoId, guid).catch((err) => log2(`Failed to delete timestamp ${guid}:`, err, "error"));
+      log(`Deleting timestamp: guid=${guid}`);
+      deleteSingleTimestampFromIndexedDB(videoId, guid).catch((err) => log(`Failed to delete timestamp ${guid}:`, err, "error"));
       safePostMessage({ type: "timestamps_updated", videoId, action: "saved" });
     }
     async function saveTimestampsAs(format) {
@@ -2326,10 +2373,10 @@
       }
       const videoId = currentLoadedVideoId;
       if (!videoId) return;
-      log2(`Exporting timestamps for video ID: ${videoId}`);
+      log(`Exporting timestamps for video ID: ${videoId}`);
       const timestamps = extractTimestampRecords();
       const videoDuration = Math.max(getLatestTimestampValue(), 0);
-      const timestampSuffix = getTimestampSuffix2();
+      const timestampSuffix = getTimestampSuffix();
       if (format === "json") {
         const blob = new Blob([JSON.stringify(timestamps, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
@@ -2355,7 +2402,7 @@
     }
     function displayPaneError(message) {
       if (!pane || !list) {
-        log2("Timekeeper error:", message, "error");
+        log("Timekeeper error:", message, "error");
         return;
       }
       clearTimestampsDisplay();
@@ -2555,12 +2602,12 @@
               ...ts,
               guid: ts.guid || crypto.randomUUID()
             }));
-            log2(`Loaded ${finalTimestampsToDisplay.length} timestamps from IndexedDB for ${videoId}`);
+            log(`Loaded ${finalTimestampsToDisplay.length} timestamps from IndexedDB for ${videoId}`);
           } else {
-            log2(`No timestamps found in IndexedDB for ${videoId}`);
+            log(`No timestamps found in IndexedDB for ${videoId}`);
           }
         } catch (dbError) {
-          log2(`Failed to load timestamps from IndexedDB for ${videoId}:`, dbError, "error");
+          log(`Failed to load timestamps from IndexedDB for ${videoId}:`, dbError, "error");
           clearTimestampsDisplay();
           updateSeekbarMarkers();
           return;
@@ -2584,7 +2631,7 @@
           updateSeekbarMarkers();
         }
       } catch (err) {
-        log2("Unexpected error while loading timestamps:", err, "error");
+        log("Unexpected error while loading timestamps:", err, "error");
         displayPaneError("Timekeeper encountered an unexpected error while loading timestamps. Check the console for details.");
       } finally {
         requestAnimationFrame(restoreScrollPosition);
@@ -2678,7 +2725,7 @@
             return Promise.resolve(dbConnection);
           }
         } catch (err) {
-          log2("IndexedDB connection is no longer usable:", err, "warn");
+          log("IndexedDB connection is no longer usable:", err, "warn");
           dbConnection = null;
         }
       }
@@ -2689,11 +2736,11 @@
         dbConnection = db;
         dbConnectionPromise = null;
         db.onclose = () => {
-          log2("IndexedDB connection closed unexpectedly", "warn");
+          log("IndexedDB connection closed unexpectedly", "warn");
           dbConnection = null;
         };
         db.onerror = (event) => {
-          log2("IndexedDB connection error:", event, "error");
+          log("IndexedDB connection error:", event, "error");
         };
         return db;
       }).catch((err) => {
@@ -2737,9 +2784,9 @@
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
-        log2(`Exported ${totalVideos} videos with ${totalTimestamps} timestamps`);
+        log(`Exported ${totalVideos} videos with ${totalTimestamps} timestamps`);
       } catch (err) {
-        log2("Failed to export data:", err, "error");
+        log("Failed to export data:", err, "error");
         throw err;
       }
     }
@@ -2758,7 +2805,7 @@
           }
           if (oldVersion < 3) {
             if (db.objectStoreNames.contains(STORE_NAME)) {
-              log2("Exporting backup before v2 migration...");
+              log("Exporting backup before v2 migration...");
               const v1Store = transaction.objectStore(STORE_NAME);
               const exportRequest = v1Store.getAll();
               exportRequest.onsuccess = () => {
@@ -2785,12 +2832,12 @@
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = `timekeeper-data-${getTimestampSuffix2()}.json`;
+                    a.download = `timekeeper-data-${getTimestampSuffix()}.json`;
                     a.click();
                     URL.revokeObjectURL(url);
-                    log2(`Pre-migration backup exported: ${v1Records.length} videos, ${totalTimestamps} timestamps`);
+                    log(`Pre-migration backup exported: ${v1Records.length} videos, ${totalTimestamps} timestamps`);
                   } catch (err) {
-                    log2("Failed to export pre-migration backup:", err, "error");
+                    log("Failed to export pre-migration backup:", err, "error");
                   }
                 }
               };
@@ -2818,11 +2865,11 @@
                       });
                     }
                   });
-                  log2(`Migrated ${totalMigrated} timestamps from ${v1Records.length} videos to v2 store`);
+                  log(`Migrated ${totalMigrated} timestamps from ${v1Records.length} videos to v2 store`);
                 }
               };
               db.deleteObjectStore(STORE_NAME);
-              log2("Deleted old timestamps store after migration to v2");
+              log("Deleted old timestamps store after migration to v2");
             }
           }
         };
@@ -2897,7 +2944,7 @@
                 });
               });
             } catch (err) {
-              log2("Error during save operation:", err, "error");
+              log("Error during save operation:", err, "error");
             }
           };
           getRequest.onerror = () => {
@@ -2963,7 +3010,7 @@
           try {
             tx = db.transaction([STORE_NAME_V2], "readonly");
           } catch (err) {
-            log2("Failed to create read transaction:", err, "warn");
+            log("Failed to create read transaction:", err, "warn");
             resolve(null);
             return;
           }
@@ -2984,11 +3031,11 @@
             }
           };
           v2Request.onerror = () => {
-            log2("Failed to load timestamps:", v2Request.error, "warn");
+            log("Failed to load timestamps:", v2Request.error, "warn");
             resolve(null);
           };
           tx.onabort = () => {
-            log2("Transaction aborted during load:", tx.error, "warn");
+            log("Transaction aborted during load:", tx.error, "warn");
             resolve(null);
           };
         });
@@ -3014,7 +3061,7 @@
                 v2Store.delete(record.guid);
               });
             } catch (err) {
-              log2("Error during remove operation:", err, "error");
+              log("Error during remove operation:", err, "error");
             }
           };
           getRequest.onerror = () => {
@@ -3037,7 +3084,7 @@
       executeTransaction(SETTINGS_STORE_NAME, "readwrite", (store) => {
         store.put({ key, value });
       }).catch((err) => {
-        log2(`Failed to save setting '${key}' to IndexedDB:`, err, "error");
+        log(`Failed to save setting '${key}' to IndexedDB:`, err, "error");
       });
     }
     function loadGlobalSettings2(key) {
@@ -3046,7 +3093,7 @@
       }).then((result) => {
         return result?.value;
       }).catch((err) => {
-        log2(`Failed to load setting '${key}' from IndexedDB:`, err, "error");
+        log(`Failed to load setting '${key}' from IndexedDB:`, err, "error");
         return void 0;
       });
     }
@@ -3056,7 +3103,7 @@
           store.put({ key: "oauth_message", value: message });
         });
       } catch (err) {
-        log2("Failed to save OAuth message to IndexedDB:", err, "error");
+        log("Failed to save OAuth message to IndexedDB:", err, "error");
       }
     }
     async function loadOAuthMessage() {
@@ -3066,7 +3113,7 @@
         });
         return result?.value ?? null;
       } catch (err) {
-        log2("Failed to load OAuth message from IndexedDB:", err, "error");
+        log("Failed to load OAuth message from IndexedDB:", err, "error");
         return null;
       }
     }
@@ -3076,7 +3123,7 @@
           store.delete("oauth_message");
         });
       } catch (err) {
-        log2("Failed to delete OAuth message from IndexedDB:", err, "error");
+        log("Failed to delete OAuth message from IndexedDB:", err, "error");
       }
     }
     function saveUIVisibilityState() {
@@ -3116,7 +3163,7 @@
           syncToggleButtons(true);
         }
       }).catch((err) => {
-        log2("Failed to load UI visibility state:", err, "error");
+        log("Failed to load UI visibility state:", err, "error");
         pane.style.display = "flex";
         pane.classList.remove("ytls-zoom-out");
         pane.classList.add("ytls-zoom-in");
@@ -3153,7 +3200,7 @@
     }
     function processImportedData(contentString) {
       if (!list) {
-        log2("UI is not initialized; cannot import timestamps.", "warn");
+        log("UI is not initialized; cannot import timestamps.", "warn");
         return;
       }
       let processedSuccessfully = false;
@@ -3168,7 +3215,7 @@
             const key = `timekeeper-${currentVideoId}`;
             if (parsed[key] && Array.isArray(parsed[key].timestamps)) {
               timestamps = parsed[key].timestamps;
-              log2(`Found timestamps for current video (${currentVideoId}) in export format`, "info");
+              log(`Found timestamps for current video (${currentVideoId}) in export format`, "info");
             }
           }
           if (!timestamps) {
@@ -3176,7 +3223,7 @@
             if (keys.length === 1 && Array.isArray(parsed[keys[0]].timestamps)) {
               timestamps = parsed[keys[0]].timestamps;
               const videoId = parsed[keys[0]].video_id;
-              log2(`Found timestamps for video ${videoId} in export format`, "info");
+              log(`Found timestamps for video ${videoId} in export format`, "info");
             }
           }
         }
@@ -3200,10 +3247,10 @@
             });
             processedSuccessfully = true;
           } else {
-            log2("Parsed JSON array, but items are not in the expected timestamp format. Trying as plain text.", "warn");
+            log("Parsed JSON array, but items are not in the expected timestamp format. Trying as plain text.", "warn");
           }
         } else {
-          log2("Parsed JSON, but couldn't find valid timestamps. Trying as plain text.", "warn");
+          log("Parsed JSON, but couldn't find valid timestamps. Trying as plain text.", "warn");
         }
       } catch (e) {
       }
@@ -3261,7 +3308,7 @@
         }
       }
       if (processedSuccessfully) {
-        log2("Timestamps changed: Imported timestamps from file/clipboard");
+        log("Timestamps changed: Imported timestamps from file/clipboard");
         updateIndentMarkers();
         saveTimestamps(currentLoadedVideoId);
         updateSeekbarMarkers();
@@ -3430,7 +3477,7 @@
             this.textContent = "\u{1F4CB}";
           }, 2e3);
         }).catch((err) => {
-          log2("Failed to copy timestamps: ", err, "error");
+          log("Failed to copy timestamps: ", err, "error");
           this.textContent = "\u274C";
           setTimeout(() => {
             this.textContent = "\u{1F4CB}";
@@ -3550,7 +3597,7 @@
                 await removeFromIndexedDB(currentVideoId);
                 handleUrlChange();
               } catch (err) {
-                log2("Failed to delete all timestamps:", err, "error");
+                log("Failed to delete all timestamps:", err, "error");
                 alert("Failed to delete timestamps. Check console for details.");
               }
             }, 300);
@@ -3576,31 +3623,6 @@
         modal.appendChild(cancelButton);
         document.body.appendChild(modal);
       };
-      const holidayEmojis = [
-        {
-          baseEmoji: "\u{1F423}",
-          holidayEmoji: "\u{1F332}",
-          month: 12,
-          // December
-          day: 25,
-          name: "Christmas"
-        }
-        // Add more holidays here in the future
-      ];
-      function getHolidayEmojiForBase(baseEmoji) {
-        const now = /* @__PURE__ */ new Date();
-        const currentYear = now.getFullYear();
-        for (const holiday of holidayEmojis) {
-          if (holiday.baseEmoji !== baseEmoji) continue;
-          const holidayDate = new Date(currentYear, holiday.month - 1, holiday.day);
-          const diffTime = holidayDate.getTime() - now.getTime();
-          const diffDays = diffTime / (1e3 * 60 * 60 * 24);
-          if (Math.abs(diffDays) <= 7) {
-            return holiday.holidayEmoji;
-          }
-        }
-        return null;
-      }
       const mainButtonConfigs = [
         { label: "\u{1F423}", title: "Add timestamp", action: handleAddTimestamp },
         { label: "\u2699\uFE0F", title: "Settings", action: toggleSettingsModal },
@@ -3609,13 +3631,13 @@
         { label: "\u23F1\uFE0F", title: "Offset all timestamps", action: handleBulkOffset },
         { label: "\u{1F5D1}\uFE0F", title: "Delete all timestamps for current video", action: handleDeleteAll }
       ];
+      const holidayEmoji = getHolidayEmoji();
       mainButtonConfigs.forEach((config) => {
         const button = document.createElement("button");
         button.textContent = config.label;
         button.title = config.title;
         button.classList.add("ytls-main-button");
-        const holidayEmoji = getHolidayEmojiForBase(config.label);
-        if (holidayEmoji) {
+        if (config.label === "\u{1F423}" && holidayEmoji) {
           const holidayEmojiSpan = document.createElement("span");
           holidayEmojiSpan.textContent = holidayEmoji;
           holidayEmojiSpan.classList.add("ytls-holiday-emoji");
@@ -3924,7 +3946,7 @@
                 alert("Clipboard is empty.");
               }
             } catch (err) {
-              log2("Failed to read from clipboard: ", err, "error");
+              log("Failed to read from clipboard: ", err, "error");
               alert("Failed to read from clipboard. Ensure you have granted permission.");
             }
           }, 300);
@@ -3982,10 +4004,10 @@
                       ...ts,
                       guid: ts.guid || crypto.randomUUID()
                     }));
-                    const promise = saveToIndexedDB(videoId, timestampsWithGuids).then(() => log2(`Imported ${videoId} to IndexedDB`)).catch((err) => log2(`Failed to import ${videoId} to IndexedDB:`, err, "error"));
+                    const promise = saveToIndexedDB(videoId, timestampsWithGuids).then(() => log(`Imported ${videoId} to IndexedDB`)).catch((err) => log(`Failed to import ${videoId} to IndexedDB:`, err, "error"));
                     importPromises.push(promise);
                   } else {
-                    log2(`Skipping key ${key} during import due to unexpected data format.`, "warn");
+                    log(`Skipping key ${key} during import due to unexpected data format.`, "warn");
                   }
                 }
               }
@@ -3993,11 +4015,11 @@
                 handleUrlChange();
               }).catch((err) => {
                 alert("An error occurred during import to IndexedDB. Check console for details.");
-                log2("Overall import error:", err, "error");
+                log("Overall import error:", err, "error");
               });
             } catch (e) {
               alert("Failed to import data. Please ensure the file is in the correct format.\n" + e.message);
-              log2("Import error:", e, "error");
+              log("Import error:", e, "error");
             }
           };
           reader.readAsText(file);
@@ -4013,7 +4035,7 @@
       };
       function loadPanePosition() {
         if (!pane) return;
-        log2("Loading window position from IndexedDB");
+        log("Loading window position from IndexedDB");
         loadGlobalSettings2("windowPosition").then((value) => {
           if (value && typeof value.x === "number" && typeof value.y === "number") {
             const pos = value;
@@ -4026,7 +4048,7 @@
               y: Math.max(0, Math.round(pos.y))
             };
           } else {
-            log2("No window position found in IndexedDB, leaving default position");
+            log("No window position found in IndexedDB, leaving default position");
             lastSavedPanePosition = null;
           }
           clampPaneToViewport();
@@ -4038,7 +4060,7 @@
             };
           }
         }).catch((err) => {
-          log2("failed to load pane position from IndexedDB:", err, "warn");
+          log("failed to load pane position from IndexedDB:", err, "warn");
           clampPaneToViewport();
           const rect = pane.getBoundingClientRect();
           if (rect.width || rect.height) {
@@ -4057,11 +4079,11 @@
           y: Math.max(0, Math.round(rect.top))
         };
         if (lastSavedPanePosition && lastSavedPanePosition.x === positionData.x && lastSavedPanePosition.y === positionData.y) {
-          log2("Skipping window position save; position unchanged");
+          log("Skipping window position save; position unchanged");
           return;
         }
         lastSavedPanePosition = { ...positionData };
-        log2(`Saving window position to IndexedDB: x=${positionData.x}, y=${positionData.y}`);
+        log(`Saving window position to IndexedDB: x=${positionData.x}, y=${positionData.y}`);
         saveGlobalSettings2("windowPosition", positionData);
         safePostMessage({
           type: "window_position_updated",
@@ -4168,10 +4190,10 @@
         setLoadGlobalSettings(loadGlobalSettings2);
       }
       if (typeof setLog === "function") {
-        setLog(log2);
+        setLog(log);
       }
       if (typeof setGetTimestampSuffix === "function") {
-        setGetTimestampSuffix(getTimestampSuffix2);
+        setGetTimestampSuffix(getTimestampSuffix);
       }
       await loadGoogleAuthState();
       await loadAutoBackupSettings();
@@ -4217,7 +4239,7 @@
       });
       logoElement.insertAdjacentElement("afterend", headerButton);
       syncToggleButtons();
-      log2("Timekeeper header button added next to YouTube logo");
+      log("Timekeeper header button added next to YouTube logo");
     }
     function setupTitleObserver() {
       if (titleObserver) {
@@ -4229,7 +4251,7 @@
           currentLoadedVideoTitle = newTitle;
           if (timeDisplay) {
             timeDisplay.title = currentLoadedVideoTitle;
-            log2("Video title changed, updated tooltip:", currentLoadedVideoTitle);
+            log("Video title changed, updated tooltip:", currentLoadedVideoTitle);
           }
         }
       });
@@ -4241,7 +4263,7 @@
       if (titleElement) {
         titleObserver.observe(titleElement, { childList: true, characterData: true, subtree: true });
       }
-      log2("Title observer initialized");
+      log("Title observer initialized");
     }
     async function handleUrlChange() {
       if (!isSupportedUrl()) {
@@ -4256,10 +4278,10 @@
       currentLoadedVideoId = getVideoId();
       currentLoadedVideoTitle = getVideoTitle();
       const pageTitle = document.title;
-      log2("Page Title:", pageTitle);
-      log2("Video ID:", currentLoadedVideoId);
-      log2("Video Title:", currentLoadedVideoTitle);
-      log2("Current URL:", window.location.href);
+      log("Page Title:", pageTitle);
+      log("Video ID:", currentLoadedVideoId);
+      log("Video Title:", currentLoadedVideoTitle);
+      log("Current URL:", window.location.href);
       if (timeDisplay && currentLoadedVideoTitle) {
         timeDisplay.title = currentLoadedVideoTitle;
       }
@@ -4269,15 +4291,15 @@
       await loadTimestamps();
       updateSeekbarMarkers();
       setLoadingState(false);
-      log2("Timestamps loaded and UI unlocked for video:", currentLoadedVideoId);
+      log("Timestamps loaded and UI unlocked for video:", currentLoadedVideoId);
       await displayPane();
       addHeaderButton();
       setupVideoEventListeners();
     }
     window.addEventListener("yt-navigate-start", () => {
-      log2("Navigation started (yt-navigate-start event fired)");
+      log("Navigation started (yt-navigate-start event fired)");
       if (isSupportedUrl() && pane && list) {
-        log2("Locking UI and showing loading state for navigation");
+        log("Locking UI and showing loading state for navigation");
         setLoadingState(true);
       }
     });
@@ -4285,15 +4307,15 @@
       if (e.ctrlKey && e.altKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
         e.preventDefault();
         togglePaneVisibility();
-        log2("Timekeeper UI toggled via keyboard shortcut (Ctrl+Alt+Shift+T)");
+        log("Timekeeper UI toggled via keyboard shortcut (Ctrl+Alt+Shift+T)");
       }
     };
     document.addEventListener("keydown", keydownHandler);
     window.addEventListener("yt-navigate-finish", () => {
-      log2("Navigation finished (yt-navigate-finish event fired)");
+      log("Navigation finished (yt-navigate-finish event fired)");
       handleUrlChange();
     });
-    log2("Timekeeper initialized and waiting for navigation events");
+    log("Timekeeper initialized and waiting for navigation events");
   })();
 })();
 

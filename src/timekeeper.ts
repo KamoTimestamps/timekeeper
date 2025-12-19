@@ -1,3 +1,6 @@
+import { getHolidayEmoji } from './holidays';
+import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix } from './util';
+
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
   setValue<T = unknown>(key: string, value: T): Promise<void>;
@@ -77,23 +80,6 @@ if (hash && hash.length > 1) {
   }
 
   // Setup minimal logging and storage functions early for OAuth handling
-  type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-
-  function earlyLog(message: string, ...args: any[]) {
-    let logLevel: LogLevel = 'debug';
-    const consoleArgs = [...args];
-    if (args.length > 0 && typeof args[args.length - 1] === 'string' &&
-      ['debug', 'info', 'warn', 'error'].includes(args[args.length - 1])) {
-      logLevel = consoleArgs.pop() as LogLevel;
-    }
-    const version = GM_info.script.version;
-    const prefix = `[Timekeeper v${version}]`;
-    const methodMap: Record<LogLevel, (...args: any[]) => void> = {
-      'debug': console.log, 'info': console.info, 'warn': console.warn, 'error': console.error
-    };
-    methodMap[logLevel](`${prefix} ${message}`, ...consoleArgs);
-  }
-
   function earlyLoadGlobalSettings(key: string): Promise<unknown> {
     return GM.getValue(`timekeeper_${key}`, undefined);
   }
@@ -103,14 +89,14 @@ if (hash && hash.length > 1) {
   }
 
   // Initialize GoogleDrive callbacks early for OAuth handling
-  (GoogleDrive as any).setLog(earlyLog);
+  (GoogleDrive as any).setLog(log);
   (GoogleDrive as any).setLoadGlobalSettings(earlyLoadGlobalSettings);
   (GoogleDrive as any).setSaveGlobalSettings(earlySaveGlobalSettings);
 
   // Check if we're in an OAuth popup and handle it
   const isOAuthPopup = await GoogleDrive.handleOAuthPopup();
   if (isOAuthPopup) {
-    earlyLog("OAuth popup detected, broadcasting token and closing");
+    log("OAuth popup detected, broadcasting token and closing");
     return; // Exit script, popup will close
   }
 
@@ -129,7 +115,7 @@ if (hash && hash.length > 1) {
         return parsed.pathname === prefix || parsed.pathname.startsWith(`${prefix}/`);
       });
     } catch (err) {
-      earlyLog("Timekeeper failed to parse URL for support check:", err, 'error');
+      log("Timekeeper failed to parse URL for support check:", err, 'error');
       return false;
     }
   }
@@ -261,12 +247,6 @@ if (hash && hash.length > 1) {
   // Configuration for shift-click time skip interval
   const SHIFT_SKIP_KEY = "shiftClickTimeSkipSeconds";
   const DEFAULT_SHIFT_SKIP = 10;
-
-  // Unified logging function with log level support (now defined with dedicated log function below)
-  function log(message: string, ...args: any[]) {
-    // Forward to earlyLog with same implementation
-    return earlyLog(message, ...args);
-  }
 
   // Create a BroadcastChannel for cross-tab communication
   let channel = new BroadcastChannel('ytls_timestamp_channel');
@@ -511,16 +491,6 @@ if (hash && hash.length > 1) {
     }
   }
 
-  function getTimestampSuffix() {
-    const now = new Date();
-    return now.getUTCFullYear() +
-      '-' + String(now.getUTCMonth() + 1).padStart(2, '0') +
-      '-' + String(now.getUTCDate()).padStart(2, '0') +
-      '--' + String(now.getUTCHours()).padStart(2, '0') +
-      '-' + String(now.getUTCMinutes()).padStart(2, '0') +
-      '-' + String(now.getUTCSeconds()).padStart(2, '0');
-  }
-
   function clearTimestampsDisplay() {
     if (!list) return;
     while (list.firstChild) { // Clear the existing timestamps
@@ -598,38 +568,8 @@ if (hash && hash.length > 1) {
   }
 
   // Helper function to format timestamps based on total duration
-  function formatTimeString(seconds, videoDuration = seconds) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = String(seconds % 60).padStart(2, "0");
-
-    // For times under 1 hour, show M:SS or MM:SS
-    if (videoDuration < 3600) {
-      return `${m < 10 ? m : String(m).padStart(2, "0")}:${s}`;
-    }
-
-    // For times with hours, show H:MM:SS or HH:MM:SS
-    return `${videoDuration >= 36000 ? String(h).padStart(2, "0") : h}:${String(m).padStart(2, "0")}:${s}`;
-  }
-
   function isTimestampRecord(value: TimestampRecord | null | undefined): value is TimestampRecord {
     return !!value && Number.isFinite(value.start) && typeof value.comment === "string" && typeof value.guid === "string";
-  }
-
-  // Helper function to build YouTube URL with timestamp parameter
-  function buildYouTubeUrlWithTimestamp(timeInSeconds: number, currentUrl: string = window.location.href): string {
-    // Try to reuse the original URL structure
-    try {
-      const url = new URL(currentUrl);
-      url.searchParams.set('t', `${timeInSeconds}s`);
-      return url.toString();
-    } catch {
-      // Fallback if URL parsing fails: extract video ID and build from scratch
-      const vid = currentUrl.search(/[?&]v=/) >= 0
-        ? currentUrl.split(/[?&]v=/)[1].split(/&/)[0]
-        : currentUrl.split(/\/live\/|\/shorts\/|\?|&/)[1];
-      return `https://www.youtube.com/watch?v=${vid}&t=${timeInSeconds}s`;
-    }
   }
 
   // Update existing calls to formatTimeString to pass only the timestamp value itself
@@ -3083,39 +3023,6 @@ if (hash && hash.length > 1) {
         document.body.appendChild(modal);
       };
 
-    // Holiday configuration - can be extended with more holidays
-    const holidayEmojis = [
-      {
-        baseEmoji: "🐣",
-        holidayEmoji: "🌲",
-        month: 12, // December
-        day: 25,
-        name: "Christmas"
-      }
-      // Add more holidays here in the future
-    ];
-
-    // Check if current date is within 7 days of any holiday for a given base emoji
-    function getHolidayEmojiForBase(baseEmoji: string): string | null {
-      const now = new Date();
-      const currentYear = now.getFullYear();
-
-      for (const holiday of holidayEmojis) {
-        if (holiday.baseEmoji !== baseEmoji) continue;
-
-        const holidayDate = new Date(currentYear, holiday.month - 1, holiday.day);
-        const diffTime = holidayDate.getTime() - now.getTime();
-        const diffDays = diffTime / (1000 * 60 * 60 * 24);
-
-        // Within 7 days before or after the holiday
-        if (Math.abs(diffDays) <= 7) {
-          return holiday.holidayEmoji;
-        }
-      }
-
-      return null;
-    }
-
     // Configuration for main buttons
     const mainButtonConfigs = [
       { label: "🐣", title: "Add timestamp", action: handleAddTimestamp },
@@ -3125,6 +3032,9 @@ if (hash && hash.length > 1) {
       { label: "🗑️", title: "Delete all timestamps for current video", action: handleDeleteAll }
     ];
 
+    // Check for holiday emoji on load
+    const holidayEmoji = getHolidayEmoji();
+
     // Create and append main buttons
     mainButtonConfigs.forEach(config => {
       const button = document.createElement("button");
@@ -3132,9 +3042,8 @@ if (hash && hash.length > 1) {
       button.title = config.title;
       button.classList.add("ytls-main-button");
 
-      // Check if this button has a holiday emoji variant
-      const holidayEmoji = getHolidayEmojiForBase(config.label);
-      if (holidayEmoji) {
+      // Add holiday emoji to the 🐣 button if available
+      if (config.label === "🐣" && holidayEmoji) {
         const holidayEmojiSpan = document.createElement("span");
         holidayEmojiSpan.textContent = holidayEmoji;
         holidayEmojiSpan.classList.add("ytls-holiday-emoji");

@@ -4,8 +4,7 @@
   "private": true,
   "description": "Timekeeper userscript TypeScript project",
   "scripts": {
-    "prebuild": "node -p \"'export const TIMEKEEPER_VERSION = ' + JSON.stringify(require('./package.json').version) + ';'\" > src/version.ts",
-    "build": "npm run prebuild && node scripts/build.js",
+    "build": "node scripts/build.js",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
