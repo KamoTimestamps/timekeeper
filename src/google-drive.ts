@@ -520,6 +520,30 @@ export async function signOutFromGoogle() {
   updateAuthStatusDisplay();
 }
 
+// Verify that the user is still signed in by making a lightweight API call
+export async function verifySignedIn(): Promise<boolean> {
+  if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
+    return false;
+  }
+
+  try {
+    const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { 'Authorization': `Bearer ${googleAuthState.accessToken}` }
+    });
+
+    if (response.status === 401) {
+      // Token expired - sign out
+      await handleAuthExpiration({ silent: true, retry: false });
+      return false;
+    }
+
+    return response.ok;
+  } catch (err) {
+    log('Failed to verify auth state:', err, 'error');
+    return false;
+  }
+}
+
 // Ensure a folder named "Timekeeper" exists in Google Drive
 async function ensureDriveFolder(accessToken: string): Promise<string> {
   const headers = { Authorization: `Bearer ${accessToken}` };
@@ -609,8 +633,43 @@ async function uploadJsonToDrive(filename: string, json: string, folderId: strin
   if (!resp.ok) throw new Error('drive upload failed');
 }
 
+// Helper function to handle auth expiration and attempt automatic renewal
+async function handleAuthExpiration(opts?: { silent?: boolean; retry?: boolean }): Promise<boolean> {
+  log('Auth expired, attempting to renew...', null, 'warn');
+
+  // Clear expired auth state
+  googleAuthState.isSignedIn = false;
+  googleAuthState.accessToken = null;
+  await saveGoogleAuthState();
+  updateAuthStatusDisplay();
+  updateBackupStatusDisplay();
+
+  if (opts?.retry) {
+    try {
+      // Attempt silent re-authentication
+      if (!opts?.silent) {
+        updateAuthStatusDisplay('authenticating', 'Renewing authentication...');
+      }
+      await signInToGoogle();
+      // If sign in succeeds, googleAuthState will be updated
+      return googleAuthState.isSignedIn;
+    } catch (err) {
+      log('Auto-renewal failed:', err, 'error');
+      if (!opts?.silent) {
+        updateAuthStatusDisplay('error', 'Authentication renewal failed. Please sign in again.');
+      }
+      return false;
+    }
+  } else {
+    if (!opts?.silent) {
+      updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
+    }
+    return false;
+  }
+}
+
 // Export all timestamps to Google Drive
-export async function exportAllTimestampsToGoogleDrive(opts?: { silent?: boolean }): Promise<void> {
+export async function exportAllTimestampsToGoogleDrive(opts?: { silent?: boolean; isRetry?: boolean }): Promise<void> {
   if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
     if (!opts?.silent) {
       updateAuthStatusDisplay('error', 'Please sign in to Google Drive first');
@@ -633,10 +692,13 @@ export async function exportAllTimestampsToGoogleDrive(opts?: { silent?: boolean
     log(`Exported to Google Drive (${filename}) with ${totalVideos} videos / ${totalTimestamps} timestamps.`);
   } catch (err) {
     if ((err as Error).message === 'unauthorized') {
-      if (!opts?.silent) updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
+      // Auth expired - clear state without prompting user
+      await handleAuthExpiration({ silent: opts?.silent, retry: false });
+      throw err; // Re-throw to trigger retry logic in runAutoBackupOnce
     } else {
       log('Drive export failed:', err, 'error');
       if (!opts?.silent) updateAuthStatusDisplay('error', 'Failed to export to Google Drive.');
+      throw err;
     }
   }
 }
@@ -681,7 +743,7 @@ export function formatBackupTime(ts: number): string {
     const d = new Date(ts);
     const now = new Date();
     const sameDay = d.toDateString() === now.toDateString();
-    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     return sameDay ? time : `${d.toLocaleDateString()} ${time}`;
   } catch {
     return '';
@@ -807,6 +869,7 @@ export async function runAutoBackupOnce(silent = true) {
   updateBackupStatusDisplay();
   try {
     await exportAllTimestampsToGoogleDrive({ silent });
+    // Only update last backup time if the backup succeeded
     lastAutoBackupAt = Date.now();
     autoBackupRetryAttempts = 0;
     autoBackupBackoffMs = null;

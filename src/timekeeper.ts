@@ -3212,7 +3212,13 @@ if (hash && hash.length > 1) {
       driveTab.appendChild(driveTabText);
       addTooltip(driveTab, "Google Drive sign-in and backup");
       driveTab.classList.add("ytls-settings-modal-button");
-      driveTab.onclick = () => showSection('drive');
+      driveTab.onclick = async () => {
+        // Verify auth state when opening backup settings
+        if (GoogleDrive.googleAuthState.isSignedIn) {
+          await GoogleDrive.verifySignedIn();
+        }
+        showSection('drive');
+      };
       nav.appendChild(generalTab);
       nav.appendChild(driveTab);
 
@@ -3357,16 +3363,25 @@ if (hash && hash.length > 1) {
         return;
       }
 
-      // Don't close if any subdialogs are open
+      // Check if clicked outside all modals
       const saveModal = document.getElementById('ytls-save-modal');
       const loadModal = document.getElementById('ytls-load-modal');
-      if (saveModal || loadModal) {
-        return;
-      }
 
-      if (settingsModalInstance && !settingsModalInstance.contains(event.target)) {
-        // Clicked outside the modal
-        if (settingsModalInstance.parentNode === document.body) {
+      const clickedInsideAnyModal = (saveModal && saveModal.contains(event.target)) ||
+                                    (loadModal && loadModal.contains(event.target)) ||
+                                    (settingsModalInstance && settingsModalInstance.contains(event.target));
+
+      if (!clickedInsideAnyModal) {
+        // Close all subdialogs first
+        if (saveModal && document.body.contains(saveModal)) {
+          document.body.removeChild(saveModal);
+        }
+        if (loadModal && document.body.contains(loadModal)) {
+          document.body.removeChild(loadModal);
+        }
+
+        // Then close settings modal
+        if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
           settingsModalInstance.classList.remove("ytls-fade-in");
           settingsModalInstance.classList.add("ytls-fade-out");
           setTimeout(() => {

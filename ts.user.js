@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.1.6
+// @version      4.1.7
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -1132,6 +1132,24 @@
     updateGoogleUserDisplay();
     updateAuthStatusDisplay();
   }
+  async function verifySignedIn() {
+    if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
+      return false;
+    }
+    try {
+      const response = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { "Authorization": `Bearer ${googleAuthState.accessToken}` }
+      });
+      if (response.status === 401) {
+        await handleAuthExpiration({ silent: true, retry: false });
+        return false;
+      }
+      return response.ok;
+    } catch (err) {
+      log("Failed to verify auth state:", err, "error");
+      return false;
+    }
+  }
   async function ensureDriveFolder(accessToken) {
     const headers = { Authorization: `Bearer ${accessToken}` };
     const q = encodeURIComponent("name = 'Timekeeper' and mimeType = 'application/vnd.google-apps.folder' and trashed = false");
@@ -1198,6 +1216,34 @@
     if (resp.status === 401) throw new Error("unauthorized");
     if (!resp.ok) throw new Error("drive upload failed");
   }
+  async function handleAuthExpiration(opts) {
+    log("Auth expired, attempting to renew...", null, "warn");
+    googleAuthState.isSignedIn = false;
+    googleAuthState.accessToken = null;
+    await saveGoogleAuthState();
+    updateAuthStatusDisplay();
+    updateBackupStatusDisplay();
+    if (opts?.retry) {
+      try {
+        if (!opts?.silent) {
+          updateAuthStatusDisplay("authenticating", "Renewing authentication...");
+        }
+        await signInToGoogle();
+        return googleAuthState.isSignedIn;
+      } catch (err) {
+        log("Auto-renewal failed:", err, "error");
+        if (!opts?.silent) {
+          updateAuthStatusDisplay("error", "Authentication renewal failed. Please sign in again.");
+        }
+        return false;
+      }
+    } else {
+      if (!opts?.silent) {
+        updateAuthStatusDisplay("error", "Authorization expired. Please sign in again.");
+      }
+      return false;
+    }
+  }
   async function exportAllTimestampsToGoogleDrive(opts) {
     if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
       if (!opts?.silent) {
@@ -1218,10 +1264,12 @@
       log(`Exported to Google Drive (${filename}) with ${totalVideos} videos / ${totalTimestamps} timestamps.`);
     } catch (err) {
       if (err.message === "unauthorized") {
-        if (!opts?.silent) updateAuthStatusDisplay("error", "Authorization expired. Please sign in again.");
+        await handleAuthExpiration({ silent: opts?.silent, retry: false });
+        throw err;
       } else {
         log("Drive export failed:", err, "error");
         if (!opts?.silent) updateAuthStatusDisplay("error", "Failed to export to Google Drive.");
+        throw err;
       }
     }
   }
@@ -1261,7 +1309,7 @@
       const d = new Date(ts);
       const now = /* @__PURE__ */ new Date();
       const sameDay = d.toDateString() === now.toDateString();
-      const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
       return sameDay ? time : `${d.toLocaleDateString()} ${time}`;
     } catch {
       return "";
@@ -4001,7 +4049,12 @@ Next backup: ${nextBackupTime}`;
         driveTab.appendChild(driveTabText);
         addTooltip(driveTab, "Google Drive sign-in and backup");
         driveTab.classList.add("ytls-settings-modal-button");
-        driveTab.onclick = () => showSection("drive");
+        driveTab.onclick = async () => {
+          if (googleAuthState.isSignedIn) {
+            await verifySignedIn();
+          }
+          showSection("drive");
+        };
         nav.appendChild(generalTab);
         nav.appendChild(driveTab);
         header2.appendChild(nav);
@@ -4113,11 +4166,15 @@ Next backup: ${nextBackupTime}`;
         }
         const saveModal = document.getElementById("ytls-save-modal");
         const loadModal = document.getElementById("ytls-load-modal");
-        if (saveModal || loadModal) {
-          return;
-        }
-        if (settingsModalInstance && !settingsModalInstance.contains(event.target)) {
-          if (settingsModalInstance.parentNode === document.body) {
+        const clickedInsideAnyModal = saveModal && saveModal.contains(event.target) || loadModal && loadModal.contains(event.target) || settingsModalInstance && settingsModalInstance.contains(event.target);
+        if (!clickedInsideAnyModal) {
+          if (saveModal && document.body.contains(saveModal)) {
+            document.body.removeChild(saveModal);
+          }
+          if (loadModal && document.body.contains(loadModal)) {
+            document.body.removeChild(loadModal);
+          }
+          if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
             settingsModalInstance.classList.remove("ytls-fade-in");
             settingsModalInstance.classList.add("ytls-fade-out");
             setTimeout(() => {
