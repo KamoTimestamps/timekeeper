@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.1.5
+// @version      4.1.6
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -3670,6 +3670,34 @@ Next backup: ${nextBackupTime}`;
       }
       timeUpdateIntervalId = setInterval(updateTime, 1e3);
       btns.id = "ytls-buttons";
+      const createModalCloseHandler = (modal, onClose) => {
+        return () => {
+          modal.classList.remove("ytls-fade-in");
+          modal.classList.add("ytls-fade-out");
+          setTimeout(() => {
+            if (document.body.contains(modal)) {
+              document.body.removeChild(modal);
+            }
+            if (onClose) {
+              onClose();
+            }
+          }, 300);
+        };
+      };
+      const createEscapeKeyHandler = (closeHandler) => {
+        return (event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            closeHandler();
+          }
+        };
+      };
+      const registerModalEscapeHandler = (escapeHandler) => {
+        setTimeout(() => {
+          document.addEventListener("keydown", escapeHandler);
+        }, 0);
+      };
       const handleAddTimestamp = () => {
         if (!list || list.querySelector(".ytls-error-message") || isLoadingTimestamps) {
           return;
@@ -3841,23 +3869,24 @@ Next backup: ${nextBackupTime}`;
         };
         confirmButton.onmouseup = resetButton;
         confirmButton.onmouseleave = resetButton;
+        let escapeHandler = null;
+        const closeDeleteModal = createModalCloseHandler(modal, () => {
+          resetButton();
+          if (escapeHandler) {
+            document.removeEventListener("keydown", escapeHandler);
+          }
+        });
+        escapeHandler = createEscapeKeyHandler(closeDeleteModal);
         const cancelButton = document.createElement("button");
         cancelButton.textContent = "Cancel";
         cancelButton.classList.add("ytls-save-modal-cancel-button");
-        cancelButton.onclick = () => {
-          modal.classList.remove("ytls-fade-in");
-          modal.classList.add("ytls-fade-out");
-          setTimeout(() => {
-            if (document.body.contains(modal)) {
-              document.body.removeChild(modal);
-            }
-          }, 300);
-        };
+        cancelButton.onclick = closeDeleteModal;
         modal.appendChild(message);
         modal.appendChild(videoIdDisplay);
         modal.appendChild(confirmButton);
         modal.appendChild(cancelButton);
         document.body.appendChild(modal);
+        registerModalEscapeHandler(escapeHandler);
       };
       const mainButtonConfigs = [
         { label: "\u{1F423}", title: "Add timestamp", action: handleAddTimestamp },
@@ -3909,6 +3938,7 @@ Next backup: ${nextBackupTime}`;
             }
             settingsModalInstance = null;
             document.removeEventListener("click", handleClickOutsideSettingsModal, true);
+            document.removeEventListener("keydown", handleSettingsModalEscape);
           }, 300);
           return;
         }
@@ -3934,6 +3964,7 @@ Next backup: ${nextBackupTime}`;
               }
               settingsModalInstance = null;
               document.removeEventListener("click", handleClickOutsideSettingsModal, true);
+              document.removeEventListener("keydown", handleSettingsModalEscape);
             }, 300);
           }
         };
@@ -4053,10 +4084,36 @@ Next backup: ${nextBackupTime}`;
         });
         setTimeout(() => {
           document.addEventListener("click", handleClickOutsideSettingsModal, true);
+          document.addEventListener("keydown", handleSettingsModalEscape);
         }, 0);
+      }
+      function handleSettingsModalEscape(event) {
+        if (event.key === "Escape" && settingsModalInstance && settingsModalInstance.parentNode === document.body) {
+          const saveModal = document.getElementById("ytls-save-modal");
+          const loadModal = document.getElementById("ytls-load-modal");
+          if (saveModal || loadModal) {
+            return;
+          }
+          event.preventDefault();
+          settingsModalInstance.classList.remove("ytls-fade-in");
+          settingsModalInstance.classList.add("ytls-fade-out");
+          setTimeout(() => {
+            if (document.body.contains(settingsModalInstance)) {
+              document.body.removeChild(settingsModalInstance);
+            }
+            settingsModalInstance = null;
+            document.removeEventListener("click", handleClickOutsideSettingsModal, true);
+            document.removeEventListener("keydown", handleSettingsModalEscape);
+          }, 300);
+        }
       }
       function handleClickOutsideSettingsModal(event) {
         if (settingsCogButtonElement && settingsCogButtonElement.contains(event.target)) {
+          return;
+        }
+        const saveModal = document.getElementById("ytls-save-modal");
+        const loadModal = document.getElementById("ytls-load-modal");
+        if (saveModal || loadModal) {
           return;
         }
         if (settingsModalInstance && !settingsModalInstance.contains(event.target)) {
@@ -4069,6 +4126,7 @@ Next backup: ${nextBackupTime}`;
               }
               settingsModalInstance = null;
               document.removeEventListener("click", handleClickOutsideSettingsModal, true);
+              document.removeEventListener("keydown", handleSettingsModalEscape);
             }, 300);
           }
         }
@@ -4083,49 +4141,41 @@ Next backup: ${nextBackupTime}`;
         modal.classList.add("ytls-fade-in");
         const message = document.createElement("p");
         message.textContent = "Save as:";
+        let escapeHandler = null;
+        const closeSaveModal = createModalCloseHandler(modal, () => {
+          if (escapeHandler) {
+            document.removeEventListener("keydown", escapeHandler);
+          }
+        });
+        escapeHandler = createEscapeKeyHandler(closeSaveModal);
         const jsonButton = document.createElement("button");
         jsonButton.textContent = "JSON";
         jsonButton.classList.add("ytls-save-modal-button");
         jsonButton.onclick = () => {
-          modal.classList.remove("ytls-fade-in");
-          modal.classList.add("ytls-fade-out");
-          setTimeout(() => {
-            saveTimestampsAs("json");
-            if (document.body.contains(modal)) {
-              document.body.removeChild(modal);
-            }
-          }, 300);
+          if (escapeHandler) {
+            document.removeEventListener("keydown", escapeHandler);
+          }
+          createModalCloseHandler(modal, () => saveTimestampsAs("json"))();
         };
         const textButton = document.createElement("button");
         textButton.textContent = "Plain Text";
         textButton.classList.add("ytls-save-modal-button");
         textButton.onclick = () => {
-          modal.classList.remove("ytls-fade-in");
-          modal.classList.add("ytls-fade-out");
-          setTimeout(() => {
-            saveTimestampsAs("text");
-            if (document.body.contains(modal)) {
-              document.body.removeChild(modal);
-            }
-          }, 300);
+          if (escapeHandler) {
+            document.removeEventListener("keydown", escapeHandler);
+          }
+          createModalCloseHandler(modal, () => saveTimestampsAs("text"))();
         };
         const cancelButton = document.createElement("button");
         cancelButton.textContent = "Cancel";
         cancelButton.classList.add("ytls-save-modal-cancel-button");
-        cancelButton.onclick = () => {
-          modal.classList.remove("ytls-fade-in");
-          modal.classList.add("ytls-fade-out");
-          setTimeout(() => {
-            if (document.body.contains(modal)) {
-              document.body.removeChild(modal);
-            }
-          }, 300);
-        };
+        cancelButton.onclick = closeSaveModal;
         modal.appendChild(message);
         modal.appendChild(jsonButton);
         modal.appendChild(textButton);
         modal.appendChild(cancelButton);
         document.body.appendChild(modal);
+        registerModalEscapeHandler(escapeHandler);
       };
       const loadBtn = document.createElement("button");
       loadBtn.textContent = "\u{1F4C2} Load";
@@ -4137,43 +4187,45 @@ Next backup: ${nextBackupTime}`;
         loadModal.classList.add("ytls-fade-in");
         const loadMessage = document.createElement("p");
         loadMessage.textContent = "Load from:";
+        let escapeHandler = null;
+        const closeLoadModal = createModalCloseHandler(loadModal, () => {
+          if (escapeHandler) {
+            document.removeEventListener("keydown", escapeHandler);
+          }
+        });
+        escapeHandler = createEscapeKeyHandler(closeLoadModal);
         const fromFileButton = document.createElement("button");
         fromFileButton.textContent = "File";
         fromFileButton.classList.add("ytls-save-modal-button");
         fromFileButton.onclick = () => {
-          loadModal.classList.remove("ytls-fade-in");
-          loadModal.classList.add("ytls-fade-out");
-          setTimeout(() => {
-            if (document.body.contains(loadModal)) {
-              document.body.removeChild(loadModal);
+          const fileInput = document.createElement("input");
+          fileInput.type = "file";
+          fileInput.accept = ".json,.txt";
+          fileInput.classList.add("ytls-hidden-file-input");
+          fileInput.onchange = (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            if (escapeHandler) {
+              document.removeEventListener("keydown", escapeHandler);
             }
-            const fileInput = document.createElement("input");
-            fileInput.type = "file";
-            fileInput.accept = ".json,.txt";
-            fileInput.classList.add("ytls-hidden-file-input");
-            fileInput.onchange = (event) => {
-              const file = event.target.files?.[0];
-              if (!file) return;
-              const reader = new FileReader();
-              reader.onload = () => {
-                const content2 = String(reader.result).trim();
-                processImportedData(content2);
-              };
-              reader.readAsText(file);
+            closeLoadModal();
+            const reader = new FileReader();
+            reader.onload = () => {
+              const content2 = String(reader.result).trim();
+              processImportedData(content2);
             };
-            fileInput.click();
-          }, 300);
+            reader.readAsText(file);
+          };
+          fileInput.click();
         };
         const fromClipboardButton = document.createElement("button");
         fromClipboardButton.textContent = "Clipboard";
         fromClipboardButton.classList.add("ytls-save-modal-button");
         fromClipboardButton.onclick = async () => {
-          loadModal.classList.remove("ytls-fade-in");
-          loadModal.classList.add("ytls-fade-out");
-          setTimeout(async () => {
-            if (document.body.contains(loadModal)) {
-              document.body.removeChild(loadModal);
-            }
+          if (escapeHandler) {
+            document.removeEventListener("keydown", escapeHandler);
+          }
+          createModalCloseHandler(loadModal, async () => {
             try {
               const clipboardText = await navigator.clipboard.readText();
               if (clipboardText) {
@@ -4185,25 +4237,18 @@ Next backup: ${nextBackupTime}`;
               log("Failed to read from clipboard: ", err, "error");
               alert("Failed to read from clipboard. Ensure you have granted permission.");
             }
-          }, 300);
+          })();
         };
         const cancelLoadButton = document.createElement("button");
         cancelLoadButton.textContent = "Cancel";
         cancelLoadButton.classList.add("ytls-save-modal-cancel-button");
-        cancelLoadButton.onclick = () => {
-          loadModal.classList.remove("ytls-fade-in");
-          loadModal.classList.add("ytls-fade-out");
-          setTimeout(() => {
-            if (document.body.contains(loadModal)) {
-              document.body.removeChild(loadModal);
-            }
-          }, 300);
-        };
+        cancelLoadButton.onclick = closeLoadModal;
         loadModal.appendChild(loadMessage);
         loadModal.appendChild(fromFileButton);
         loadModal.appendChild(fromClipboardButton);
         loadModal.appendChild(cancelLoadButton);
         document.body.appendChild(loadModal);
+        registerModalEscapeHandler(escapeHandler);
       };
       const exportBtn = document.createElement("button");
       exportBtn.textContent = "\u{1F4E4} Export";
