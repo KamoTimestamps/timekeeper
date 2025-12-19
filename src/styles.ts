@@ -130,6 +130,15 @@ export const PANE_STYLES = `
     padding-right:5px;
     cursor:default;
   }
+  #ytls-pane .ytls-google-user-display {
+    font-size:12px;
+    color:#4285f4;
+    margin-left:8px;
+    padding:2px 6px;
+    cursor:default;
+    background:rgba(66, 133, 244, 0.1);
+    border-radius:4px;
+  }
   #ytls-current-time {
     color:white;
     font-size:14px;

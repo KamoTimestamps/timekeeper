@@ -18,6 +18,14 @@ import { PANE_STYLES } from "./styles";
     return; // Don't run in iframes
   }
 
+  // Forward declaration of checkOAuthRedirect (defined later)
+  // Check if this page load is an OAuth redirect and handle it
+  const isOAuthRedirect = window.location.hash.includes('access_token=') &&
+                          window.location.hash.includes('state=timekeeper_auth');
+
+  // If this is an OAuth redirect, we'll handle it after the auth state is loaded
+  // Don't initialize the full UI yet
+
   const SUPPORTED_PATH_PREFIXES = ["/watch", "/live"] as const;
 
   function isSupportedUrl(url = window.location.href) {
@@ -296,6 +304,145 @@ import { PANE_STYLES } from "./styles";
 
   // Global cache for latest timestamp value
   let latestTimestampValue: number | null = null;
+
+  // Google Drive Authentication State
+  let googleUserDisplay: HTMLSpanElement | null = null;
+  let googleAuthState: {
+    isSignedIn: boolean;
+    accessToken: string | null;
+    userName: string | null;
+    email: string | null;
+  } = {
+    isSignedIn: false,
+    accessToken: null,
+    userName: null,
+    email: null
+  };
+
+  // Google OAuth2 Configuration
+  const GOOGLE_CLIENT_ID = '1023528652072-45cu3dr7o5j79vsdn8643bhle9ee8kds.apps.googleusercontent.com'; // Users need to set their own client ID
+  const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile';
+  const GOOGLE_REDIRECT_URI = 'https://www.youtube.com/'; // Userscript runs on YouTube
+
+  // Load Google auth state from storage
+  async function loadGoogleAuthState() {
+    try {
+      const stored = await loadGlobalSettings('googleAuthState');
+      if (stored && typeof stored === 'object') {
+        googleAuthState = { ...googleAuthState, ...stored as typeof googleAuthState };
+        updateGoogleUserDisplay();
+      }
+    } catch (err) {
+      log('Failed to load Google auth state:', err, 'error');
+    }
+  }
+
+  // Save Google auth state to storage
+  async function saveGoogleAuthState() {
+    try {
+      await saveGlobalSettings('googleAuthState', googleAuthState);
+    } catch (err) {
+      log('Failed to save Google auth state:', err, 'error');
+    }
+  }
+
+  // Update the username display in the header
+  function updateGoogleUserDisplay() {
+    if (!googleUserDisplay) return;
+
+    if (googleAuthState.isSignedIn && googleAuthState.userName) {
+      googleUserDisplay.textContent = `👤 ${googleAuthState.userName}`;
+      googleUserDisplay.style.display = 'inline';
+      googleUserDisplay.title = googleAuthState.email || googleAuthState.userName;
+    } else {
+      googleUserDisplay.style.display = 'none';
+    }
+  }
+
+// Check if current page load is an OAuth redirect
+  async function checkOAuthRedirect() {
+    const hash = window.location.hash;
+    if (!hash.includes('access_token=') || !hash.includes('state=timekeeper_auth')) {
+      return false;
+    }
+
+    try {
+      // Extract access token from URL fragment
+      const fragment = hash.substring(1);
+      const params = new URLSearchParams(fragment);
+      const accessToken = params.get('access_token');
+      const state = params.get('state');
+
+      if (accessToken && state === 'timekeeper_auth') {
+        googleAuthState.accessToken = accessToken;
+        googleAuthState.isSignedIn = true;
+
+        // Fetch user info
+        const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        if (userInfoResponse.ok) {
+          const userInfo = await userInfoResponse.json();
+          googleAuthState.userName = userInfo.name;
+          googleAuthState.email = userInfo.email;
+        }
+
+        await saveGoogleAuthState();
+
+        // Get the original video URL before OAuth redirect
+        const returnUrl = await GM.getValue('oauth_return_url', '/watch');
+
+        // Clean up the URL hash and redirect back
+        window.location.replace(returnUrl);
+        return true;
+      }
+    } catch (err) {
+      log('Failed to process OAuth redirect:', err, 'error');
+    }
+    return false;
+  }
+
+  // Sign in to Google Drive
+  async function signInToGoogle() {
+    if (!GOOGLE_CLIENT_ID) {
+      alert('Google Client ID not configured. Please set GOOGLE_CLIENT_ID in the script.');
+      return;
+    }
+
+    try {
+      // Save current URL to return after authentication
+      await GM.setValue('oauth_return_url', window.location.href);
+
+      // Create OAuth2 authorization URL
+      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+      authUrl.searchParams.set('redirect_uri', GOOGLE_REDIRECT_URI);
+      authUrl.searchParams.set('response_type', 'token');
+      authUrl.searchParams.set('scope', GOOGLE_SCOPES);
+      authUrl.searchParams.set('include_granted_scopes', 'true');
+      authUrl.searchParams.set('state', 'timekeeper_auth');
+
+      // Redirect to Google OAuth
+      window.location.href = authUrl.toString();
+    } catch (err) {
+      log('Failed to sign in to Google:', err, 'error');
+      alert('Failed to sign in to Google Drive.');
+    }
+  }
+
+  // Sign out from Google Drive
+  async function signOutFromGoogle() {
+    googleAuthState = {
+      isSignedIn: false,
+      accessToken: null,
+      userName: null,
+      email: null
+    };
+    await saveGoogleAuthState();
+    updateGoogleUserDisplay();
+    alert('Signed out from Google Drive.');
+  }
 
 
   function getTimestampItems(): HTMLLIElement[] {
@@ -3023,6 +3170,17 @@ import { PANE_STYLES } from "./styles";
         { label: "📤 Export All", title: "Export All Data", action: exportBtn.onclick },
         { label: "📥 Import All", title: "Import All Data", action: importBtn.onclick },
         {
+          label: googleAuthState.isSignedIn ? "🔓 Sign Out of Google Drive" : "🔐 Sign In to Google Drive",
+          title: googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive",
+          action: async () => {
+            if (googleAuthState.isSignedIn) {
+              await signOutFromGoogle();
+            } else {
+              await signInToGoogle();
+            }
+          }
+        },
+        {
           label: "Close", title: "Close", action: () => {
             if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
               settingsModalInstance.classList.remove("ytls-fade-in");
@@ -3475,6 +3633,13 @@ import { PANE_STYLES } from "./styles";
     });
 
     header.appendChild(timeDisplay); // Add timeDisplay
+
+    // Create Google user display
+    googleUserDisplay = document.createElement("span");
+    googleUserDisplay.classList.add("ytls-google-user-display");
+    googleUserDisplay.style.display = 'none'; // Hidden by default
+    header.appendChild(googleUserDisplay);
+
     header.appendChild(versionDisplay); // Add versionDisplay to header
 
     const content = document.createElement("div"); content.id = "ytls-content";
@@ -3501,6 +3666,9 @@ import { PANE_STYLES } from "./styles";
 
     // Load the global UI visibility state BEFORE appending to DOM
     await loadUIVisibilityState();
+
+    // Load Google auth state
+    await loadGoogleAuthState();
 
     // Now append the pane with the correct minimized state already applied
     document.body.appendChild(pane);
@@ -3636,6 +3804,15 @@ import { PANE_STYLES } from "./styles";
 
     // Setup video event listeners for highlighting and URL updates
     setupVideoEventListeners();
+  }
+
+  // Check for OAuth redirect early - this handles the redirect and exits if detected
+  if (isOAuthRedirect) {
+    const handled = await checkOAuthRedirect();
+    if (handled) {
+      log("OAuth redirect handled, returning to original page");
+      return; // Exit script, redirect will happen
+    }
   }
 
   // Listen for navigation start and lock UI with loading state
