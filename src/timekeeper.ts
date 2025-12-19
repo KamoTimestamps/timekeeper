@@ -3083,6 +3083,39 @@ if (hash && hash.length > 1) {
         document.body.appendChild(modal);
       };
 
+    // Holiday configuration - can be extended with more holidays
+    const holidayEmojis = [
+      {
+        baseEmoji: "🐣",
+        holidayEmoji: "🌲",
+        month: 12, // December
+        day: 25,
+        name: "Christmas"
+      }
+      // Add more holidays here in the future
+    ];
+
+    // Check if current date is within 7 days of any holiday for a given base emoji
+    function getHolidayEmojiForBase(baseEmoji: string): string | null {
+      const now = new Date();
+      const currentYear = now.getFullYear();
+
+      for (const holiday of holidayEmojis) {
+        if (holiday.baseEmoji !== baseEmoji) continue;
+
+        const holidayDate = new Date(currentYear, holiday.month - 1, holiday.day);
+        const diffTime = holidayDate.getTime() - now.getTime();
+        const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+        // Within 7 days before or after the holiday
+        if (Math.abs(diffDays) <= 7) {
+          return holiday.holidayEmoji;
+        }
+      }
+
+      return null;
+    }
+
     // Configuration for main buttons
     const mainButtonConfigs = [
       { label: "🐣", title: "Add timestamp", action: handleAddTimestamp },
@@ -3098,6 +3131,18 @@ if (hash && hash.length > 1) {
       button.textContent = config.label;
       button.title = config.title;
       button.classList.add("ytls-main-button");
+
+      // Check if this button has a holiday emoji variant
+      const holidayEmoji = getHolidayEmojiForBase(config.label);
+      if (holidayEmoji) {
+        button.addEventListener("mouseenter", () => {
+          button.textContent = holidayEmoji;
+        });
+        button.addEventListener("mouseleave", () => {
+          button.textContent = config.label;
+        });
+      }
+
       if (config.label === "📋") {
         // For copy button, bind to an event handler that includes the event object
         button.onclick = function (e) { config.action.call(this, e); };

@@ -3568,6 +3568,31 @@
         modal.appendChild(cancelButton);
         document.body.appendChild(modal);
       };
+      const holidayEmojis = [
+        {
+          baseEmoji: "\u{1F423}",
+          holidayEmoji: "\u{1F332}",
+          month: 12,
+          // December
+          day: 25,
+          name: "Christmas"
+        }
+        // Add more holidays here in the future
+      ];
+      function getHolidayEmojiForBase(baseEmoji) {
+        const now = /* @__PURE__ */ new Date();
+        const currentYear = now.getFullYear();
+        for (const holiday of holidayEmojis) {
+          if (holiday.baseEmoji !== baseEmoji) continue;
+          const holidayDate = new Date(currentYear, holiday.month - 1, holiday.day);
+          const diffTime = holidayDate.getTime() - now.getTime();
+          const diffDays = diffTime / (1e3 * 60 * 60 * 24);
+          if (Math.abs(diffDays) <= 7) {
+            return holiday.holidayEmoji;
+          }
+        }
+        return null;
+      }
       const mainButtonConfigs = [
         { label: "\u{1F423}", title: "Add timestamp", action: handleAddTimestamp },
         { label: "\u2699\uFE0F", title: "Settings", action: toggleSettingsModal },
@@ -3581,6 +3606,15 @@
         button.textContent = config.label;
         button.title = config.title;
         button.classList.add("ytls-main-button");
+        const holidayEmoji = getHolidayEmojiForBase(config.label);
+        if (holidayEmoji) {
+          button.addEventListener("mouseenter", () => {
+            button.textContent = holidayEmoji;
+          });
+          button.addEventListener("mouseleave", () => {
+            button.textContent = config.label;
+          });
+        }
         if (config.label === "\u{1F4CB}") {
           button.onclick = function(e) {
             config.action.call(this, e);
