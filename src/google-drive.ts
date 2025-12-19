@@ -41,6 +41,7 @@ export let autoBackupBackoffMs: number | null = null;
 // Display elements (set from main script)
 export let googleUserDisplay: any = null;
 export let backupStatusDisplay: any = null;
+export let authStatusDisplay: any = null;
 
 // Helper functions to set display elements
 export function setGoogleUserDisplay(el: HTMLElement | null) {
@@ -49,6 +50,24 @@ export function setGoogleUserDisplay(el: HTMLElement | null) {
 
 export function setBackupStatusDisplay(el: HTMLElement | null) {
   backupStatusDisplay = el;
+}
+
+export function setAuthStatusDisplay(el: HTMLElement | null) {
+  authStatusDisplay = el;
+}
+
+let authSpinnerStylesInjected = false;
+function ensureAuthSpinnerStyles() {
+  if (authSpinnerStylesInjected) return;
+  try {
+    const style = document.createElement('style');
+    style.textContent = `
+@keyframes tk-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.tk-auth-spinner { display:inline-block; width:12px; height:12px; border:2px solid rgba(255,165,0,0.3); border-top-color:#ffa500; border-radius:50%; margin-right:6px; vertical-align:-2px; animation: tk-spin 0.9s linear infinite; }
+`;
+    document.head.appendChild(style);
+    authSpinnerStylesInjected = true;
+  } catch {}
 }
 
 // Callbacks (set from main script)
@@ -125,45 +144,132 @@ export function updateGoogleUserDisplay() {
   }
 }
 
-// Check if current page load is an OAuth redirect
-export async function checkOAuthRedirect() {
-  const hash = window.location.hash;
-  if (!hash.includes('access_token=') || !hash.includes('state=timekeeper_auth')) {
-    return false;
+export function updateAuthStatusDisplay(status?: 'authenticating' | 'error') {
+  if (!authStatusDisplay) return;
+  authStatusDisplay.style.fontWeight = 'bold';
+  if (status === 'authenticating') {
+    ensureAuthSpinnerStyles();
+    authStatusDisplay.style.color = '#ffa500';
+    while (authStatusDisplay.firstChild) authStatusDisplay.removeChild(authStatusDisplay.firstChild);
+    const spinner = document.createElement('span');
+    spinner.className = 'tk-auth-spinner';
+    const text = document.createTextNode(' Authorizing with Google…');
+    authStatusDisplay.appendChild(spinner);
+    authStatusDisplay.appendChild(text);
+    return;
   }
-
-  try {
-    const fragment = hash.substring(1);
-    const params = new URLSearchParams(fragment);
-    const accessToken = params.get('access_token');
-    const state = params.get('state');
-
-    if (accessToken && state === 'timekeeper_auth') {
-      googleAuthState.accessToken = accessToken;
-      googleAuthState.isSignedIn = true;
-
-      const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-
-      if (userInfoResponse.ok) {
-        const userInfo = await userInfoResponse.json();
-        googleAuthState.userName = userInfo.name;
-        googleAuthState.email = userInfo.email;
-      }
-
-      await saveGoogleAuthState();
-      const returnUrl = await GM.getValue('oauth_return_url', '/watch');
-      window.location.replace(returnUrl);
-      return true;
-    }
-  } catch (err) {
-    log('Failed to process OAuth redirect:', err, 'error');
+  if (status === 'error') {
+    authStatusDisplay.textContent = '❌ Authorization failed';
+    authStatusDisplay.style.color = '#ff4d4f';
+    return;
   }
-  return false;
+  if (!googleAuthState.isSignedIn) {
+    authStatusDisplay.textContent = '❌ Not signed in';
+    authStatusDisplay.style.color = '#ff4d4f';
+  } else {
+    authStatusDisplay.textContent = `✅ ${googleAuthState.userName || 'Signed in'}`;
+    authStatusDisplay.style.color = '#52c41a';
+  }
 }
 
-// Sign in to Google Drive
+// Monitor popup for OAuth token via BroadcastChannel and localStorage fallback
+function monitorOAuthPopup(popup: Window | null): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!popup) {
+      if (log) log('OAuth monitor: popup is null', null, 'error');
+      reject(new Error('Failed to open popup'));
+      return;
+    }
+
+    if (log) log('OAuth monitor: starting to monitor popup for token');
+    const start = Date.now();
+    const timeoutMs = 5 * 60 * 1000; // 5 minutes
+    const channelName = 'timekeeper_oauth';
+    let channel: BroadcastChannel | null = null;
+    let storageListener: ((e: StorageEvent) => void) | null = null;
+    let checkInterval: ReturnType<typeof setInterval> | null = null;
+
+    const cleanup = () => {
+      if (channel) {
+        try { channel.close(); } catch (_) {}
+        channel = null;
+      }
+      if (storageListener) {
+        window.removeEventListener('storage', storageListener);
+        storageListener = null;
+      }
+      if (checkInterval) {
+        clearInterval(checkInterval);
+        checkInterval = null;
+      }
+    };
+
+    // Try BroadcastChannel (modern browsers)
+    try {
+      channel = new BroadcastChannel(channelName);
+      if (log) log('OAuth monitor: BroadcastChannel created successfully');
+      channel.onmessage = (event) => {
+        if (log) log('OAuth monitor: received BroadcastChannel message', event.data);
+        if (event.data?.type === 'timekeeper_oauth_token' && event.data?.token) {
+          if (log) log('OAuth monitor: token received via BroadcastChannel');
+          cleanup();
+          try { popup.close(); } catch (_) {}
+          resolve(event.data.token);
+        } else if (event.data?.type === 'timekeeper_oauth_error') {
+          if (log) log('OAuth monitor: error received via BroadcastChannel', event.data.error, 'error');
+          cleanup();
+          try { popup.close(); } catch (_) {}
+          reject(new Error(event.data.error || 'OAuth failed'));
+        }
+      };
+    } catch (err) {
+      if (log) log('OAuth monitor: BroadcastChannel not supported, using localStorage fallback', err);
+    }
+
+    // Fallback: localStorage event listener (works across tabs in all browsers)
+    if (log) log('OAuth monitor: setting up localStorage listener');
+    storageListener = (event: StorageEvent) => {
+      if (event.key === 'timekeeper_oauth_message' && event.newValue) {
+        if (log) log('OAuth monitor: received localStorage message', event.newValue);
+        try {
+          const data = JSON.parse(event.newValue);
+          if (data.type === 'timekeeper_oauth_token' && data.token) {
+            if (log) log('OAuth monitor: token received via localStorage');
+            cleanup();
+            try { popup.close(); } catch (_) {}
+            localStorage.removeItem('timekeeper_oauth_message');
+            resolve(data.token);
+          } else if (data.type === 'timekeeper_oauth_error') {
+            if (log) log('OAuth monitor: error received via localStorage', data.error, 'error');
+            cleanup();
+            try { popup.close(); } catch (_) {}
+            localStorage.removeItem('timekeeper_oauth_message');
+            reject(new Error(data.error || 'OAuth failed'));
+          }
+        } catch (err) {
+          if (log) log('OAuth monitor: failed to parse localStorage message', err, 'error');
+        }
+      }
+    };
+    window.addEventListener('storage', storageListener);
+
+    // Only check for timeout - don't check popup.closed as it's unreliable during cross-origin navigation
+    // Rely on BroadcastChannel/localStorage messages to know when OAuth completes or fails
+    checkInterval = setInterval(() => {
+      const elapsed = Date.now() - start;
+
+      if (elapsed > timeoutMs) {
+        if (log) log('OAuth monitor: popup timed out after 5 minutes', null, 'error');
+        cleanup();
+        try { popup.close(); } catch (_) {}
+        reject(new Error('OAuth popup timed out'));
+        return;
+      }
+    }, 1000);
+  });
+}
+
+// Sign in to Google Drive using popup (no page redirect)
 export async function signInToGoogle() {
   if (!GOOGLE_CLIENT_ID) {
     alert('Google Client ID not configured. Please set GOOGLE_CLIENT_ID in the script.');
@@ -171,7 +277,9 @@ export async function signInToGoogle() {
   }
 
   try {
-    await GM.setValue('oauth_return_url', window.location.href);
+    if (log) log('OAuth signin: starting OAuth flow');
+    updateAuthStatusDisplay('authenticating');
+    // Build the OAuth URL
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
     authUrl.searchParams.set('redirect_uri', GOOGLE_REDIRECT_URI);
@@ -179,13 +287,160 @@ export async function signInToGoogle() {
     authUrl.searchParams.set('scope', GOOGLE_SCOPES);
     authUrl.searchParams.set('include_granted_scopes', 'true');
     authUrl.searchParams.set('state', 'timekeeper_auth');
-    window.location.href = authUrl.toString();
+
+    if (log) log('OAuth signin: opening popup');
+    // Open popup for OAuth
+    const popup = window.open(
+      authUrl.toString(),
+      'TimekeeperGoogleAuth',
+      'width=500,height=600,menubar=no,toolbar=no,location=no'
+    );
+
+    if (!popup) {
+      if (log) log('OAuth signin: popup blocked by browser', null, 'error');
+      throw new Error('Popup blocked. Please enable popups for YouTube.');
+    }
+    if (log) log('OAuth signin: popup opened successfully');
+
+    try {
+      // Wait for OAuth token from popup via postMessage
+      const accessToken = await monitorOAuthPopup(popup);
+
+      // Fetch user info with the access token
+      const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+
+      if (userInfoResponse.ok) {
+        const userInfo = await userInfoResponse.json();
+
+        // Update auth state
+        googleAuthState.accessToken = accessToken;
+        googleAuthState.isSignedIn = true;
+        googleAuthState.userName = userInfo.name;
+        googleAuthState.email = userInfo.email;
+
+        // Save auth state
+        await saveGoogleAuthState();
+        updateGoogleUserDisplay();
+        updateAuthStatusDisplay();
+
+        if (log) {
+          log(`Successfully authenticated as ${userInfo.name}`);
+        } else {
+          console.log(`[Timekeeper] Successfully authenticated as ${userInfo.name}`);
+        }
+      } else {
+        throw new Error('Failed to fetch user info');
+      }
+    } catch (err) {
+      if (log) {
+        log('OAuth failed:', err, 'error');
+      } else {
+        console.error('[Timekeeper] OAuth failed:', err);
+      }
+      updateAuthStatusDisplay('error');
+      throw err;
+    }
   } catch (err) {
-    log('Failed to sign in to Google:', err, 'error');
-    alert('Failed to sign in to Google Drive.');
+    if (log) {
+      log('Failed to sign in to Google:', err, 'error');
+    } else {
+      console.error('[Timekeeper] Failed to sign in to Google:', err);
+    }
+    alert(`Failed to sign in to Google Drive: ${err.message}`);
   }
 }
 
+// Detect if we're in an OAuth popup and broadcast the token to the opener
+export async function handleOAuthPopup() {
+  // Check if we're in a popup with OAuth response
+  if (!window.opener || window.opener === window) {
+    return false; // Not a popup
+  }
+
+  if (log) log('OAuth popup: detected popup window, checking for OAuth response');
+  const hash = window.location.hash;
+  if (!hash || hash.length <= 1) {
+    if (log) log('OAuth popup: no hash params found');
+    return false; // No hash params
+  }
+
+  const hashContent = hash.startsWith('#') ? hash.substring(1) : hash;
+  const params = new URLSearchParams(hashContent);
+  const state = params.get('state');
+
+  if (log) log('OAuth popup: hash params found, state=' + state);
+  // Check if this is our OAuth response
+  if (state !== 'timekeeper_auth') {
+    if (log) log('OAuth popup: not our OAuth flow (wrong state)');
+    return false; // Not our OAuth flow
+  }
+
+  const error = params.get('error');
+  const token = params.get('access_token');
+
+  const channelName = 'timekeeper_oauth';
+
+  if (error) {
+    // Broadcast error
+    try {
+      const channel = new BroadcastChannel(channelName);
+      channel.postMessage({
+        type: 'timekeeper_oauth_error',
+        error: params.get('error_description') || error
+      });
+      channel.close();
+    } catch (_) {
+      // Fallback to localStorage
+      localStorage.setItem('timekeeper_oauth_message', JSON.stringify({
+        type: 'timekeeper_oauth_error',
+        error: params.get('error_description') || error
+      }));
+    }
+
+    // Close popup after a brief delay
+    setTimeout(() => {
+      try { window.close(); } catch (_) {}
+    }, 500);
+    return true;
+  }
+
+  if (token) {
+    if (log) log('OAuth popup: access token found, broadcasting to opener');
+    // Broadcast token
+    try {
+      const channel = new BroadcastChannel(channelName);
+      channel.postMessage({
+        type: 'timekeeper_oauth_token',
+        token: token
+      });
+      channel.close();
+      if (log) log('OAuth popup: token broadcast via BroadcastChannel');
+    } catch (err) {
+      if (log) log('OAuth popup: BroadcastChannel failed, using localStorage', err);
+      // Fallback to localStorage
+      localStorage.setItem('timekeeper_oauth_message', JSON.stringify({
+        type: 'timekeeper_oauth_token',
+        token: token
+      }));
+      if (log) log('OAuth popup: token broadcast via localStorage');
+    }
+
+    // Close popup after a brief delay
+    setTimeout(() => {
+      try { window.close(); } catch (_) {}
+    }, 500);
+    return true;
+  }
+
+  return false;
+}
+
+// OAuth redirect handler no longer needed (removed for popup-based flow)
+export async function handleOAuthRedirect() {
+  return false;
+}
 // Sign out from Google Drive
 export async function signOutFromGoogle() {
   googleAuthState = {
@@ -196,6 +451,7 @@ export async function signOutFromGoogle() {
   };
   await saveGoogleAuthState();
   updateGoogleUserDisplay();
+  updateAuthStatusDisplay();
   alert('Signed out from Google Drive.');
 }
 

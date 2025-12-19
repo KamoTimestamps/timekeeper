@@ -12,6 +12,57 @@ declare const GM_info: {
 import { PANE_STYLES } from "./styles";
 import * as GoogleDrive from "./google-drive";
 
+// OAuth detection - always check URL for auth token, runs synchronously before any async operations
+const hash = window.location.hash;
+if (hash && hash.length > 1) {
+  const params = new URLSearchParams(hash.substring(1));
+  const state = params.get('state');
+
+  if (state === 'timekeeper_auth') {
+    const token = params.get('access_token');
+    if (token) {
+      console.log('[Timekeeper] Auth token detected in URL, broadcasting token');
+      console.log('[Timekeeper] Token length:', token.length, 'characters');
+
+      // Broadcast via BroadcastChannel (primary method)
+      try {
+        const channel = new BroadcastChannel('timekeeper_oauth');
+        const message = { type: 'timekeeper_oauth_token', token: token };
+        console.log('[Timekeeper] Sending auth message via BroadcastChannel:', { type: message.type, tokenLength: token.length });
+        channel.postMessage(message);
+        channel.close();
+        console.log('[Timekeeper] Token broadcast via BroadcastChannel completed');
+      } catch (e) {
+        console.log('[Timekeeper] BroadcastChannel failed, using localStorage fallback:', e);
+        // Fallback to localStorage for cross-tab communication
+        const message = {
+          type: 'timekeeper_oauth_token',
+          token: token,
+          timestamp: Date.now()
+        };
+        localStorage.setItem('timekeeper_oauth_message', JSON.stringify(message));
+        console.log('[Timekeeper] Token broadcast via localStorage completed, timestamp:', message.timestamp);
+      }
+
+      // Clean up the hash from the URL
+      if (history.replaceState) {
+        const cleanUrl = window.location.pathname + window.location.search;
+        history.replaceState(null, '', cleanUrl);
+      }
+
+      // Close window if it was opened as a popup
+      if (window.opener && window.opener !== window) {
+        console.log('[Timekeeper] Closing OAuth popup window');
+        setTimeout(() => {
+          window.close();
+        }, 500);
+        // Stop script execution in popup
+        throw new Error('OAuth popup - stopping script execution');
+      }
+    }
+  }
+}
+
 (async function () {
   'use strict';
 
@@ -19,13 +70,46 @@ import * as GoogleDrive from "./google-drive";
     return; // Don't run in iframes
   }
 
-  // Checking for OAuth redirect is now handled by GoogleDrive module
-  // Check if this page load is an OAuth redirect and handle it
-  const isOAuthRedirect = window.location.hash.includes('access_token=') &&
-                          window.location.hash.includes('state=timekeeper_auth');
+  // Setup minimal logging and storage functions early for OAuth handling
+  type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-  // If this is an OAuth redirect, we'll handle it after the auth state is loaded
-  // Don't initialize the full UI yet
+  function earlyLog(message: string, ...args: any[]) {
+    let logLevel: LogLevel = 'debug';
+    const consoleArgs = [...args];
+    if (args.length > 0 && typeof args[args.length - 1] === 'string' &&
+      ['debug', 'info', 'warn', 'error'].includes(args[args.length - 1])) {
+      logLevel = consoleArgs.pop() as LogLevel;
+    }
+    const version = GM_info.script.version;
+    const prefix = `[Timekeeper v${version}]`;
+    const methodMap: Record<LogLevel, (...args: any[]) => void> = {
+      'debug': console.log, 'info': console.info, 'warn': console.warn, 'error': console.error
+    };
+    methodMap[logLevel](`${prefix} ${message}`, ...consoleArgs);
+  }
+
+  function earlyLoadGlobalSettings(key: string): Promise<unknown> {
+    return GM.getValue(`timekeeper_${key}`, undefined);
+  }
+
+  function earlySaveGlobalSettings(key: string, value: unknown): Promise<void> {
+    return GM.setValue(`timekeeper_${key}`, JSON.stringify(value));
+  }
+
+  // Initialize GoogleDrive callbacks early for OAuth handling
+  (GoogleDrive as any).setLog(earlyLog);
+  (GoogleDrive as any).setLoadGlobalSettings(earlyLoadGlobalSettings);
+  (GoogleDrive as any).setSaveGlobalSettings(earlySaveGlobalSettings);
+
+  // Check if we're in an OAuth popup and handle it
+  const isOAuthPopup = await GoogleDrive.handleOAuthPopup();
+  if (isOAuthPopup) {
+    earlyLog("OAuth popup detected, broadcasting token and closing");
+    return; // Exit script, popup will close
+  }
+
+  // Load auth state early so user remains signed in
+  await GoogleDrive.loadGoogleAuthState();
 
   const SUPPORTED_PATH_PREFIXES = ["/watch", "/live"] as const;
 
@@ -39,7 +123,7 @@ import * as GoogleDrive from "./google-drive";
         return parsed.pathname === prefix || parsed.pathname.startsWith(`${prefix}/`);
       });
     } catch (err) {
-      log("Timekeeper failed to parse URL for support check:", err, 'error');
+      earlyLog("Timekeeper failed to parse URL for support check:", err, 'error');
       return false;
     }
   }
@@ -172,32 +256,10 @@ import * as GoogleDrive from "./google-drive";
   const SHIFT_SKIP_KEY = "shiftClickTimeSkipSeconds";
   const DEFAULT_SHIFT_SKIP = 10;
 
-  // Unified logging function with log level support
-  type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-
+  // Unified logging function with log level support (now defined with dedicated log function below)
   function log(message: string, ...args: any[]) {
-    // Check if last argument is a LogLevel
-    let logLevel: LogLevel = 'debug';
-    const consoleArgs = [...args];
-
-    if (args.length > 0 && typeof args[args.length - 1] === 'string' &&
-      ['debug', 'info', 'warn', 'error'].includes(args[args.length - 1])) {
-      logLevel = consoleArgs.pop() as LogLevel;
-    }
-
-    const version = GM_info.script.version;
-    const prefix = `[Timekeeper v${version}]`;
-
-    // Map LogLevel to console methods
-    const methodMap: Record<LogLevel, (...args: any[]) => void> = {
-      'debug': console.log,
-      'info': console.info,
-      'warn': console.warn,
-      'error': console.error
-    };
-
-    const consoleMethod = methodMap[logLevel];
-    consoleMethod(`${prefix} ${message}`, ...consoleArgs);
+    // Forward to earlyLog with same implementation
+    return earlyLog(message, ...args);
   }
 
   // Create a BroadcastChannel for cross-tab communication
@@ -3119,6 +3181,7 @@ import * as GoogleDrive from "./google-drive";
       statusDiv.style.marginBottom = "8px";
       statusDiv.style.fontWeight = "bold";
       infoContainer.appendChild(statusDiv);
+      GoogleDrive.setAuthStatusDisplay(statusDiv);
 
       // User info
       const userInfoDiv = document.createElement("div");
@@ -3134,14 +3197,7 @@ import * as GoogleDrive from "./google-drive";
       driveSection.appendChild(infoContainer);
 
       // Update status display based on sign-in state
-      if (!GoogleDrive.googleAuthState.isSignedIn) {
-        statusDiv.textContent = "❌ Not signed in";
-        statusDiv.style.color = "#ff4d4f";
-      } else {
-        statusDiv.textContent = `✅ ${GoogleDrive.googleAuthState.userName || "Signed in"}`;
-        statusDiv.style.color = "#52c41a";
-      }
-
+      GoogleDrive.updateAuthStatusDisplay();
       GoogleDrive.updateGoogleUserDisplay();
       GoogleDrive.updateBackupStatusDisplay();
 
@@ -3767,15 +3823,6 @@ import * as GoogleDrive from "./google-drive";
 
     // Setup video event listeners for highlighting and URL updates
     setupVideoEventListeners();
-  }
-
-  // Check for OAuth redirect early - this handles the redirect and exits if detected
-  if (isOAuthRedirect) {
-    const handled = await GoogleDrive.checkOAuthRedirect();
-    if (handled) {
-      log("OAuth redirect handled, returning to original page");
-      return; // Exit script, redirect will happen
-    }
   }
 
   // Listen for navigation start and lock UI with loading state
