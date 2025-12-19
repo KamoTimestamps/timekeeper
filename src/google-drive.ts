@@ -4,6 +4,7 @@
  */
 
 import { log, getTimestampSuffix } from './util';
+import { addTooltip } from './tooltip';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
@@ -769,7 +770,29 @@ export function updateBackupStatusIndicator() {
   }
 
   backupStatusIndicator.style.backgroundColor = color;
-  backupStatusIndicator.title = tooltip;
+  addTooltip(backupStatusIndicator, () => {
+    // Recalculate tooltip text dynamically
+    let tooltipText = '';
+    if (!autoBackupEnabled) {
+      tooltipText = 'Auto backup is disabled';
+    } else if (isAutoBackupRunning) {
+      tooltipText = 'Backup in progress';
+    } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
+      const mins = Math.ceil(autoBackupBackoffMs / 60000);
+      tooltipText = `Retrying backup in ${mins}m`;
+    } else if (googleAuthState.isSignedIn && lastAutoBackupAt) {
+      const nextBackupAt = lastAutoBackupAt + (Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
+      const nextBackupTime = formatBackupTime(nextBackupAt);
+      tooltipText = `Last backup: ${formatBackupTime(lastAutoBackupAt)}\nNext backup: ${nextBackupTime}`;
+    } else if (googleAuthState.isSignedIn) {
+      const nextBackupAt = Date.now() + (Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
+      const nextBackupTime = formatBackupTime(nextBackupAt);
+      tooltipText = `No backup yet\nNext backup: ${nextBackupTime}`;
+    } else {
+      tooltipText = 'Not signed in to Google Drive';
+    }
+    return tooltipText;
+  });
 }
 
 export async function runAutoBackupOnce(silent = true) {

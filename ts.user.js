@@ -116,6 +116,89 @@
     return null;
   }
 
+  // src/tooltip.ts
+  var tooltipElement = null;
+  var tooltipTimeout = null;
+  var TOOLTIP_DELAY = 500;
+  function ensureTooltipElement() {
+    if (!tooltipElement || !document.body.contains(tooltipElement)) {
+      tooltipElement = document.createElement("div");
+      tooltipElement.className = "ytls-tooltip";
+      document.body.appendChild(tooltipElement);
+    }
+    return tooltipElement;
+  }
+  function positionTooltip(tooltip, mouseX, mouseY) {
+    const offset = 10;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const rect = tooltip.getBoundingClientRect();
+    const tooltipWidth = rect.width;
+    const tooltipHeight = rect.height;
+    let left = mouseX + offset;
+    let top = mouseY + offset;
+    if (left + tooltipWidth > viewportWidth - offset) {
+      left = mouseX - tooltipWidth - offset;
+    }
+    if (top + tooltipHeight > viewportHeight - offset) {
+      top = mouseY - tooltipHeight - offset;
+    }
+    left = Math.max(offset, Math.min(left, viewportWidth - tooltipWidth - offset));
+    top = Math.max(offset, Math.min(top, viewportHeight - tooltipHeight - offset));
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  }
+  function showTooltip(text, mouseX, mouseY) {
+    if (tooltipTimeout) {
+      clearTimeout(tooltipTimeout);
+    }
+    tooltipTimeout = setTimeout(() => {
+      const tooltip = ensureTooltipElement();
+      tooltip.textContent = text;
+      tooltip.classList.remove("ytls-tooltip-visible");
+      positionTooltip(tooltip, mouseX, mouseY);
+      requestAnimationFrame(() => {
+        tooltip.classList.add("ytls-tooltip-visible");
+      });
+    }, TOOLTIP_DELAY);
+  }
+  function hideTooltip() {
+    if (tooltipTimeout) {
+      clearTimeout(tooltipTimeout);
+      tooltipTimeout = null;
+    }
+    if (tooltipElement) {
+      tooltipElement.classList.remove("ytls-tooltip-visible");
+    }
+  }
+  function addTooltip(element, getText) {
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+    const handleMouseEnter = (e) => {
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+      const text = typeof getText === "function" ? getText() : getText;
+      if (text) {
+        showTooltip(text, lastMouseX, lastMouseY);
+      }
+    };
+    const handleMouseMove = (e) => {
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+    };
+    const handleMouseLeave = () => {
+      hideTooltip();
+    };
+    element.addEventListener("mouseenter", handleMouseEnter);
+    element.addEventListener("mousemove", handleMouseMove);
+    element.addEventListener("mouseleave", handleMouseLeave);
+    element.__tooltipCleanup = () => {
+      element.removeEventListener("mouseenter", handleMouseEnter);
+      element.removeEventListener("mousemove", handleMouseMove);
+      element.removeEventListener("mouseleave", handleMouseLeave);
+    };
+  }
+
   // src/styles.ts
   var PANE_STYLES = `
   #ytls-pane {
@@ -592,6 +675,30 @@
       opacity: 0;
       transform: scale(0.1);
     }
+  }
+
+  /* Custom tooltip styles */
+  .ytls-tooltip {
+    position: fixed;
+    background: rgba(97, 97, 97, 0.92);
+    color: #fff;
+    padding: 8px 10px;
+    border-radius: 2px;
+    font-size: 12px;
+    font-family: "Roboto", "Arial", sans-serif;
+    font-weight: normal;
+    line-height: 1.4;
+    letter-spacing: 0.2px;
+    z-index: 10001;
+    pointer-events: none;
+    white-space: pre-line;
+    max-width: 300px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    opacity: 0;
+    transition: opacity 0.2s cubic-bezier(0.0, 0.0, 0.2, 1);
+  }
+  .ytls-tooltip.ytls-tooltip-visible {
+    opacity: 1;
   }
 
 `;
@@ -1235,7 +1342,30 @@ Next backup: ${nextBackupTime}`;
       tooltip = "Not signed in to Google Drive";
     }
     backupStatusIndicator.style.backgroundColor = color;
-    backupStatusIndicator.title = tooltip;
+    addTooltip(backupStatusIndicator, () => {
+      let tooltipText = "";
+      if (!autoBackupEnabled) {
+        tooltipText = "Auto backup is disabled";
+      } else if (isAutoBackupRunning) {
+        tooltipText = "Backup in progress";
+      } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
+        const mins = Math.ceil(autoBackupBackoffMs / 6e4);
+        tooltipText = `Retrying backup in ${mins}m`;
+      } else if (googleAuthState.isSignedIn && lastAutoBackupAt) {
+        const nextBackupAt = lastAutoBackupAt + Math.max(1, autoBackupIntervalMinutes) * 60 * 1e3;
+        const nextBackupTime = formatBackupTime(nextBackupAt);
+        tooltipText = `Last backup: ${formatBackupTime(lastAutoBackupAt)}
+Next backup: ${nextBackupTime}`;
+      } else if (googleAuthState.isSignedIn) {
+        const nextBackupAt = Date.now() + Math.max(1, autoBackupIntervalMinutes) * 60 * 1e3;
+        const nextBackupTime = formatBackupTime(nextBackupAt);
+        tooltipText = `No backup yet
+Next backup: ${nextBackupTime}`;
+      } else {
+        tooltipText = "Not signed in to Google Drive";
+      }
+      return tooltipText;
+    });
   }
   async function runAutoBackupOnce(silent = true) {
     if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
@@ -1984,7 +2114,7 @@ Next backup: ${nextBackupTime}`;
       timeRow.className = "time-row";
       const indentGutter = document.createElement("div");
       indentGutter.style.cssText = "position:absolute;left:0;top:0;width:20px;height:100%;display:flex;align-items:center;justify-content:center;cursor:pointer;";
-      indentGutter.title = "Click to toggle indent";
+      addTooltip(indentGutter, "Click to toggle indent");
       const indentToggle = document.createElement("span");
       indentToggle.style.cssText = "color:#999;font-size:12px;pointer-events:none;display:none;";
       const updateArrowIcon = () => {
@@ -2092,7 +2222,7 @@ Next backup: ${nextBackupTime}`;
       record.textContent = "\u23FA\uFE0F";
       record.style.cursor = "pointer";
       record.style.margin = "0px";
-      record.title = "Set to current playback time";
+      addTooltip(record, "Set to current playback time");
       record.addEventListener("mouseenter", () => {
         record.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
       });
@@ -2684,7 +2814,7 @@ Next backup: ${nextBackupTime}`;
         }
         const { videoId } = validation;
         if (timeDisplay && currentLoadedVideoTitle) {
-          timeDisplay.title = currentLoadedVideoTitle;
+          addTooltip(timeDisplay, () => currentLoadedVideoTitle || "");
         }
         let finalTimestampsToDisplay = [];
         try {
@@ -3741,7 +3871,7 @@ Next backup: ${nextBackupTime}`;
       mainButtonConfigs.forEach((config) => {
         const button = document.createElement("button");
         button.textContent = config.label;
-        button.title = config.title;
+        addTooltip(button, config.title);
         button.classList.add("ytls-main-button");
         if (config.label === "\u{1F423}" && holidayEmoji) {
           const holidayEmojiSpan = document.createElement("span");
@@ -3764,7 +3894,7 @@ Next backup: ${nextBackupTime}`;
       function createButton(label, title, onClick) {
         const button = document.createElement("button");
         button.textContent = label;
-        button.title = title;
+        addTooltip(button, title);
         button.classList.add("ytls-settings-modal-button");
         button.onclick = onClick;
         return button;
@@ -3793,7 +3923,7 @@ Next backup: ${nextBackupTime}`;
         const closeButton = document.createElement("button");
         closeButton.className = "ytls-modal-close-button";
         closeButton.textContent = "\u2715";
-        closeButton.title = "Close";
+        addTooltip(closeButton, "Close");
         closeButton.onclick = () => {
           if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
             settingsModalInstance.classList.remove("ytls-fade-in");
@@ -3829,7 +3959,7 @@ Next backup: ${nextBackupTime}`;
         generalTabText.className = "ytls-tab-text";
         generalTabText.textContent = " General";
         generalTab.appendChild(generalTabText);
-        generalTab.title = "General settings";
+        addTooltip(generalTab, "General settings");
         generalTab.classList.add("ytls-settings-modal-button");
         generalTab.onclick = () => showSection("general");
         const driveTab = document.createElement("button");
@@ -3838,7 +3968,7 @@ Next backup: ${nextBackupTime}`;
         driveTabText.className = "ytls-tab-text";
         driveTabText.textContent = " Backup";
         driveTab.appendChild(driveTabText);
-        driveTab.title = "Google Drive sign-in and backup";
+        addTooltip(driveTab, "Google Drive sign-in and backup");
         driveTab.classList.add("ytls-settings-modal-button");
         driveTab.onclick = () => showSection("drive");
         nav.appendChild(generalTab);
@@ -3861,7 +3991,7 @@ Next backup: ${nextBackupTime}`;
               await signInToGoogle();
             }
             signButton.textContent = googleAuthState.isSignedIn ? "\u{1F513} Sign Out" : "\u{1F510} Sign In";
-            signButton.title = googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive";
+            addTooltip(signButton, googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive");
           }
         );
         driveSection.appendChild(signButton);
@@ -4322,7 +4452,7 @@ Next backup: ${nextBackupTime}`;
       headerButton.id = "ytls-header-button";
       headerButton.type = "button";
       headerButton.className = "ytls-header-button";
-      headerButton.title = "Toggle Timekeeper UI";
+      addTooltip(headerButton, "Toggle Timekeeper UI");
       headerButton.setAttribute("aria-label", "Toggle Timekeeper UI");
       const headerIcon = document.createElement("img");
       headerIcon.src = HEADER_ICON_DEFAULT_URL;
@@ -4356,7 +4486,7 @@ Next backup: ${nextBackupTime}`;
         if (newTitle !== currentLoadedVideoTitle) {
           currentLoadedVideoTitle = newTitle;
           if (timeDisplay) {
-            timeDisplay.title = currentLoadedVideoTitle;
+            addTooltip(timeDisplay, () => currentLoadedVideoTitle || "");
             log("Video title changed, updated tooltip:", currentLoadedVideoTitle);
           }
         }
@@ -4389,7 +4519,7 @@ Next backup: ${nextBackupTime}`;
       log("Video Title:", currentLoadedVideoTitle);
       log("Current URL:", window.location.href);
       if (timeDisplay && currentLoadedVideoTitle) {
-        timeDisplay.title = currentLoadedVideoTitle;
+        addTooltip(timeDisplay, () => currentLoadedVideoTitle || "");
       }
       setupTitleObserver();
       clearTimestampsDisplay();

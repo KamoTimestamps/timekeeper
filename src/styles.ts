@@ -475,4 +475,28 @@ export const PANE_STYLES = `
     }
   }
 
+  /* Custom tooltip styles */
+  .ytls-tooltip {
+    position: fixed;
+    background: rgba(97, 97, 97, 0.92);
+    color: #fff;
+    padding: 8px 10px;
+    border-radius: 2px;
+    font-size: 12px;
+    font-family: "Roboto", "Arial", sans-serif;
+    font-weight: normal;
+    line-height: 1.4;
+    letter-spacing: 0.2px;
+    z-index: 10001;
+    pointer-events: none;
+    white-space: pre-line;
+    max-width: 300px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    opacity: 0;
+    transition: opacity 0.2s cubic-bezier(0.0, 0.0, 0.2, 1);
+  }
+  .ytls-tooltip.ytls-tooltip-visible {
+    opacity: 1;
+  }
+
 `;

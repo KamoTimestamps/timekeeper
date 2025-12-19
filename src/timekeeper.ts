@@ -1,5 +1,6 @@
 import { getHolidayEmoji } from './holidays';
 import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix } from './util';
+import { addTooltip } from './tooltip';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
@@ -886,7 +887,7 @@ if (hash && hash.length > 1) {
     // Setup indent gutter - displays in left margin without affecting layout
     const indentGutter = document.createElement("div");
     indentGutter.style.cssText = "position:absolute;left:0;top:0;width:20px;height:100%;display:flex;align-items:center;justify-content:center;cursor:pointer;";
-    indentGutter.title = "Click to toggle indent";
+    addTooltip(indentGutter, "Click to toggle indent");
 
     const indentToggle = document.createElement("span");
     indentToggle.style.cssText = "color:#999;font-size:12px;pointer-events:none;display:none;";
@@ -1025,7 +1026,7 @@ if (hash && hash.length > 1) {
     record.textContent = "⏺️";
     record.style.cursor = "pointer";
     record.style.margin = "0px";
-    record.title = "Set to current playback time";
+    addTooltip(record, "Set to current playback time");
     record.addEventListener("mouseenter", () => {
       record.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
     });
@@ -1741,7 +1742,7 @@ if (hash && hash.length > 1) {
 
       // Update the video title tooltip on the time display
       if (timeDisplay && currentLoadedVideoTitle) {
-        timeDisplay.title = currentLoadedVideoTitle;
+        addTooltip(timeDisplay, () => currentLoadedVideoTitle || '');
       }
 
       let finalTimestampsToDisplay = [];
@@ -3055,7 +3056,7 @@ if (hash && hash.length > 1) {
     mainButtonConfigs.forEach(config => {
       const button = document.createElement("button");
       button.textContent = config.label;
-      button.title = config.title;
+      addTooltip(button, config.title);
       button.classList.add("ytls-main-button");
 
       // Add holiday emoji to the 🐣 button if available
@@ -3082,7 +3083,7 @@ if (hash && hash.length > 1) {
     function createButton(label, title, onClick) {
       const button = document.createElement("button");
       button.textContent = label;
-      button.title = title;
+      addTooltip(button, title);
       button.classList.add("ytls-settings-modal-button");
       button.onclick = onClick;
       return button;
@@ -3120,7 +3121,7 @@ if (hash && hash.length > 1) {
       const closeButton = document.createElement("button");
       closeButton.className = "ytls-modal-close-button";
       closeButton.textContent = "✕";
-      closeButton.title = "Close";
+      addTooltip(closeButton, "Close");
       closeButton.onclick = () => {
         if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
           settingsModalInstance.classList.remove("ytls-fade-in");
@@ -3161,7 +3162,7 @@ if (hash && hash.length > 1) {
       generalTabText.className = "ytls-tab-text";
       generalTabText.textContent = " General";
       generalTab.appendChild(generalTabText);
-      generalTab.title = "General settings";
+      addTooltip(generalTab, "General settings");
       generalTab.classList.add("ytls-settings-modal-button");
       generalTab.onclick = () => showSection('general');
 
@@ -3171,7 +3172,7 @@ if (hash && hash.length > 1) {
       driveTabText.className = "ytls-tab-text";
       driveTabText.textContent = " Backup";
       driveTab.appendChild(driveTabText);
-      driveTab.title = "Google Drive sign-in and backup";
+      addTooltip(driveTab, "Google Drive sign-in and backup");
       driveTab.classList.add("ytls-settings-modal-button");
       driveTab.onclick = () => showSection('drive');
       nav.appendChild(generalTab);
@@ -3200,7 +3201,7 @@ if (hash && hash.length > 1) {
           }
           // Update label after action
           signButton.textContent = GoogleDrive.googleAuthState.isSignedIn ? "🔓 Sign Out" : "🔐 Sign In";
-          signButton.title = GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive";
+          addTooltip(signButton, GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive");
         }
       );
       driveSection.appendChild(signButton);
@@ -3784,7 +3785,7 @@ if (hash && hash.length > 1) {
     headerButton.id = "ytls-header-button";
     headerButton.type = "button";
     headerButton.className = "ytls-header-button";
-    headerButton.title = "Toggle Timekeeper UI";
+    addTooltip(headerButton, "Toggle Timekeeper UI");
     headerButton.setAttribute("aria-label", "Toggle Timekeeper UI");
 
     const headerIcon = document.createElement("img");
@@ -3824,7 +3825,7 @@ if (hash && hash.length > 1) {
       if (newTitle !== currentLoadedVideoTitle) {
         currentLoadedVideoTitle = newTitle;
         if (timeDisplay) {
-          timeDisplay.title = currentLoadedVideoTitle;
+          addTooltip(timeDisplay, () => currentLoadedVideoTitle || '');
           log("Video title changed, updated tooltip:", currentLoadedVideoTitle);
         }
       }
@@ -3869,7 +3870,7 @@ if (hash && hash.length > 1) {
 
     // Update the video title tooltip whenever video changes
     if (timeDisplay && currentLoadedVideoTitle) {
-      timeDisplay.title = currentLoadedVideoTitle;
+      addTooltip(timeDisplay, () => currentLoadedVideoTitle || '');
     }
 
     // Setup title observer on first run
