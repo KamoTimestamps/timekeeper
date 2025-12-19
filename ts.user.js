@@ -889,21 +889,42 @@
     const createJson = await createResp.json();
     return createJson.id;
   }
+  async function findFileInFolder(filename, folderId, accessToken) {
+    const query = `name='${filename}' and '${folderId}' in parents and trashed=false`;
+    const encodedQuery = encodeURIComponent(query);
+    const resp = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodedQuery}&fields=files(id,name)`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (resp.status === 401) throw new Error("unauthorized");
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (data.files && data.files.length > 0) {
+      return data.files[0].id;
+    }
+    return null;
+  }
   async function uploadJsonToDrive(filename, json, folderId, accessToken) {
+    const existingFileId = await findFileInFolder(filename, folderId, accessToken);
     const boundary = "-------314159265358979";
     const delimiter = `\r
 --${boundary}\r
 `;
     const closeDelim = `\r
 --${boundary}--`;
-    const metadata = {
-      name: filename,
-      mimeType: "application/json",
-      parents: [folderId]
-    };
+    const metadata = existingFileId ? { name: filename, mimeType: "application/json" } : { name: filename, mimeType: "application/json", parents: [folderId] };
     const multipartBody = delimiter + "Content-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(metadata) + delimiter + "Content-Type: application/json; charset=UTF-8\r\n\r\n" + json + closeDelim;
-    const resp = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name", {
-      method: "POST",
+    let url;
+    let method;
+    if (existingFileId) {
+      url = `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart&fields=id,name`;
+      method = "PATCH";
+    } else {
+      url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name";
+      method = "POST";
+    }
+    const resp = await fetch(url, {
+      method,
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": `multipart/related; boundary=${boundary}`

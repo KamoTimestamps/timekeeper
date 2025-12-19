@@ -496,17 +496,36 @@ async function ensureDriveFolder(accessToken: string): Promise<string> {
   return createJson.id;
 }
 
-// Upload JSON content to Google Drive
+// Search for an existing file by name in a folder
+async function findFileInFolder(filename: string, folderId: string, accessToken: string): Promise<string | null> {
+  const query = `name='${filename}' and '${folderId}' in parents and trashed=false`;
+  const encodedQuery = encodeURIComponent(query);
+  const resp = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodedQuery}&fields=files(id,name)`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (resp.status === 401) throw new Error('unauthorized');
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  if (data.files && data.files.length > 0) {
+    return data.files[0].id;
+  }
+  return null;
+}
+
+// Upload JSON content to Google Drive (creates new or updates existing)
 async function uploadJsonToDrive(filename: string, json: string, folderId: string, accessToken: string): Promise<void> {
+  // Check if file already exists
+  const existingFileId = await findFileInFolder(filename, folderId, accessToken);
+
   const boundary = '-------314159265358979';
   const delimiter = `\r\n--${boundary}\r\n`;
   const closeDelim = `\r\n--${boundary}--`;
 
-  const metadata = {
-    name: filename,
-    mimeType: 'application/json',
-    parents: [folderId]
-  };
+  // For updates, don't include parents field
+  const metadata = existingFileId
+    ? { name: filename, mimeType: 'application/json' }
+    : { name: filename, mimeType: 'application/json', parents: [folderId] };
 
   const multipartBody =
     delimiter +
@@ -517,8 +536,21 @@ async function uploadJsonToDrive(filename: string, json: string, folderId: strin
     json +
     closeDelim;
 
-  const resp = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name', {
-    method: 'POST',
+  let url: string;
+  let method: string;
+
+  if (existingFileId) {
+    // Update existing file
+    url = `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart&fields=id,name`;
+    method = 'PATCH';
+  } else {
+    // Create new file
+    url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name';
+    method = 'POST';
+  }
+
+  const resp = await fetch(url, {
+    method: method,
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': `multipart/related; boundary=${boundary}`
