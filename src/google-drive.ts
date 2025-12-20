@@ -5,6 +5,7 @@
 
 import { log, getTimestampSuffix } from './util';
 import { addTooltip } from './tooltip';
+import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
@@ -585,10 +586,71 @@ async function findFileInFolder(filename: string, folderId: string, accessToken:
   return null;
 }
 
+// Helper function to create a ZIP archive containing the JSON file
+// Creates a well-formed standard ZIP format compatible with Windows, macOS, and Linux
+// The ZIP file includes proper headers: local file header, central directory header, and EOCD record
+function createZipFromJson(json: string, filename: string): Uint8Array {
+  const jsonBytes = strToU8(json);
+
+  // Normalize filename for ZIP standard:
+  // - Use forward slashes only (not backslashes)
+  // - No leading slash
+  // - Preserve the .json extension
+  let normalizedFilename = filename.replace(/\\/g, '/').replace(/^\/+/, '');
+
+  // Ensure filename ends with .json
+  if (!normalizedFilename.endsWith('.json')) {
+    normalizedFilename += '.json';
+  }
+
+  // Create a ZIP archive with proper PKZip headers and metadata
+  // fflate automatically generates:
+  // - Local file header (signature 0x04034b50) with correct CRC32
+  // - File data compressed with DEFLATE (method 8)
+  // - Central directory file header (signature 0x02014b50)
+  // - End of central directory record (signature 0x06054b50)
+  //
+  // IMPORTANT: Use simple options to avoid Google Drive "encrypted or multi-volume" error
+  // - No encryption (bit 0 of general purpose flag = 0)
+  // - Standard DEFLATE compression only (method 8)
+  // - No multi-volume features
+  const zipData = zipSync({
+    [normalizedFilename]: [jsonBytes, {
+      level: 6,           // Standard deflate compression level (method 8)
+      mtime: new Date(),  // DOS timestamp for file metadata
+      os: 0               // OS flag: 0 = FAT/NTFS (most compatible with Windows/Google Drive)
+    }]
+  });
+
+  return zipData;
+}
+
+// Helper function to extract JSON from ZIP archive
+function extractJsonFromZip(zipData: Uint8Array, filename: string): string {
+  const unzipped = unzipSync(zipData);
+  const jsonBytes = unzipped[filename];
+  if (!jsonBytes) {
+    throw new Error(`File ${filename} not found in ZIP archive`);
+  }
+  return strFromU8(jsonBytes);
+}
+
 // Upload JSON content to Google Drive (creates new or updates existing)
 async function uploadJsonToDrive(filename: string, json: string, folderId: string, accessToken: string): Promise<void> {
+  // Convert JSON filename to ZIP filename
+  // e.g., "timekeeper-data-20231219.json" -> "timekeeper-data-20231219.zip"
+  // or "timekeeper-data.json" -> "timekeeper-data.zip"
+  const zipFilename = filename.replace(/\.json$/, '.zip');
+
   // Check if file already exists
-  const existingFileId = await findFileInFolder(filename, folderId, accessToken);
+  const existingFileId = await findFileInFolder(zipFilename, folderId, accessToken);
+
+  // Create a ZIP archive containing the JSON file
+  // The ZIP will contain one file: the original JSON filename (e.g., "timekeeper-data.json")
+  const originalSize = new TextEncoder().encode(json).length;
+  const zipData = createZipFromJson(json, filename);
+  const compressedSize = zipData.length;
+  log(`Compressing data: ${originalSize} bytes -> ${compressedSize} bytes (${Math.round(100 - (compressedSize / originalSize * 100))}% reduction)`);
 
   const boundary = '-------314159265358979';
   const delimiter = `\r\n--${boundary}\r\n`;
@@ -596,16 +658,29 @@ async function uploadJsonToDrive(filename: string, json: string, folderId: strin
 
   // For updates, don't include parents field
   const metadata = existingFileId
-    ? { name: filename, mimeType: 'application/json' }
-    : { name: filename, mimeType: 'application/json', parents: [folderId] };
+    ? { name: zipFilename, mimeType: 'application/zip' }
+    : { name: zipFilename, mimeType: 'application/zip', parents: [folderId] };
 
+  // Convert Uint8Array to base64 for safe multipart upload
+  // Process in chunks to avoid call stack overflow for large files
+  const chunkSize = 8192;
+  let binaryString = '';
+  for (let i = 0; i < zipData.length; i += chunkSize) {
+    const chunk = zipData.subarray(i, Math.min(i + chunkSize, zipData.length));
+    binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  const base64Data = btoa(binaryString);
+
+  // Create multipart request body with proper headers
+  // Content-Transfer-Encoding: base64 ensures data integrity during transmission
   const multipartBody =
     delimiter +
     'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
     JSON.stringify(metadata) +
     delimiter +
-    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-    json +
+    'Content-Type: application/zip\r\n' +
+    'Content-Transfer-Encoding: base64\r\n\r\n' +
+    base64Data +
     closeDelim;
 
   let url: string;

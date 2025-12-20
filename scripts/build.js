@@ -47,6 +47,7 @@ async function buildUserscript() {
     platform: 'browser',
     target: 'ES2020',
     external: ['GM', 'GM_info'],
+    minify: true,
   });
 
   const headerTemplate = readHeaderTemplate();
