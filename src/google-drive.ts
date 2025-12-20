@@ -118,6 +118,11 @@ export async function loadGoogleAuthState() {
     if (stored && typeof stored === 'object') {
       googleAuthState = { ...googleAuthState, ...stored as GoogleAuthState };
       updateGoogleUserDisplay();
+
+      // If user is signed in, check if backup is needed and schedule auto-backup
+      if (googleAuthState.isSignedIn && googleAuthState.accessToken) {
+        await scheduleAutoBackup();
+      }
     }
   } catch (err) {
     log('Failed to load Google auth state:', err, 'error');
@@ -373,6 +378,9 @@ export async function signInToGoogle() {
         await saveGoogleAuthState();
         updateGoogleUserDisplay();
         updateAuthStatusDisplay();
+
+        // Check if backup is needed and schedule auto-backup
+        await scheduleAutoBackup();
 
         if (log) {
           log(`Successfully authenticated as ${userInfo.name}`);
