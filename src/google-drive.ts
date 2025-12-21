@@ -119,9 +119,9 @@ export async function loadGoogleAuthState() {
       googleAuthState = { ...googleAuthState, ...stored as GoogleAuthState };
       updateGoogleUserDisplay();
 
-      // If user is signed in, check if backup is needed and schedule auto-backup
+      // If user is signed in, schedule auto-backup (skip immediate check on init)
       if (googleAuthState.isSignedIn && googleAuthState.accessToken) {
-        await scheduleAutoBackup();
+        await scheduleAutoBackup(true);
       }
     }
   } catch (err) {
@@ -981,7 +981,7 @@ export async function runAutoBackupOnce(silent = true) {
   }
 }
 
-export async function scheduleAutoBackup() {
+export async function scheduleAutoBackup(skipImmediateCheck = false) {
   clearAutoBackupSchedule();
   if (!autoBackupEnabled) return;
   if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) return;
@@ -990,10 +990,13 @@ export async function scheduleAutoBackup() {
     runAutoBackupOnce(true);
   }, Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
 
-  const now = Date.now();
-  const intervalMs = Math.max(1, autoBackupIntervalMinutes) * 60 * 1000;
-  if (!lastAutoBackupAt || now - lastAutoBackupAt >= intervalMs) {
-    runAutoBackupOnce(true);
+  // Only run immediate backup if not skipped and interval has elapsed
+  if (!skipImmediateCheck) {
+    const now = Date.now();
+    const intervalMs = Math.max(1, autoBackupIntervalMinutes) * 60 * 1000;
+    if (!lastAutoBackupAt || now - lastAutoBackupAt >= intervalMs) {
+      runAutoBackupOnce(true);
+    }
   }
   updateBackupStatusDisplay();
 }
