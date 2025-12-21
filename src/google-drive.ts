@@ -718,14 +718,13 @@ async function uploadJsonToDrive(filename: string, json: string, folderId: strin
 
 // Helper function to handle auth expiration and attempt automatic renewal
 async function handleAuthExpiration(opts?: { silent?: boolean; retry?: boolean }): Promise<boolean> {
-  log('Auth expired, attempting to renew...', null, 'warn');
+  log('Auth expired, will retry with existing token...', null, 'warn');
 
-  // Clear expired auth state
-  googleAuthState.isSignedIn = false;
-  googleAuthState.accessToken = null;
-  await saveGoogleAuthState();
-  updateAuthStatusDisplay();
-  updateBackupStatusDisplay();
+  // Don't clear the token immediately - let retry logic handle it
+  // This allows the backup retry mechanism to reuse the token
+  if (!opts?.silent) {
+    updateAuthStatusDisplay('error', 'Authorization may have expired. Retrying...');
+  }
 
   if (opts?.retry) {
     try {
@@ -743,12 +742,9 @@ async function handleAuthExpiration(opts?: { silent?: boolean; retry?: boolean }
       }
       return false;
     }
-  } else {
-    if (!opts?.silent) {
-      updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
-    }
-    return false;
   }
+
+  return false;
 }
 
 // Export all timestamps to Google Drive
@@ -963,6 +959,10 @@ export async function runAutoBackupOnce(silent = true) {
     await saveAutoBackupSettings();
   } catch (err) {
     log('Auto backup failed:', err, 'error');
+
+    // Check if this is an auth error
+    const isAuthError = (err as Error).message === 'unauthorized';
+
     if (autoBackupRetryAttempts < AUTO_BACKUP_MAX_RETRY_ATTEMPTS) {
       autoBackupRetryAttempts += 1;
       const base = AUTO_BACKUP_INITIAL_BACKOFF_MS;
@@ -972,7 +972,17 @@ export async function runAutoBackupOnce(silent = true) {
       autoBackupBackoffTimeoutId = setTimeout(() => {
         runAutoBackupOnce(true);
       }, next);
+      log(`Scheduling backup retry ${autoBackupRetryAttempts}/${AUTO_BACKUP_MAX_RETRY_ATTEMPTS} in ${Math.round(next/1000)}s`);
     } else {
+      // All retries exhausted - if it's an auth error, clear the token now
+      if (isAuthError) {
+        log('All backup retries exhausted due to auth failure, clearing token', null, 'warn');
+        googleAuthState.isSignedIn = false;
+        googleAuthState.accessToken = null;
+        await saveGoogleAuthState();
+        updateAuthStatusDisplay('error', 'Authorization expired after retries. Please sign in again.');
+        updateBackupStatusDisplay();
+      }
       autoBackupBackoffMs = null;
     }
   } finally {
