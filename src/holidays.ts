@@ -54,14 +54,39 @@ export function getHolidayEmoji(): string | null {
   const currentDate = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
   for (const holiday of holidayEmojis) {
-    const holidayDate = new Date(currentYear, holiday.month - 1, holiday.day);
-    const diffTime = holidayDate.getTime() - now.getTime();
-    const diffDays = diffTime / (1000 * 60 * 60 * 24);
+    // Check holiday in current year
+    let holidayDate = new Date(currentYear, holiday.month - 1, holiday.day);
+    let diffTime = holidayDate.getTime() - now.getTime();
+    let diffDays = diffTime / (1000 * 60 * 60 * 24);
 
-    // Within 7 days before or 3 days after the holiday
-    if (diffDays <= 7 && diffDays >= -3) {
+    // Within 5 days before or 2 days after the holiday
+    if (diffDays <= 5 && diffDays >= -2) {
       log(`Current date: ${currentDate}, Selected emoji: ${holiday.emoji} (${holiday.name}), Days until holiday: ${Math.ceil(diffDays)}`);
       return holiday.emoji;
+    }
+
+    // Check if we're near the end of the year and this holiday is at the start of next year
+    if (diffDays < -2) {
+      holidayDate = new Date(currentYear + 1, holiday.month - 1, holiday.day);
+      diffTime = holidayDate.getTime() - now.getTime();
+      diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+      if (diffDays <= 5 && diffDays >= -2) {
+        log(`Current date: ${currentDate}, Selected emoji: ${holiday.emoji} (${holiday.name}), Days until holiday: ${Math.ceil(diffDays)}`);
+        return holiday.emoji;
+      }
+    }
+
+    // Check if we're at the start of the year and this holiday was at the end of last year
+    if (diffDays > 5) {
+      holidayDate = new Date(currentYear - 1, holiday.month - 1, holiday.day);
+      diffTime = holidayDate.getTime() - now.getTime();
+      diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+      if (diffDays <= 5 && diffDays >= -2) {
+        log(`Current date: ${currentDate}, Selected emoji: ${holiday.emoji} (${holiday.name}), Days until holiday: ${Math.ceil(diffDays)}`);
+        return holiday.emoji;
+      }
     }
   }
 
