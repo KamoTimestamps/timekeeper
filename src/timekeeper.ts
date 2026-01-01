@@ -128,6 +128,177 @@ if (hash && hash.length > 1) {
   let style: HTMLStyleElement | null = null;
   let versionDisplay: HTMLSpanElement | null = null;
   let backupStatusIndicator: HTMLSpanElement | null = null;
+  // Used for dynamic min-height calculation
+  let minPaneHeight = 250;
+
+  // Track last handled URL to avoid duplicate reloads from history events
+  let lastHandledUrl: string | null = null;
+  let urlChangeHandlersSetup = false;
+
+  // --- Pane sizing helpers (available across module) ---
+  function getPaneRect() {
+    if (!pane) return null;
+    return pane.getBoundingClientRect();
+  }
+
+  function updateLastSavedPanePositionFromRect(rect: DOMRect | null, xOverride?: number, yOverride?: number) {
+    if (!rect) return;
+    lastSavedPanePosition = {
+      x: typeof xOverride === 'number' ? Math.round(xOverride) : Math.round(rect.left),
+      y: typeof yOverride === 'number' ? Math.round(yOverride) : Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height)
+    };
+  }
+
+  function clampAndSavePanePosition(save = true) {
+    if (!pane) return;
+    clampPaneToViewport();
+    const rect = getPaneRect();
+    if (rect && (rect.width || rect.height)) {
+      updateLastSavedPanePositionFromRect(rect);
+      if (save) {
+        saveGlobalSettings('windowPosition', lastSavedPanePosition);
+        safePostMessage({ type: 'window_position_updated', position: lastSavedPanePosition, timestamp: Date.now() });
+      }
+    }
+  }
+
+  function ensureMinPaneHeight() {
+    if (!pane || !header || !btns || !list) return;
+    let liH = 40;
+    const itemsForSize = getTimestampItems();
+    if (itemsForSize.length > 0) {
+      liH = (itemsForSize[0] as HTMLElement).offsetHeight;
+    } else {
+      const tempLi = document.createElement('li');
+      tempLi.style.visibility = 'hidden';
+      tempLi.style.position = 'absolute';
+      tempLi.textContent = '00:00 Example';
+      // Append temporarily so we can measure
+      list.appendChild(tempLi);
+      liH = tempLi.offsetHeight;
+      list.removeChild(tempLi);
+    }
+    minPaneHeight = header.offsetHeight + btns.offsetHeight + liH;
+    pane.style.minHeight = minPaneHeight + 'px';
+  }
+
+  // Append any timestamps that were built while the pane was animating open.
+  function performSizingAndSave() {
+    // Run a layout recalc then ensure pane sizing/clamping are applied
+    requestAnimationFrame(() => {
+      if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+      ensureMinPaneHeight();
+      clampAndSavePanePosition(true);
+    });
+  }
+
+  function scheduleShowFinalizer(delay = 450) {
+    if (visibilitySizingTimeoutId) {
+      clearTimeout(visibilitySizingTimeoutId);
+      visibilitySizingTimeoutId = null;
+    }
+    visibilitySizingTimeoutId = setTimeout(() => {
+      // If timestamps were deferred while animating, append them first so sizing sees them
+      appendPendingTimestamps();
+      performSizingAndSave();
+      visibilitySizingTimeoutId = null;
+    }, delay);
+  }
+
+  function cancelScheduledShowFinalizer() {
+    if (visibilitySizingTimeoutId) {
+      clearTimeout(visibilitySizingTimeoutId);
+      visibilitySizingTimeoutId = null;
+    }
+  }
+
+  function startShowAnimation() {
+    if (list) {
+      list.style.visibility = 'hidden';
+      log('Hiding timestamps during show animation');
+    }
+    performSizingAndSave();
+    scheduleShowFinalizer();
+  }
+
+  function startHideAnimation() {
+    // If any deferred timestamps exist, append them now (they'll remain hidden)
+    appendPendingTimestamps();
+    // Cancel any scheduled show finalizer since we're hiding instead
+    cancelScheduledShowFinalizer();
+
+    if (visibilityAnimationTimeoutId) {
+      clearTimeout(visibilityAnimationTimeoutId);
+      visibilityAnimationTimeoutId = null;
+    }
+    visibilityAnimationTimeoutId = setTimeout(() => {
+      if (!pane) return;
+      pane.style.display = "none";
+      saveUIVisibilityState();
+      visibilityAnimationTimeoutId = null;
+    }, 400);
+  }
+
+  function appendPendingTimestamps() {
+    if (!list) {
+      // Resolve any pending promise so awaiters don't hang
+      if (pendingTimestampsResolve) {
+        pendingTimestampsResolve();
+        pendingTimestampsResolve = null;
+        pendingTimestampsPromise = null;
+        pendingTimestampsFragment = null;
+      }
+      return;
+    }
+
+    // If there's nothing pending, ensure visibility is restored
+    if (!pendingTimestampsFragment) {
+      if (list.style.visibility === 'hidden') {
+        list.style.visibility = '';
+        log('Restoring timestamp visibility (no deferred fragment)');
+      }
+      if (pendingTimestampsResolve) {
+        pendingTimestampsResolve();
+        pendingTimestampsResolve = null;
+        pendingTimestampsPromise = null;
+      }
+      return;
+    }
+
+    log('Appending deferred timestamps after animation');
+    list.appendChild(pendingTimestampsFragment);
+    pendingTimestampsFragment = null;
+
+    // Restore visibility now that nodes are present
+    if (list.style.visibility === 'hidden') {
+      list.style.visibility = '';
+      log('Restoring timestamp visibility after append');
+    }
+
+    // Resolve promise so loadTimestamps can continue
+    if (pendingTimestampsResolve) {
+      pendingTimestampsResolve();
+      pendingTimestampsResolve = null;
+      pendingTimestampsPromise = null;
+    }
+
+    updateIndentMarkers();
+    updateSeekbarMarkers();
+    if (typeof (window as any).recalculateTimestampsArea === 'function') {
+      requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
+    }
+
+    const playerForHighlight = getActivePlayer();
+    const currentTimeForHighlight = playerForHighlight
+      ? Math.floor(playerForHighlight.getCurrentTime())
+      : getLatestTimestampValue();
+    if (Number.isFinite(currentTimeForHighlight)) {
+      highlightNearestTimestampAtTime(currentTimeForHighlight, false);
+    }
+  }
+
   let timeUpdateIntervalId: ReturnType<typeof setInterval> | null = null;
   let isLoadingTimestamps = false; // Track if timestamps are currently loading
   const TIMESTAMP_DELETE_CLASS = "ytls-timestamp-pending-delete";
@@ -285,15 +456,34 @@ if (hash && hash.length > 1) {
       } else if (event.data.type === 'window_position_updated' && pane) {
         const pos = event.data.position;
         if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
-          pane.style.left = `${Math.max(0, pos.x)}px`;
-          pane.style.top = `${Math.max(0, pos.y)}px`;
+          pane.style.left = `${pos.x}px`;
+          pane.style.top = `${pos.y}px`;
           pane.style.right = "auto";
           pane.style.bottom = "auto";
+          if (typeof pos.width === 'number' && pos.width > 0) {
+            pane.style.width = `${pos.width}px`;
+          }
+          if (typeof pos.height === 'number' && pos.height > 0) {
+            pane.style.height = `${pos.height}px`;
+          }
+          const rect = pane.getBoundingClientRect();
           lastSavedPanePosition = {
-            x: Math.max(0, Math.round(pos.x)),
-            y: Math.max(0, Math.round(pos.y))
+            x: Math.round(pos.x),
+            y: Math.round(pos.y),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
           };
-          clampPaneToViewport();
+          // Only clamp if pane is outside viewport
+          const viewportWidth = document.documentElement.clientWidth;
+          const viewportHeight = document.documentElement.clientHeight;
+          if (
+            rect.left < 0 ||
+            rect.top < 0 ||
+            rect.right > viewportWidth ||
+            rect.bottom > viewportHeight
+          ) {
+            clampPaneToViewport();
+          }
         }
       }
     }
@@ -320,12 +510,17 @@ if (hash && hash.length > 1) {
   let settingsModalInstance: HTMLDivElement | null = null; // To keep a reference to the settings modal
   let settingsCogButtonElement: HTMLButtonElement | null = null; // To keep a reference to the settings cog button
   let currentLoadedVideoId: string | null = null; // Track the currently loaded video to prevent duplicate loads
-  let currentLoadedVideoTitle: string | null = null; // Track the currently loaded video title
-  let titleObserver: MutationObserver | null = null; // Observer for title changes
   let visibilityAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let visibilitySizingTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  // When timestamps are loaded while a show animation is running, build the DOM nodes
+  // but defer appending them to the visible list until the animation completes.
+  let pendingTimestampsFragment: DocumentFragment | null = null;
+  let pendingTimestampsPromise: Promise<void> | null = null;
+  let pendingTimestampsResolve: (() => void) | null = null;
   let headerButtonImage: HTMLImageElement | null = null;
   let isHeaderButtonHovered = false;
-  let lastSavedPanePosition: { x: number; y: number } | null = null;
+  let lastSavedPanePosition: { x: number; y: number; width: number; height: number } | null = null;
+  let isPaneInitializing = false; // Lock flag to prevent concurrent pane initialization
 
   // Event listener references for cleanup to prevent memory leaks
   let documentMousemoveHandler: ((e: MouseEvent) => void) | null = null;
@@ -357,7 +552,12 @@ if (hash && hash.length > 1) {
 
 
   function getTimestampItems(): HTMLLIElement[] {
-    return list ? Array.from(list.querySelectorAll<HTMLLIElement>('li')) : [];
+    if (!list) return [];
+    // Only treat LIs containing a timestamp anchor as real timestamp items. This excludes
+    // placeholder rows (e.g., 'Loading...' / 'No timestamps...') and error messages.
+    return Array.from(list.querySelectorAll<HTMLLIElement>('li')).filter(li => {
+      return !!li.querySelector<HTMLAnchorElement>('a[data-time]');
+    });
   }
 
   // Utility to extract timestamp records from UI
@@ -497,6 +697,51 @@ if (hash && hash.length > 1) {
     while (list.firstChild) { // Clear the existing timestamps
       list.removeChild(list.firstChild);
     }
+
+    // If there's a pending fragment (timestamps built but not yet appended because the UI
+    // is animating), clear it and resolve any awaiting promise so callers don't hang.
+    if (pendingTimestampsFragment) {
+      pendingTimestampsFragment = null;
+    }
+    if (pendingTimestampsResolve) {
+      pendingTimestampsResolve();
+      pendingTimestampsResolve = null;
+      pendingTimestampsPromise = null;
+    }
+  }
+
+  // Ensure that when there are no timestamps shown, a friendly placeholder appears
+  function ensureEmptyPlaceholder() {
+    if (!list) return;
+    // If loading is in progress or we have a deferred fragment coming, don't show the empty placeholder
+    if (isLoadingTimestamps || pendingTimestampsFragment) return;
+
+    const hasNonPlaceholderItems = Array.from(list.children).some(li => {
+      return !li.classList.contains('ytls-placeholder') && !li.classList.contains('ytls-error-message');
+    });
+
+    if (!hasNonPlaceholderItems) {
+      showListPlaceholder('No timestamps for this video');
+    }
+  }
+
+  // Display a centered placeholder message inside the timestamps list
+  function showListPlaceholder(message: string) {
+    if (!list) return;
+    clearTimestampsDisplay();
+    const li = document.createElement('li');
+    li.className = 'ytls-placeholder';
+    li.textContent = message;
+    list.appendChild(li);
+    // Disable scrolling while showing placeholder
+    list.style.overflowY = 'hidden';
+  }
+
+  function clearListPlaceholder() {
+    if (!list) return;
+    const placeholder = list.querySelector('.ytls-placeholder');
+    if (placeholder) placeholder.remove();
+    list.style.overflowY = '';
   }
 
   function setLoadingState(loading: boolean) {
@@ -505,19 +750,17 @@ if (hash && hash.length > 1) {
     isLoadingTimestamps = loading;
 
     if (loading) {
-      // Fade out the pane during loading
-      pane.classList.add("ytls-fade-out");
-      pane.classList.remove("ytls-fade-in");
-      // Hide after fade completes
-      setTimeout(() => {
-        pane.style.display = "none";
-      }, 300);
+      // Show the pane and display a placeholder message while we load timestamps
+      pane.style.display = '';
+      pane.classList.remove('ytls-fade-out');
+      pane.classList.add('ytls-fade-in');
+      showListPlaceholder('Loading timestamps...');
     } else {
-      // Show the pane when loading is done
-      pane.style.display = "";
-      // Fade in after showing
-      pane.classList.remove("ytls-fade-out");
-      pane.classList.add("ytls-fade-in");
+      // Remove any loading placeholder and show the pane
+      clearListPlaceholder();
+      pane.style.display = '';
+      pane.classList.remove('ytls-fade-out');
+      pane.classList.add('ytls-fade-in');
 
       // Update CT display now that loading is done
       if (timeDisplay) {
@@ -531,9 +774,9 @@ if (hash && hash.length > 1) {
 
           const { isLive } = playerInstance.getVideoData() || { isLive: false };
 
-          const timestamps = list ? Array.from(list.children).map(li => {
+          const timestamps = list ? getTimestampItems().map(li => {
             const timeLink = li.querySelector('a[data-time]');
-            return timeLink ? parseFloat(timeLink.getAttribute('data-time')) : 0;
+            return timeLink ? parseFloat(timeLink.getAttribute('data-time') ?? "0") : 0;
           }) : [];
 
           let timestampDisplay = "";
@@ -565,6 +808,11 @@ if (hash && hash.length > 1) {
       }
     }
 
+    // Ensure empty placeholder is shown now that loading finished
+    if (!isLoadingTimestamps && list && !list.querySelector('.ytls-error-message')) {
+      ensureEmptyPlaceholder();
+    }
+
     syncToggleButtons();
   }
 
@@ -584,7 +832,7 @@ if (hash && hash.length > 1) {
   // Debounce state for seeking
   let seekTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let pendingSeekTime: number | null = null;
-  let lastAutoHighlightedGuid: string | null = null;
+
   let isSeeking = false;
 
   // Detect whether playback is behind the live edge using YouTube player internals.
@@ -618,12 +866,6 @@ if (hash && hash.length > 1) {
     }
 
     const nearestLi = findNearestTimestamp(currentSeconds);
-    const nearestGuid = nearestLi?.dataset.guid ?? null;
-
-    if (nearestGuid) {
-      lastAutoHighlightedGuid = nearestGuid;
-    }
-
     highlightTimestamp(nearestLi, shouldScroll);
   }
 
@@ -857,12 +1099,14 @@ if (hash && hash.length > 1) {
       invalidateLatestTimestampValue();
       updateSeekbarMarkers();
       updateScroll();
-      saveTimestamps(currentLoadedVideoId);
+      saveTimestamps(currentLoadedVideoId, { allowEmpty: true });
       mostRecentlyModifiedTimestampGuid = null;
+      // Show placeholder when the list is empty after a clear
+      ensureEmptyPlaceholder();
     }
   }
 
-  function addTimestamp(start: number, comment = "", doNotSave = false, guid: string | null = null) {
+  function addTimestamp(start: number, comment = "", doNotSave = false, guid: string | null = null, appendToList = true) {
     if (!list) {
       return null;
     }
@@ -1069,6 +1313,8 @@ if (hash && hash.length > 1) {
         updateScroll();
         deleteSingleTimestamp(currentLoadedVideoId, guid);
         mostRecentlyModifiedTimestampGuid = null;
+        // If this was the last timestamp, show the empty placeholder
+        ensureEmptyPlaceholder();
       } else {
         li.dataset.deleteConfirmed = "true";
         li.classList.add(TIMESTAMP_DELETE_CLASS);
@@ -1139,73 +1385,84 @@ if (hash && hash.length > 1) {
     li.append(indentGutter, timeRow, commentInput);
 
     const newTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
-    let inserted = false;
-    const existingItems = getTimestampItems();
+    if (appendToList) {
+      // If a placeholder is present (e.g., "No timestamps for this video"), remove it
+      // immediately so the first timestamp replaces the placeholder.
+      clearListPlaceholder();
 
-    for (let i = 0; i < existingItems.length; i++) {
-      const existingLi = existingItems[i];
-      const existingLink = existingLi.querySelector<HTMLAnchorElement>('a[data-time]');
-      const existingTimeStr = existingLink?.dataset.time;
-      if (!existingTimeStr) {
-        continue;
+      let inserted = false;
+      const existingItems = getTimestampItems();
+
+      for (let i = 0; i < existingItems.length; i++) {
+        const existingLi = existingItems[i];
+        const existingLink = existingLi.querySelector<HTMLAnchorElement>('a[data-time]');
+        const existingTimeStr = existingLink?.dataset.time;
+        if (!existingTimeStr) {
+          continue;
+        }
+        const existingTime = Number.parseInt(existingTimeStr, 10);
+        if (!Number.isFinite(existingTime)) {
+          continue;
+        }
+
+        if (newTime < existingTime) {
+          list.insertBefore(li, existingLi);
+          inserted = true;
+
+          const prevLi = existingItems[i - 1];
+          if (prevLi) {
+            const prevLink = prevLi.querySelector<HTMLAnchorElement>('a[data-time]');
+            const prevTimeStr = prevLink?.dataset.time;
+            if (prevTimeStr) {
+              const prevTime = Number.parseInt(prevTimeStr, 10);
+              if (Number.isFinite(prevTime)) {
+                timeDiff.textContent = formatTimeString(newTime - prevTime);
+              }
+            }
+          } else {
+            timeDiff.textContent = "";
+          }
+
+          const nextTimeDiff = existingLi.querySelector<HTMLSpanElement>('.time-diff');
+          if (nextTimeDiff) {
+            nextTimeDiff.textContent = formatTimeString(existingTime - newTime);
+          }
+          break;
+        }
       }
-      const existingTime = Number.parseInt(existingTimeStr, 10);
-      if (!Number.isFinite(existingTime)) {
-        continue;
-      }
 
-      if (newTime < existingTime) {
-        list.insertBefore(li, existingLi);
-        inserted = true;
-
-        const prevLi = existingItems[i - 1];
-        if (prevLi) {
-          const prevLink = prevLi.querySelector<HTMLAnchorElement>('a[data-time]');
-          const prevTimeStr = prevLink?.dataset.time;
-          if (prevTimeStr) {
-            const prevTime = Number.parseInt(prevTimeStr, 10);
-            if (Number.isFinite(prevTime)) {
-              timeDiff.textContent = formatTimeString(newTime - prevTime);
+      if (!inserted) {
+        list.appendChild(li);
+        if (existingItems.length > 0) {
+          const lastLi = existingItems[existingItems.length - 1];
+          const lastLink = lastLi.querySelector<HTMLAnchorElement>('a[data-time]');
+          const lastTimeStr = lastLink?.dataset.time;
+          if (lastTimeStr) {
+            const lastTime = Number.parseInt(lastTimeStr, 10);
+            if (Number.isFinite(lastTime)) {
+              timeDiff.textContent = formatTimeString(newTime - lastTime);
             }
           }
-        } else {
-          timeDiff.textContent = "";
-        }
-
-        const nextTimeDiff = existingLi.querySelector<HTMLSpanElement>('.time-diff');
-        if (nextTimeDiff) {
-          nextTimeDiff.textContent = formatTimeString(existingTime - newTime);
-        }
-        break;
-      }
-    }
-
-    if (!inserted) {
-      list.appendChild(li);
-      if (existingItems.length > 0) {
-        const lastLi = existingItems[existingItems.length - 1];
-        const lastLink = lastLi.querySelector<HTMLAnchorElement>('a[data-time]');
-        const lastTimeStr = lastLink?.dataset.time;
-        if (lastTimeStr) {
-          const lastTime = Number.parseInt(lastTimeStr, 10);
-          if (Number.isFinite(lastTime)) {
-            timeDiff.textContent = formatTimeString(newTime - lastTime);
-          }
         }
       }
+
+      li.scrollIntoView({ behavior: "smooth", block: "center" });
+
+      updateScroll();
+      updateIndentMarkers();
+      updateSeekbarMarkers();
+      if (!doNotSave) {
+        saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, sanitizedStart, comment);
+        mostRecentlyModifiedTimestampGuid = timestampGuid;
+        // Immediately highlight the newly created timestamp
+        highlightTimestamp(li, false);
+      }
+    } else {
+      // Do not append to the live DOM yet; expose the constructed li for callers that are
+      // building a fragment to append later.
+      (commentInput as any).__ytls_li = li;
     }
 
-    li.scrollIntoView({ behavior: "smooth", block: "center" });
-
-    updateScroll();
-    updateIndentMarkers();
-    updateSeekbarMarkers();
-    if (!doNotSave) {
-      saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, sanitizedStart, comment);
-      mostRecentlyModifiedTimestampGuid = timestampGuid;
-      // Immediately highlight the newly created timestamp
-      highlightTimestamp(li, false);
-    }
     return commentInput;
   }
 
@@ -1273,6 +1530,8 @@ if (hash && hash.length > 1) {
     }
 
     const items = getTimestampItems();
+    if (items.length === 0) return; // Nothing to sort when there are no timestamps
+
 
     // Capture original order to detect if reordering occurred
     const originalOrder = items.map(li => li.dataset.guid);
@@ -1342,7 +1601,7 @@ if (hash && hash.length > 1) {
 
   function updateScroll() {
     if (!list) return;
-    const tsCount = list.children.length;
+    const tsCount = getTimestampItems().length;
     if (tsCount > 2) {
       list.style.maxHeight = "200px";
       list.style.overflowY = "auto";
@@ -1350,6 +1609,8 @@ if (hash && hash.length > 1) {
       list.style.maxHeight = "none";
       list.style.overflowY = "hidden";
     }
+    // If empty, show the placeholder message
+    if (tsCount === 0) ensureEmptyPlaceholder();
   }
 
   function updateSeekbarMarkers() {
@@ -1407,7 +1668,7 @@ if (hash && hash.length > 1) {
     });
   }
 
-  function saveTimestamps(videoId: string) {
+  function saveTimestamps(videoId: string, options: { allowEmpty?: boolean } = {}) {
     if (!list || list.querySelector('.ytls-error-message')) return;
     if (!videoId) return;
     // Prevent saving during loading state to avoid race conditions
@@ -1417,40 +1678,22 @@ if (hash && hash.length > 1) {
     }
     updateIndentMarkers();
     const currentTimestampsFromUI = extractTimestampRecords().sort((a, b) => a.start - b.start);
+
+    // Skip saving if the list is empty, unless explicitly allowed (e.g., user cleared all timestamps)
+    if (currentTimestampsFromUI.length === 0 && !options.allowEmpty) {
+      log('Save skipped: no timestamps to save');
+      return;
+    }
+
     saveToIndexedDB(videoId, currentTimestampsFromUI)
       .then(() => log(`Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`))
       .catch(err => log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, 'error'));
     safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
   }
 
-  function extractSingleTimestampFromLi(li: HTMLLIElement): TimestampRecord | null {
-    const anchor = li.querySelector<HTMLAnchorElement>('a[data-time]');
-    const commentInput = li.querySelector<HTMLInputElement>('input');
-    const guid = li.dataset.guid;
 
-    if (!anchor || !commentInput || !guid) {
-      return null;
-    }
 
-    const time = Number.parseInt(anchor.dataset.time ?? "0", 10);
-    return {
-      start: time,
-      comment: commentInput.value,
-      guid: guid
-    };
-  }
 
-  function saveSingleTimestamp(videoId: string | null | undefined, li: HTMLLIElement) {
-    if (!videoId || isLoadingTimestamps) return;
-
-    const timestamp = extractSingleTimestampFromLi(li);
-    if (!timestamp) return;
-
-    saveSingleTimestampToIndexedDB(videoId, timestamp)
-      .catch(err => log(`Failed to save timestamp ${timestamp.guid}:`, err, 'error'));
-
-    safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
-  }
 
   function saveSingleTimestampDirect(videoId: string | null | undefined, guid: string, start: number, comment: string) {
     if (!videoId || isLoadingTimestamps) return;
@@ -1634,7 +1877,7 @@ if (hash && hash.length > 1) {
       visibilityAnimationTimeoutId = null;
     }
 
-    lastAutoHighlightedGuid = null;
+
 
     // Remove all event listeners to prevent memory leaks
     removeAllEventListeners();
@@ -1653,13 +1896,9 @@ if (hash && hash.length > 1) {
     settingsCogButtonElement = null;
     isMouseOverTimestamps = false;
     currentLoadedVideoId = null;
-    currentLoadedVideoTitle = null;
 
-    // Disconnect title observer
-    if (titleObserver) {
-      titleObserver.disconnect();
-      titleObserver = null;
-    }
+
+
 
     if (pane && pane.parentNode) {
       pane.remove();
@@ -1740,10 +1979,7 @@ if (hash && hash.length > 1) {
 
       const { videoId } = validation;
 
-      // Update the video title tooltip on the time display
-      if (timeDisplay && currentLoadedVideoTitle) {
-        addTooltip(timeDisplay, () => currentLoadedVideoTitle || '');
-      }
+
 
       let finalTimestampsToDisplay = [];
 
@@ -1761,7 +1997,7 @@ if (hash && hash.length > 1) {
         }
       } catch (dbError) {
         log(`Failed to load timestamps from IndexedDB for ${videoId}:`, dbError, 'error');
-        clearTimestampsDisplay();
+        displayPaneError("Failed to load timestamps from IndexedDB. Try refreshing the page.");
         updateSeekbarMarkers();
         return;
       }
@@ -1769,30 +2005,75 @@ if (hash && hash.length > 1) {
       if (finalTimestampsToDisplay.length > 0) {
         finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
         clearTimestampsDisplay();
+        clearListPlaceholder();
+
+        // Build as a document fragment so we can defer appending to the live DOM
+        // while show animations are running.
+        const frag = document.createDocumentFragment();
         finalTimestampsToDisplay.forEach(ts => {
-          // Pass the GUID when loading timestamps (indent is now embedded in comment)
-          addTimestamp(ts.start, ts.comment, true, ts.guid);
+          // Construct LI without appending to the live list
+          const input = addTimestamp(ts.start, ts.comment, true, ts.guid, false);
+          const li = (input as any).__ytls_li as HTMLLIElement | undefined;
+          if (li) frag.appendChild(li);
         });
-        updateIndentMarkers();
-        updateSeekbarMarkers();
+
+        // If showing animation is running, defer appending until animation completes
+        const isShowingAnimation = pane && pane.classList.contains('ytls-zoom-in') && visibilitySizingTimeoutId != null;
+        if (isShowingAnimation) {
+          log('Deferring timestamp DOM append until show animation completes');
+          pendingTimestampsFragment = frag;
+          if (!pendingTimestampsPromise) {
+            pendingTimestampsPromise = new Promise<void>((resolve) => { pendingTimestampsResolve = resolve; });
+          }
+          // Wait until the fragment is appended by the visibility timeout handler
+          await pendingTimestampsPromise;
+        } else {
+          // Append immediately
+          if (list) {
+            list.appendChild(frag);
+            updateIndentMarkers();
+            updateSeekbarMarkers();
+            // Ensure scroll area is recalculated after DOM updates
+            if (typeof (window as any).recalculateTimestampsArea === 'function') {
+              requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
+            }
+          }
+        }
 
         const playerForHighlight = getActivePlayer();
         const currentTimeForHighlight = playerForHighlight
           ? Math.floor(playerForHighlight.getCurrentTime())
           : getLatestTimestampValue();
         if (Number.isFinite(currentTimeForHighlight)) {
-          highlightNearestTimestampAtTime(currentTimeForHighlight, true);
+          highlightNearestTimestampAtTime(currentTimeForHighlight, false);
           shouldRestoreScroll = false;
         }
       } else {
         clearTimestampsDisplay(); // Ensure UI is cleared if no timestamps are found
+        showListPlaceholder('No timestamps for this video');
         updateSeekbarMarkers(); // Ensure seekbar markers are cleared
+        // Still recalculate area in case list is now empty
+        if (typeof (window as any).recalculateTimestampsArea === 'function') {
+          requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
+        }
       }
     } catch (err) {
       log("Unexpected error while loading timestamps:", err, 'error');
       displayPaneError("Timekeeper encountered an unexpected error while loading timestamps. Check the console for details.");
     } finally {
+      // If timestamps were deferred for animation, wait until they're appended before restoring scroll
+      if (pendingTimestampsPromise) {
+        await pendingTimestampsPromise;
+      }
       requestAnimationFrame(restoreScrollPosition);
+      // Ensure scroll area is recalculated after loading timestamps
+      if (typeof (window as any).recalculateTimestampsArea === 'function') {
+        requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
+      }
+      // If there is no error being shown, ensure a friendly placeholder appears when the list is empty
+      if (list && !list.querySelector('.ytls-error-message')) {
+        ensureEmptyPlaceholder();
+      }
     }
   }
 
@@ -1814,15 +2095,9 @@ if (hash && hash.length > 1) {
     return null;
   }
 
-  function getVideoTitle(): string {
-    // Get the video title from the meta tag
-    const titleMeta = document.querySelector<HTMLMetaElement>('meta[name="title"]');
-    if (titleMeta?.content) {
-      return titleMeta.content;
-    }
-    // Fallback to document.title if meta tag not found
-    return document.title.replace(' - YouTube', '');
-  }
+
+
+
 
   function setupVideoEventListeners() {
     const video = getVideoElement();
@@ -2191,7 +2466,6 @@ if (hash && hash.length > 1) {
         getRequest.onsuccess = () => {
           try {
             const existingRecords = getRequest.result as Array<{guid: string}>;
-            const existingGuids = new Set(existingRecords.map(r => r.guid));
             const newGuids = new Set(data.map(ts => ts.guid));
 
             // Delete removed timestamps
@@ -2261,6 +2535,7 @@ if (hash && hash.length > 1) {
 
   function deleteSingleTimestampFromIndexedDB(videoId: string, guid: string): Promise<void> {
     // Delete single timestamp from v2 store only
+    log(`Deleting timestamp ${guid} for video ${videoId}`);
     return getDB().then(db => {
       return new Promise<void>((resolve, reject) => {
         let tx: IDBTransaction;
@@ -2289,7 +2564,7 @@ if (hash && hash.length > 1) {
   function loadFromIndexedDB(videoId: string): Promise<TimestampRecord[] | null> {
     // Load from v2 store only
     return getDB().then(db => {
-      return new Promise<TimestampRecord[] | null>((resolve, reject) => {
+      return new Promise<TimestampRecord[] | null>((resolve) => {
         let tx: IDBTransaction;
         try {
           tx = db.transaction([STORE_NAME_V2], 'readonly');
@@ -2401,38 +2676,6 @@ if (hash && hash.length > 1) {
     });
   }
 
-  // IndexedDB-based message passing for OAuth (replaces localStorage)
-  async function saveOAuthMessage(message: { type: string; token?: string; error?: string; timestamp: number }): Promise<void> {
-    try {
-      await executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
-        store.put({ key: 'oauth_message', value: message });
-      });
-    } catch (err) {
-      log('Failed to save OAuth message to IndexedDB:', err, 'error');
-    }
-  }
-
-  async function loadOAuthMessage(): Promise<{ type: string; token?: string; error?: string; timestamp: number } | null> {
-    try {
-      const result = await executeTransaction(SETTINGS_STORE_NAME, 'readonly', (store) => {
-        return store.get('oauth_message');
-      });
-      return (result as { value?: { type: string; token?: string; error?: string; timestamp: number } } | undefined)?.value ?? null;
-    } catch (err) {
-      log('Failed to load OAuth message from IndexedDB:', err, 'error');
-      return null;
-    }
-  }
-
-  async function deleteOAuthMessage(): Promise<void> {
-    try {
-      await executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
-        store.delete('oauth_message');
-      });
-    } catch (err) {
-      log('Failed to delete OAuth message from IndexedDB:', err, 'error');
-    }
-  }
 
 
 
@@ -2495,7 +2738,29 @@ if (hash && hash.length > 1) {
   }
 
   function togglePaneVisibility(force?: boolean) {
-    if (!pane) return;
+    if (!pane) {
+      log('ERROR: togglePaneVisibility called but pane is null');
+      return;
+    }
+
+    // If pane is not in DOM, append it before toggling
+    if (!document.body.contains(pane)) {
+      log('Pane not in DOM during toggle, appending it');
+      // Remove any stray panes first
+      document.querySelectorAll("#ytls-pane").forEach(el => {
+        if (el !== pane) el.remove();
+      });
+      document.body.appendChild(pane);
+    }
+
+    // Verify no duplicate panes exist
+    const allPanes = document.querySelectorAll("#ytls-pane");
+    if (allPanes.length > 1) {
+      log(`ERROR: Multiple panes detected in togglePaneVisibility (${allPanes.length}), cleaning up`);
+      allPanes.forEach((el) => {
+        if (el !== pane) el.remove();
+      });
+    }
 
     if (visibilityAnimationTimeoutId) {
       clearTimeout(visibilityAnimationTimeoutId);
@@ -2512,17 +2777,28 @@ if (hash && hash.length > 1) {
       pane.classList.add("ytls-zoom-in");
       syncToggleButtons(true);
       saveUIVisibilityState();
+      // Hide timestamps until the show animation completes and schedule final sizing
+      startShowAnimation();
+      if (visibilitySizingTimeoutId) {
+        clearTimeout(visibilitySizingTimeoutId);
+        visibilitySizingTimeoutId = null;
+      }
+      visibilitySizingTimeoutId = setTimeout(() => {
+        // If timestamps were deferred while animating, append them first so sizing sees them
+        appendPendingTimestamps();
+        if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+        ensureMinPaneHeight();
+        clampAndSavePanePosition(true);
+        visibilitySizingTimeoutId = null;
+      }, 450);
     } else {
       pane.classList.remove("ytls-fade-in");
       pane.classList.remove("ytls-zoom-in");
       pane.classList.add("ytls-zoom-out");
       syncToggleButtons(false);
-      visibilityAnimationTimeoutId = setTimeout(() => {
-        if (!pane) return;
-        pane.style.display = "none";
-        saveUIVisibilityState();
-        visibilityAnimationTimeoutId = null;
-      }, 400);
+      // Start hide animation (append any deferred timestamps hidden, cancel finalizer, and schedule hide)
+      startHideAnimation();
+      // Clear any scheduled sizing followups when hiding (startHideAnimation handles it)
     }
   }
 
@@ -2666,12 +2942,21 @@ if (hash && hash.length > 1) {
 
 
   async function initializePaneIfNeeded() {
+    // Prevent concurrent initialization
+    if (isPaneInitializing) {
+      log('Pane initialization already in progress, skipping duplicate call');
+      return;
+    }
+
     if (pane && document.body.contains(pane)) {
       return;
     }
 
-    // Remove any stray panes before creating a new one
-    document.querySelectorAll("#ytls-pane").forEach(el => el.remove());
+    isPaneInitializing = true;
+
+    try {
+      // Remove any stray panes before creating a new one
+      document.querySelectorAll("#ytls-pane").forEach(el => el.remove());
 
     pane = document.createElement("div");
     header = document.createElement("div");
@@ -2702,7 +2987,7 @@ if (hash && hash.length > 1) {
       }
       const player = getActivePlayer();
       const currentTime = player ? Math.floor(player.getCurrentTime()) : getLatestTimestampValue();
-      highlightNearestTimestampAtTime(currentTime, true);
+      highlightNearestTimestampAtTime(currentTime, false);
 
       // Preserve focus on the currently focused timestamp when sorting
       let focusedTimestampGuid: string | null = null;
@@ -2783,9 +3068,9 @@ if (hash && hash.length > 1) {
       const { isLive } = playerInstance ? (playerInstance.getVideoData() || { isLive: false }) : { isLive: false };
       const behindLive = playerInstance ? isBehindLiveEdge(playerInstance) : false;
 
-      const timestamps = list ? Array.from(list.children).map(li => {
+      const timestamps = list ? getTimestampItems().map(li => {
         const timeLink = li.querySelector('a[data-time]');
-        return timeLink ? parseFloat(timeLink.getAttribute('data-time')) : 0;
+        return timeLink ? parseFloat(timeLink.getAttribute('data-time') ?? "0") : 0;
       }) : [];
 
       let timestampDisplay = "";
@@ -3715,63 +4000,80 @@ if (hash && hash.length > 1) {
       handleClick(e);
     };
 
+    // Pane helpers are declared at module scope above
+
     // Load pane position from IndexedDB settings
     function loadPanePosition() {
       if (!pane) return;
       log('Loading window position from IndexedDB');
       loadGlobalSettings('windowPosition').then(value => {
         if (value && typeof (value as any).x === 'number' && typeof (value as any).y === 'number') {
-          const pos = value as { x: number; y: number };
+          const pos = value as { x: number; y: number; width?: number; height?: number };
           pane.style.left = `${pos.x}px`;
           pane.style.top = `${pos.y}px`;
           pane.style.right = "auto";
           pane.style.bottom = "auto";
-          lastSavedPanePosition = {
-            x: Math.max(0, Math.round(pos.x)),
-            y: Math.max(0, Math.round(pos.y))
-          };
+          if (typeof pos.width === 'number' && pos.width > 0) {
+            pane.style.width = `${pos.width}px`;
+          }
+          if (typeof pos.height === 'number' && pos.height > 0) {
+            pane.style.height = `${pos.height}px`;
+          }
+          // Get rect after applying position and size
+          const rect = getPaneRect();
+          updateLastSavedPanePositionFromRect(rect, pos.x, pos.y);
+          log('Restored window position from IndexedDB:', lastSavedPanePosition);
         } else {
           log('No window position found in IndexedDB, leaving default position');
           lastSavedPanePosition = null;
         }
         clampPaneToViewport();
-        const rect = pane.getBoundingClientRect();
-        if (rect.width || rect.height) {
-          lastSavedPanePosition = {
-            x: Math.max(0, Math.round(rect.left)),
-            y: Math.max(0, Math.round(rect.top))
-          };
+        const rect = getPaneRect();
+        if (rect && (rect.width || rect.height)) {
+          updateLastSavedPanePositionFromRect(rect);
         }
+        // Ensure the scroll area is sized after restoring position/size
+        if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
       }).catch(err => {
         log("failed to load pane position from IndexedDB:", err, 'warn');
         clampPaneToViewport();
-        const rect = pane.getBoundingClientRect();
-        if (rect.width || rect.height) {
+        const rect = getPaneRect();
+        if (rect && (rect.width || rect.height)) {
           lastSavedPanePosition = {
             x: Math.max(0, Math.round(rect.left)),
-            y: Math.max(0, Math.round(rect.top))
+            y: 0, // Fixed at bottom
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
           };
         }
+        if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
       });
     }
+
     function savePanePosition() {
       if (!pane) return;
 
-      const rect = pane.getBoundingClientRect();
+      const rect = getPaneRect();
+      if (!rect) return;
+
       const positionData = {
         x: Math.max(0, Math.round(rect.left)),
-        y: Math.max(0, Math.round(rect.top))
+        y: Math.max(0, Math.round(rect.top)),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
       };
 
       if (lastSavedPanePosition &&
         lastSavedPanePosition.x === positionData.x &&
-        lastSavedPanePosition.y === positionData.y) {
-        log('Skipping window position save; position unchanged');
+        lastSavedPanePosition.y === positionData.y &&
+        lastSavedPanePosition.width === positionData.width &&
+        lastSavedPanePosition.height === positionData.height) {
+        log('Skipping window position save; position and size unchanged');
         return;
       }
 
       lastSavedPanePosition = { ...positionData };
-      log(`Saving window position to IndexedDB: x=${positionData.x}, y=${positionData.y}`);
+      log(`Saving window position and size to IndexedDB: x=${positionData.x}, y=${positionData.y}, width=${positionData.width}, height=${positionData.height}`);
       saveGlobalSettings('windowPosition', positionData);
 
       safePostMessage({
@@ -3865,6 +4167,113 @@ if (hash && hash.length > 1) {
     // Prevent text selection during drag
     pane.addEventListener("dragstart", (e) => e.preventDefault());
 
+    // Create corner resize handles (top-left, top-right, bottom-left, bottom-right)
+    const resizeTL = document.createElement("div");
+    const resizeTR = document.createElement("div");
+    const resizeBL = document.createElement("div");
+    const resizeBR = document.createElement("div");
+    resizeTL.id = "ytls-resize-tl";
+    resizeTR.id = "ytls-resize-tr";
+    resizeBL.id = "ytls-resize-bl";
+    resizeBR.id = "ytls-resize-br";
+
+    // Resize state
+    let isResizing = false;
+    let resizeStartX: number = 0;
+    let resizeStartY: number = 0;
+    let resizeStartWidth: number = 0;
+    let resizeStartHeight: number = 0;
+    let resizeStartLeft: number = 0;
+    let resizeStartTop: number = 0;
+    let resizeEdge: "top-left" | "top-right" | "bottom-left" | "bottom-right" | null = null;
+
+    function setupCorner(handle: HTMLElement, edge: "top-left" | "top-right" | "bottom-left" | "bottom-right") {
+      handle.addEventListener("dblclick", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (pane) {
+          pane.style.width = "300px";
+          pane.style.height = "300px";
+          savePanePosition();
+          recalculateTimestampsArea();
+        }
+      });
+      handle.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        isResizing = true;
+        resizeEdge = edge;
+        resizeStartX = ev.clientX;
+        resizeStartY = ev.clientY;
+        const rect = pane.getBoundingClientRect();
+        resizeStartWidth = rect.width;
+        resizeStartHeight = rect.height;
+        resizeStartLeft = rect.left;
+        resizeStartTop = rect.top;
+        // Set diagonal cursor indicator
+        if (edge === "top-left" || edge === "bottom-right") document.body.style.cursor = "nwse-resize";
+        else document.body.style.cursor = "nesw-resize";
+      });
+    }
+
+    setupCorner(resizeTL, "top-left");
+    setupCorner(resizeTR, "top-right");
+    setupCorner(resizeBL, "bottom-left");
+    setupCorner(resizeBR, "bottom-right");
+
+    document.addEventListener("mousemove", (e) => {
+      if (!isResizing || !pane || !resizeEdge) return;
+
+      const deltaX = e.clientX - resizeStartX;
+      const deltaY = e.clientY - resizeStartY;
+
+      let newWidth = resizeStartWidth;
+      let newHeight = resizeStartHeight;
+      let newLeft = resizeStartLeft;
+      let newTop = resizeStartTop;
+
+      const viewportWidth = document.documentElement.clientWidth;
+      const viewportHeight = document.documentElement.clientHeight;
+
+      if (resizeEdge === "bottom-right") {
+        newWidth = Math.max(200, Math.min(800, resizeStartWidth + deltaX));
+        newHeight = Math.max(250, Math.min(viewportHeight, resizeStartHeight + deltaY));
+      } else if (resizeEdge === "top-left") {
+        newWidth = Math.max(200, Math.min(800, resizeStartWidth - deltaX));
+        newLeft = resizeStartLeft + deltaX;
+        newHeight = Math.max(250, Math.min(viewportHeight, resizeStartHeight - deltaY));
+        newTop = resizeStartTop + deltaY;
+      } else if (resizeEdge === "top-right") {
+        newWidth = Math.max(200, Math.min(800, resizeStartWidth + deltaX));
+        newHeight = Math.max(250, Math.min(viewportHeight, resizeStartHeight - deltaY));
+        newTop = resizeStartTop + deltaY;
+      } else if (resizeEdge === "bottom-left") {
+        newWidth = Math.max(200, Math.min(800, resizeStartWidth - deltaX));
+        newLeft = resizeStartLeft + deltaX;
+        newHeight = Math.max(250, Math.min(viewportHeight, resizeStartHeight + deltaY));
+      }
+
+      // Clamp to viewport
+      newLeft = Math.max(0, Math.min(newLeft, viewportWidth - newWidth));
+      newTop = Math.max(0, Math.min(newTop, viewportHeight - newHeight));
+
+      pane.style.width = `${newWidth}px`;
+      pane.style.height = `${newHeight}px`;
+      pane.style.left = `${newLeft}px`;
+      pane.style.top = `${newTop}px`;
+      pane.style.right = "auto";
+      pane.style.bottom = "auto";
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (isResizing) {
+        isResizing = false;
+        resizeEdge = null;
+        document.body.style.cursor = "";
+        clampAndSavePanePosition(true);
+      }
+    });
+
     // Ensure the timestamps window is fully onscreen after resizing
     let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
     window.addEventListener("resize", windowResizeHandler = () => {
@@ -3873,19 +4282,91 @@ if (hash && hash.length > 1) {
         clearTimeout(resizeTimeout);
       }
       resizeTimeout = setTimeout(() => {
-        clampPaneToViewport();
-        savePanePosition();
+        // After resize finishes, clamp and save in a single helper
+        clampAndSavePanePosition(true);
         resizeTimeout = null;
       }, 200);
     });
 
+
     header.appendChild(timeDisplay); // Add timeDisplay
     header.appendChild(versionWrapper); // Add version wrapper with indicator to header
 
-    const content = document.createElement("div"); content.id = "ytls-content";
-    content.append(list, btns); // list and btns are now directly in content; header is separate
+    const content = document.createElement("div");
+    content.id = "ytls-content";
+    content.append(list); // Only the list is scrollable
+    content.append(btns); // Buttons are always at the bottom of content
 
-    pane.append(header, content, style); // Append header, then content, then style to the pane
+    pane.append(header, content, style, resizeTL, resizeTR, resizeBL, resizeBR); // Append header, content, style, and corner resize handles to the pane
+
+    // Show diagonal cursors only on corners (no edge cursors)
+    pane.addEventListener('mousemove', (ev) => {
+      try {
+        if (isDragging || isResizing) return;
+        const rect = pane.getBoundingClientRect();
+        const threshold = 20; // matches corner grab size
+        const x = ev.clientX;
+        const y = ev.clientY;
+        const inLeft = x - rect.left <= threshold;
+        const inRight = rect.right - x <= threshold;
+        const inTop = y - rect.top <= threshold;
+        const inBottom = rect.bottom - y <= threshold;
+        let c = '';
+        // Only show diagonal resize cursors when pointer is in a corner area
+        if ((inTop && inLeft) || (inBottom && inRight)) c = 'nwse-resize';
+        else if ((inTop && inRight) || (inBottom && inLeft)) c = 'nesw-resize';
+        else c = '';
+        document.body.style.cursor = c;
+      } catch (e) {
+        // ignore
+      }
+    });
+
+    pane.addEventListener('mouseleave', () => {
+      if (!isResizing && !isDragging) document.body.style.cursor = '';
+    });
+
+    // Dynamically set min-height: header + buttons + 1 li row
+    function recalculateTimestampsArea() {
+      if (pane && header && btns && list) {
+        // Get bounding rectangles
+        const paneRect = pane.getBoundingClientRect();
+        const headerRect = header.getBoundingClientRect();
+        const btnsRect = btns.getBoundingClientRect();
+        // Calculate available height for the list
+        const available = paneRect.height - (headerRect.height + btnsRect.height);
+        list.style.maxHeight = available > 0 ? available + 'px' : '0px';
+        list.style.overflowY = available > 0 ? 'auto' : 'hidden';
+      }
+    }
+    (window as any).recalculateTimestampsArea = recalculateTimestampsArea;
+
+    setTimeout(() => {
+      recalculateTimestampsArea();
+      // Also set minPaneHeight for drag/resize logic
+      if (pane && header && btns && list) {
+        let liH = 40;
+        const itemsForSize = getTimestampItems();
+        if (itemsForSize.length > 0) {
+          liH = (itemsForSize[0] as HTMLElement).offsetHeight;
+        } else {
+          const tempLi = document.createElement('li');
+          tempLi.style.visibility = 'hidden';
+          tempLi.style.position = 'absolute';
+          tempLi.textContent = '00:00 Example';
+          // Append temporarily so we can measure
+          list.appendChild(tempLi);
+          liH = tempLi.offsetHeight;
+          list.removeChild(tempLi);
+        }
+        minPaneHeight = header.offsetHeight + btns.offsetHeight + liH;
+        pane.style.minHeight = minPaneHeight + 'px';
+      }
+    }, 0);
+
+    // Recalculate on window and pane resize
+    window.addEventListener('resize', recalculateTimestampsArea);
+    new ResizeObserver(recalculateTimestampsArea).observe(pane);
 
     // Track pointer interactions globally to differentiate user-initiated focus changes
     if (!docPointerDownHandler) {
@@ -3898,11 +4379,29 @@ if (hash && hash.length > 1) {
         // no-op placeholder; reserved for future heuristics
       }, true);
     }
+    } finally {
+      isPaneInitializing = false;
+    }
   }
 
   // Append the pane to the DOM and set up final UI
   async function displayPane() {
     if (!pane) return;
+
+    // Remove any existing panes in the DOM (safety check)
+    const existingPanes = document.querySelectorAll("#ytls-pane");
+    existingPanes.forEach(el => {
+      if (el !== pane) {
+        log('Removing duplicate pane element from DOM');
+        el.remove();
+      }
+    });
+
+    // Prevent duplicate pane instances in the DOM
+    if (document.body.contains(pane)) {
+      log('Pane already in DOM, skipping append');
+      return;
+    }
 
     // Load the global UI visibility state BEFORE appending to DOM
     await loadUIVisibilityState();
@@ -3933,8 +4432,51 @@ if (hash && hash.length > 1) {
       (GoogleDrive as any).updateBackupStatusIndicator();
     }
 
+    // Aggressively ensure no duplicate panes exist before appending
+    const allExistingPanes = document.querySelectorAll("#ytls-pane");
+    if (allExistingPanes.length > 0) {
+      log(`WARNING: Found ${allExistingPanes.length} existing pane(s) in DOM, removing all`);
+      allExistingPanes.forEach(el => el.remove());
+    }
+
+    // Final safety check before append
+    if (document.body.contains(pane)) {
+      log('ERROR: Pane already in body, aborting append');
+      return;
+    }
+
     // Now append the pane with the correct minimized state already applied
     document.body.appendChild(pane);
+    log('Pane successfully appended to DOM');
+    // Hide timestamps until the initial display animation completes and schedule final sizing
+    startShowAnimation();
+    // Also schedule a follow-up after animation to catch final layout
+    if (visibilitySizingTimeoutId) {
+      clearTimeout(visibilitySizingTimeoutId);
+      visibilitySizingTimeoutId = null;
+    }
+    visibilitySizingTimeoutId = setTimeout(() => {
+      // If timestamps were deferred while animating, append them first so sizing sees them
+      appendPendingTimestamps();
+      if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+      ensureMinPaneHeight();
+      clampAndSavePanePosition(true);
+      visibilitySizingTimeoutId = null;
+    }, 450);
+
+    // Install mutation observer to detect and prevent duplicate panes
+    const paneObserver = new MutationObserver(() => {
+      const panes = document.querySelectorAll("#ytls-pane");
+      if (panes.length > 1) {
+        log(`CRITICAL: Multiple panes detected (${panes.length}), removing duplicates`);
+        panes.forEach((el, index) => {
+          if (index > 0 || (pane && el !== pane)) {
+            el.remove();
+          }
+        });
+      }
+    });
+    paneObserver.observe(document.body, { childList: true, subtree: true });
   }
 
   function addHeaderButton(attempt = 0) {
@@ -3977,6 +4519,11 @@ if (hash && hash.length > 1) {
       syncToggleButtons();
     });
     headerButton.addEventListener("click", () => {
+      // Ensure pane is in DOM before toggling
+      if (pane && !document.body.contains(pane)) {
+        log('Pane not in DOM, re-appending before toggle');
+        document.body.appendChild(pane);
+      }
       togglePaneVisibility();
     });
 
@@ -3985,35 +4532,43 @@ if (hash && hash.length > 1) {
     log("Timekeeper header button added next to YouTube logo");
   }
 
-  // Setup observer to watch for title changes
-  function setupTitleObserver() {
-    if (titleObserver) {
-      return; // Already set up
+
+
+  function setupUrlChangeHandlers() {
+    if (urlChangeHandlersSetup) return;
+    urlChangeHandlersSetup = true;
+
+    const origPush = history.pushState;
+    const origReplace = history.replaceState;
+
+    function dispatchLocationChange() {
+      try {
+        const ev = new Event('locationchange');
+        window.dispatchEvent(ev);
+      } catch (e) {
+        // ignore
+      }
     }
 
-    titleObserver = new MutationObserver(() => {
-      const newTitle = getVideoTitle();
-      if (newTitle !== currentLoadedVideoTitle) {
-        currentLoadedVideoTitle = newTitle;
-        if (timeDisplay) {
-          addTooltip(timeDisplay, () => currentLoadedVideoTitle || '');
-          log("Video title changed, updated tooltip:", currentLoadedVideoTitle);
-        }
+    history.pushState = function () {
+      const res = origPush.apply(this, arguments as any);
+      dispatchLocationChange();
+      return res;
+    } as any;
+
+    history.replaceState = function () {
+      const res = origReplace.apply(this, arguments as any);
+      dispatchLocationChange();
+      return res;
+    } as any;
+
+    window.addEventListener('popstate', dispatchLocationChange);
+
+    window.addEventListener('locationchange', () => {
+      if (window.location.href !== lastHandledUrl) {
+        log('Location changed (locationchange event) — deferring UI update until navigation finish');
       }
     });
-
-    // Watch for changes to the title meta tag
-    const titleMeta = document.querySelector('meta[name="title"]');
-    if (titleMeta) {
-      titleObserver.observe(titleMeta, { attributes: true, attributeFilter: ['content'] });
-    }
-    // Also watch document.title changes as fallback
-    const titleElement = document.querySelector('title');
-    if (titleElement) {
-      titleObserver.observe(titleElement, { childList: true, characterData: true, subtree: true });
-    }
-
-    log("Title observer initialized");
   }
 
   // Add a function to handle URL changes
@@ -4023,29 +4578,25 @@ if (hash && hash.length > 1) {
       return;
     }
 
+    // Track last handled URL so repeated history events don't trigger duplicate work
+    lastHandledUrl = window.location.href;
+
+    // Remove any duplicate panes BEFORE initialization
+    document.querySelectorAll("#ytls-pane").forEach((el, idx) => {
+      if (idx > 0 || (pane && el !== pane)) el.remove();
+    });
+
     await waitForYouTubeReady();
     await initializePaneIfNeeded();
 
-    // Remove any duplicate panes before proceeding
-    document.querySelectorAll("#ytls-pane").forEach((el, idx) => {
-      if (idx > 0) el.remove();
-    });
-
     currentLoadedVideoId = getVideoId(); // Update global video ID
-    currentLoadedVideoTitle = getVideoTitle(); // Update global video title
     const pageTitle = document.title;
     log("Page Title:", pageTitle);
     log("Video ID:", currentLoadedVideoId);
-    log("Video Title:", currentLoadedVideoTitle);
     log("Current URL:", window.location.href);
 
-    // Update the video title tooltip whenever video changes
-    if (timeDisplay && currentLoadedVideoTitle) {
-      addTooltip(timeDisplay, () => currentLoadedVideoTitle || '');
-    }
-
-    // Setup title observer on first run
-    setupTitleObserver();
+    // Ensure the UI is locked and shows the loading placeholder while we fetch data for the new video
+    setLoadingState(true);
 
     clearTimestampsDisplay();
     updateSeekbarMarkers();
@@ -4069,6 +4620,9 @@ if (hash && hash.length > 1) {
     setupVideoEventListeners();
   }
 
+  // Setup history-based URL handlers (pushState/replaceState/popstate) so SPA navigation triggers full redraw
+  setupUrlChangeHandlers();
+
   // Listen for navigation start and lock UI with loading state
   window.addEventListener("yt-navigate-start", () => {
     log("Navigation started (yt-navigate-start event fired)");
@@ -4091,9 +4645,16 @@ if (hash && hash.length > 1) {
   // Listen for navigation completion and load timestamps when navigation finishes
   window.addEventListener("yt-navigate-finish", () => {
     log("Navigation finished (yt-navigate-finish event fired)");
-    handleUrlChange();
+    // Only handle if the URL changed since last handled
+    if (window.location.href !== lastHandledUrl) {
+      handleUrlChange();
+    } else {
+      log("Navigation finished but URL already handled, skipping.");
+    }
   });
 
-  // Timekeeper initialization will occur on first yt-navigate-finish event
+  // Timekeeper initialization: ensure handlers are active and wait for navigation finish before drawing UI
+  setupUrlChangeHandlers();
+
   log("Timekeeper initialized and waiting for navigation events");
 })();

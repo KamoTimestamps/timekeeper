@@ -3,9 +3,9 @@
  * Handles OAuth2 authentication, backup scheduling, and Drive uploads
  */
 
-import { log, getTimestampSuffix } from './util';
+import { log } from './util';
 import { addTooltip } from './tooltip';
-import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+import { zipSync, strToU8 } from 'fflate';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
@@ -635,15 +635,7 @@ function createZipFromJson(json: string, filename: string): Uint8Array {
   return zipData;
 }
 
-// Helper function to extract JSON from ZIP archive
-function extractJsonFromZip(zipData: Uint8Array, filename: string): string {
-  const unzipped = unzipSync(zipData);
-  const jsonBytes = unzipped[filename];
-  if (!jsonBytes) {
-    throw new Error(`File ${filename} not found in ZIP archive`);
-  }
-  return strFromU8(jsonBytes);
-}
+
 
 // Upload JSON content to Google Drive (creates new or updates existing)
 async function uploadJsonToDrive(filename: string, json: string, folderId: string, accessToken: string): Promise<void> {
@@ -720,6 +712,7 @@ async function uploadJsonToDrive(filename: string, json: string, folderId: strin
 
 // Helper function to handle auth expiration
 async function handleAuthExpiration(opts?: { silent?: boolean }): Promise<void> {
+  void opts;
   log('Auth expired, clearing token', null, 'warn');
 
   // Clear expired auth state immediately
@@ -866,31 +859,19 @@ export function updateBackupStatusIndicator() {
   if (!backupStatusIndicator) return;
 
   let color = '';
-  let tooltip = '';
 
   if (!autoBackupEnabled) {
     color = '#ff4d4f'; // Red - off
-    tooltip = 'Auto backup is disabled';
   } else if (isAutoBackupRunning) {
     color = '#4285f4'; // Blue - in progress
-    tooltip = 'Backup in progress';
   } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
     color = '#ffa500'; // Yellow - retrying
-    const mins = Math.ceil(autoBackupBackoffMs / 60000);
-    tooltip = `Retrying backup in ${mins}m`;
   } else if (googleAuthState.isSignedIn && lastAutoBackupAt) {
     color = '#52c41a'; // Green - healthy
-    const nextBackupAt = lastAutoBackupAt + (Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
-    const nextBackupTime = formatBackupTime(nextBackupAt);
-    tooltip = `Last backup: ${formatBackupTime(lastAutoBackupAt)}\nNext backup: ${nextBackupTime}`;
   } else if (googleAuthState.isSignedIn) {
     color = '#ffa500'; // Yellow - no backup yet
-    const nextBackupAt = Date.now() + (Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
-    const nextBackupTime = formatBackupTime(nextBackupAt);
-    tooltip = `No backup yet\nNext backup: ${nextBackupTime}`;
   } else {
     color = '#ff4d4f'; // Red - not signed in
-    tooltip = 'Not signed in to Google Drive';
   }
 
   backupStatusIndicator.style.backgroundColor = color;
