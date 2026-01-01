@@ -420,6 +420,10 @@ if (hash && hash.length > 1) {
   const SHIFT_SKIP_KEY = "shiftClickTimeSkipSeconds";
   const DEFAULT_SHIFT_SKIP = 10;
 
+  // Default pane size when none is stored in the DB
+  const DEFAULT_PANE_WIDTH = 300;
+  const DEFAULT_PANE_HEIGHT = 300;
+
   // Create a BroadcastChannel for cross-tab communication
   let channel = new BroadcastChannel('ytls_timestamp_channel');
 
@@ -1600,17 +1604,27 @@ if (hash && hash.length > 1) {
   }
 
   function updateScroll() {
-    if (!list) return;
+    if (!list || !pane || !header || !btns) return;
     const tsCount = getTimestampItems().length;
-    if (tsCount > 2) {
-      list.style.maxHeight = "200px";
-      list.style.overflowY = "auto";
+
+    // Always size the list to fill the available pane height, let the resize observer
+    // and recalculateTimestampsArea handle the exact maxHeight calculation.
+    if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+
+    // Decide whether to show a scrollbar based on content height vs available height
+    const paneRect = pane.getBoundingClientRect();
+    const headerRect = header.getBoundingClientRect();
+    const btnsRect = btns.getBoundingClientRect();
+    const available = Math.max(0, paneRect.height - (headerRect.height + btnsRect.height));
+
+    if (tsCount === 0) {
+      // If empty, show the placeholder message and hide overflow
+      ensureEmptyPlaceholder();
+      list.style.overflowY = 'hidden';
     } else {
-      list.style.maxHeight = "none";
-      list.style.overflowY = "hidden";
+      // Show scrollbar only if content exceeds available area
+      list.style.overflowY = list.scrollHeight > available ? 'auto' : 'hidden';
     }
-    // If empty, show the placeholder message
-    if (tsCount === 0) ensureEmptyPlaceholder();
   }
 
   function updateSeekbarMarkers() {
@@ -4013,18 +4027,28 @@ if (hash && hash.length > 1) {
           pane.style.top = `${pos.y}px`;
           pane.style.right = "auto";
           pane.style.bottom = "auto";
+          // Apply stored size when provided, otherwise fall back to defaults
           if (typeof pos.width === 'number' && pos.width > 0) {
             pane.style.width = `${pos.width}px`;
+          } else {
+            pane.style.width = `${DEFAULT_PANE_WIDTH}px`;
+            log(`No stored window width found, using default width ${DEFAULT_PANE_WIDTH}px`);
           }
           if (typeof pos.height === 'number' && pos.height > 0) {
             pane.style.height = `${pos.height}px`;
+          } else {
+            pane.style.height = `${DEFAULT_PANE_HEIGHT}px`;
+            log(`No stored window height found, using default height ${DEFAULT_PANE_HEIGHT}px`);
           }
           // Get rect after applying position and size
           const rect = getPaneRect();
           updateLastSavedPanePositionFromRect(rect, pos.x, pos.y);
           log('Restored window position from IndexedDB:', lastSavedPanePosition);
         } else {
-          log('No window position found in IndexedDB, leaving default position');
+          log('No window position found in IndexedDB, applying default size and leaving default position');
+          // Ensure default size is applied when no stored position exists
+          pane.style.width = `${DEFAULT_PANE_WIDTH}px`;
+          pane.style.height = `${DEFAULT_PANE_HEIGHT}px`;
           lastSavedPanePosition = null;
         }
         clampPaneToViewport();
