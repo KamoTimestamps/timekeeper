@@ -218,7 +218,7 @@ function monitorOAuthPopup(popup: Window | null): Promise<string> {
     const timeoutMs = 5 * 60 * 1000; // 5 minutes
     const channelName = 'timekeeper_oauth';
     let channel: BroadcastChannel | null = null;
-    let storageListener: ((e: StorageEvent) => void) | null = null;
+    let storagePollIntervalId: ReturnType<typeof setInterval> | null = null;
     let checkInterval: ReturnType<typeof setInterval> | null = null;
 
     const cleanup = () => {
@@ -226,9 +226,9 @@ function monitorOAuthPopup(popup: Window | null): Promise<string> {
         try { channel.close(); } catch (_) {}
         channel = null;
       }
-      if (storageListener) {
-        clearInterval(storageListener as any);
-        storageListener = null;
+      if (storagePollIntervalId) {
+        clearInterval(storagePollIntervalId);
+        storagePollIntervalId = null;
       }
       if (checkInterval) {
         clearInterval(checkInterval);
@@ -303,7 +303,7 @@ function monitorOAuthPopup(popup: Window | null): Promise<string> {
       }
     };
     // Poll every 500ms
-    storageListener = setInterval(pollIndexedDB, 500) as any;
+    storagePollIntervalId = setInterval(pollIndexedDB, 500);
 
     // Only check for timeout - don't check popup.closed as it's unreliable during cross-origin navigation
     // Rely on BroadcastChannel/localStorage messages to know when OAuth completes or fails
@@ -907,6 +907,13 @@ export async function runAutoBackupOnce(silent = true) {
     }
     return;
   }
+
+  // If a backoff retry is scheduled, skip immediate runs to avoid retry storms and overlapping attempts
+  if (autoBackupBackoffTimeoutId) {
+    log('Auto backup: backoff in progress, skipping scheduled run');
+    return;
+  }
+
   if (isAutoBackupRunning) return;
   isAutoBackupRunning = true;
   updateBackupStatusDisplay();

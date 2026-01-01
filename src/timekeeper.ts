@@ -538,6 +538,9 @@ if (hash && hash.length > 1) {
   // Track pointer activity to distinguish intentional blur from OS UI (emoji picker)
   let docPointerDownHandler: ((e: PointerEvent) => void) | null = null;
   let docPointerUpHandler: ((e: PointerEvent) => void) | null = null;
+  // Observers for pane layout and mutation - stored so they can be disconnected to avoid leaks
+  let paneObserver: MutationObserver | null = null;
+  let paneResizeObserver: ResizeObserver | null = null;
   let lastPointerDownTs = 0;
   // Suppress list-driven sorts while focus is temporarily lost to OS UI (e.g., emoji picker)
   let suppressSortUntilRefocus = false;
@@ -1306,9 +1309,40 @@ if (hash && hash.length > 1) {
       del.style.textShadow = "none";
     });
     del.onclick = () => {
+      // Track the timeout so we can cancel it if the timestamp is removed early
+      let cancelTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+      // Forward declarations so cleanup works in all branches
+      let cancelDeleteOnClick: ((event: Event) => void) | null = null;
+      let cancelDeleteOnMouseLeave: (() => void) | null = null;
+
+      // Helper to clean up listeners and timeout
+      const cleanupDeleteListeners = () => {
+        try { li.removeEventListener("click", cancelDeleteOnClick!, true); } catch (_) {}
+        try { document.removeEventListener("click", cancelDeleteOnClick!, true); } catch (_) {}
+        if (list) {
+          try { list.removeEventListener("mouseleave", cancelDeleteOnMouseLeave!); } catch (_) {}
+        }
+        if (cancelTimeoutId) {
+          clearTimeout(cancelTimeoutId);
+          cancelTimeoutId = null;
+        }
+      };
+
       if (li.dataset.deleteConfirmed === "true") {
         log('Timestamps changed: Timestamp deleted');
         const guid = li.dataset.guid ?? '';
+
+        // Remove any pending comment-save timeouts for this GUID
+        const pendingTimeout = commentSaveTimeouts.get(guid);
+        if (pendingTimeout) {
+          clearTimeout(pendingTimeout);
+          commentSaveTimeouts.delete(guid);
+        }
+
+        // Clean up listeners immediately to avoid dangling document handlers
+        cleanupDeleteListeners();
+
         li.remove();
         invalidateLatestTimestampValue();
         updateTimeDifferences();
@@ -1335,48 +1369,41 @@ if (hash && hash.length > 1) {
           if (Number.isFinite(currentTime) && Number.isFinite(itemTime) && currentTime >= itemTime) {
             li.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
           }
+
+          // Perform listener cleanup
+          cleanupDeleteListeners();
         };
 
         // Add a click listener to cancel delete if clicking anywhere except the delete button
-        const cancelDeleteOnClick = (event: Event) => {
+        cancelDeleteOnClick = (event: Event) => {
           const target = event.target as Element;
           // Only cancel if clicking on something that's not the delete button itself
           if (target !== del) {
             doCancelDelete();
-            li.removeEventListener("click", cancelDeleteOnClick, true);
-            document.removeEventListener("click", cancelDeleteOnClick, true);
           }
         };
 
         // Cancel delete if cursor leaves the full timestamp UI (the list)
-        const cancelDeleteOnMouseLeave = () => {
+        cancelDeleteOnMouseLeave = () => {
           if (li.dataset.deleteConfirmed === "true") {
             doCancelDelete();
-            if (list) {
-              list.removeEventListener("mouseleave", cancelDeleteOnMouseLeave);
-            }
-            li.removeEventListener("click", cancelDeleteOnClick, true);
-            document.removeEventListener("click", cancelDeleteOnClick, true);
           }
         };
 
         // Add listeners for this timestamp's li and the document
-        li.addEventListener("click", cancelDeleteOnClick, true);
-        document.addEventListener("click", cancelDeleteOnClick, true);
+        li.addEventListener("click", cancelDeleteOnClick!, true);
+        document.addEventListener("click", cancelDeleteOnClick!, true);
         if (list) {
-          list.addEventListener("mouseleave", cancelDeleteOnMouseLeave);
+          list.addEventListener("mouseleave", cancelDeleteOnMouseLeave!);
         }
 
-        setTimeout(() => {
+        // Auto-cancel delete after a short timeout; store timeout id so it can be cancelled upon confirmed delete
+        cancelTimeoutId = setTimeout(() => {
           if (li.dataset.deleteConfirmed === "true") {
             doCancelDelete();
           }
           // Clean up listeners even if timeout expires
-          li.removeEventListener("click", cancelDeleteOnClick, true);
-          document.removeEventListener("click", cancelDeleteOnClick, true);
-          if (list) {
-            list.removeEventListener("mouseleave", cancelDeleteOnMouseLeave);
-          }
+          cleanupDeleteListeners();
         }, 5000);
       }
     };
@@ -1849,6 +1876,16 @@ if (hash && hash.length > 1) {
       docPointerUpHandler = null;
     }
 
+    // Disconnect any observers that may have been created for the pane
+    if (paneObserver) {
+      try { paneObserver.disconnect(); } catch (_) {}
+      paneObserver = null;
+    }
+    if (paneResizeObserver) {
+      try { paneResizeObserver.disconnect(); } catch (_) {}
+      paneResizeObserver = null;
+    }
+
     // Remove video listeners
     const video = getVideoElement();
     if (video) {
@@ -1914,6 +1951,14 @@ if (hash && hash.length > 1) {
 
 
 
+    if (paneObserver) {
+      try { paneObserver.disconnect(); } catch (_) {}
+      paneObserver = null;
+    }
+    if (paneResizeObserver) {
+      try { paneResizeObserver.disconnect(); } catch (_) {}
+      paneResizeObserver = null;
+    }
     if (pane && pane.parentNode) {
       pane.remove();
     }
@@ -4390,7 +4435,12 @@ if (hash && hash.length > 1) {
 
     // Recalculate on window and pane resize
     window.addEventListener('resize', recalculateTimestampsArea);
-    new ResizeObserver(recalculateTimestampsArea).observe(pane);
+    if (paneResizeObserver) {
+      try { paneResizeObserver.disconnect(); } catch (_) {}
+      paneResizeObserver = null;
+    }
+    paneResizeObserver = new ResizeObserver(recalculateTimestampsArea);
+    paneResizeObserver.observe(pane);
 
     // Track pointer interactions globally to differentiate user-initiated focus changes
     if (!docPointerDownHandler) {
@@ -4489,7 +4539,11 @@ if (hash && hash.length > 1) {
     }, 450);
 
     // Install mutation observer to detect and prevent duplicate panes
-    const paneObserver = new MutationObserver(() => {
+    if (paneObserver) {
+      try { paneObserver.disconnect(); } catch (_) {}
+      paneObserver = null;
+    }
+    paneObserver = new MutationObserver(() => {
       const panes = document.querySelectorAll("#ytls-pane");
       if (panes.length > 1) {
         log(`CRITICAL: Multiple panes detected (${panes.length}), removing duplicates`);
