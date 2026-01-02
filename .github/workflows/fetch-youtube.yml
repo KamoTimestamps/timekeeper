@@ -19,10 +19,14 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install jq
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y jq
+        sudo apt-get install -y curl jq
+
+    - name: Make fetch script executable
+      run: |
+        chmod +x scripts/fetch-youtube.sh
 
     - name: Run fetch script
       run: |
