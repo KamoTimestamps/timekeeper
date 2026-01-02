@@ -1,6 +1,6 @@
 {
   "name": "timekeeper",
-  "version": "4.4.0",
+  "version": "4.4.6",
   "private": true,
   "description": "Timekeeper userscript TypeScript project",
   "scripts": {
@@ -12,6 +12,7 @@
     "typescript": "^5.4.0"
   },
   "dependencies": {
-    "fflate": "^0.8.2"
+    "fflate": "^0.8.2",
+    "idb": "^7.0.0"
   }
 }
