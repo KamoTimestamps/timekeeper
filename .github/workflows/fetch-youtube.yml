@@ -7,6 +7,9 @@ on:
   # Daily at midnight UTC
   - cron: '0 0 * * *'
 
+permissions:
+  contents: write
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
@@ -18,6 +21,9 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        persist-credentials: true
 
     - name: Install dependencies
       run: |
@@ -37,3 +43,20 @@ jobs:
       with:
         name: youtube-videos
         path: artifacts/videos.csv
+
+    - name: Commit CSV to repository
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        mkdir -p metadata
+        cp artifacts/videos.csv metadata/videos.csv
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add metadata/videos.csv
+        # Only commit if there are staged changes
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m "Update YouTube videos metadata: $(date -u +'%Y-%m-%d')"
+          git push
+        fi
