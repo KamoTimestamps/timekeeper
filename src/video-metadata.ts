@@ -8,7 +8,7 @@ export interface VMOptions {
   saveGlobalSettings: (key: string, value: unknown) => Promise<void>;
   executeTransaction: <T>(storeName: string, mode: IDBTransactionMode, operation: (store: IDBObjectStore) => IDBRequest<T> | void) => Promise<T | undefined>;
   VIDEO_METADATA_STORE: string;
-  VIDEOS_CSV_ETAG_KEY: string;
+  VIDEOS_CSV_LAST_FETCH_KEY: string;
   log: (...args: unknown[]) => void;
 }
 
@@ -115,37 +115,16 @@ export function clearVideoMetadataCache() {
 // Fetch the videos CSV with conditional If-None-Match and update store when necessary
 export async function fetchAndUpdateVideosCsv(options: VMOptions): Promise<void> {
   const csvUrl = 'https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/metadata/videos.csv';
-  let storedEtag = undefined as string | undefined;
-  try {
-    const maybe = await options.loadGlobalSettings(options.VIDEOS_CSV_ETAG_KEY);
-    if (typeof maybe === 'string') storedEtag = maybe;
-  } catch (err) {
-    options.log('Failed to load stored videos CSV etag:', err, 'warn');
-  }
-
-  // Build headers. Use If-None-Match for conditional GETs when we have an ETag
-  const buildHeaders = (etag?: string) => {
-    const headers: Record<string, string> = {};
-    if (etag) headers['If-None-Match'] = etag;
-    headers['Accept'] = 'text/plain';
-    return headers;
-  };
-
+  // Check last fetch timestamp to avoid unnecessary work; fetch is performed if called explicitly
   let resp: Response;
   try {
-    resp = await fetch(csvUrl, { headers: buildHeaders(storedEtag), cache: 'no-store' });
+    resp = await fetch(csvUrl, { cache: 'no-store' });
   } catch (err) {
     options.log('Failed to fetch videos.csv:', err, 'warn');
     return;
   }
 
-  if (resp.status === 304) {
-    options.log('videos.csv not modified (304)');
-    return;
-  }
-
   if (resp.status === 200) {
-    const etagHeader = resp.headers.get('etag');
     const text = await resp.text();
 
     // Parse and store in a non-blocking way to avoid delaying the UI.
@@ -153,13 +132,12 @@ export async function fetchAndUpdateVideosCsv(options: VMOptions): Promise<void>
       try {
         const parsed = parseCsvToRecords(text);
         await updateVideoMetadataStore(parsed, options);
-        if (etagHeader) {
-          try {
-            await options.saveGlobalSettings(options.VIDEOS_CSV_ETAG_KEY, etagHeader);
-            options.log('Saved videos.csv ETag to IndexedDB');
-          } catch (err) {
-            options.log('Failed to save videos CSV etag:', err, 'warn');
-          }
+        // Save last fetch timestamp as epoch millis
+        try {
+          await options.saveGlobalSettings(options.VIDEOS_CSV_LAST_FETCH_KEY, String(Date.now()));
+          options.log('Saved videos.csv last fetch timestamp to IndexedDB');
+        } catch (err) {
+          options.log('Failed to save videos CSV last fetch time:', err, 'warn');
         }
       } catch (err) {
         options.log('Failed to parse or store videos.csv contents:', err, 'error');
@@ -187,7 +165,23 @@ export async function fetchAndUpdateVideosCsv(options: VMOptions): Promise<void>
 
 export async function initVideoMetadata(options: VMOptions): Promise<void> {
   try {
-    await fetchAndUpdateVideosCsv(options);
+    // Load last fetch timestamp and only fetch if more than 24 hours have passed
+    let lastFetchStr: string | undefined;
+    try {
+      const maybe = await options.loadGlobalSettings(options.VIDEOS_CSV_LAST_FETCH_KEY);
+      if (typeof maybe === 'string') lastFetchStr = maybe;
+    } catch (err) {
+      options.log('Failed to load stored videos CSV last fetch time:', err, 'warn');
+    }
+
+    const lastFetch = lastFetchStr ? parseInt(lastFetchStr, 10) : NaN;
+    const shouldFetch = !lastFetch || isNaN(lastFetch) || (Date.now() - lastFetch) > (24 * 60 * 60 * 1000);
+    if (shouldFetch) {
+      options.log('Fetching videos.csv because last fetch is older than 24h or missing');
+      await fetchAndUpdateVideosCsv(options);
+    } else {
+      options.log('Skipping videos.csv fetch; last fetch within 24 hours');
+    }
   } catch (err) {
     options.log('Failed to initialize video metadata:', err, 'warn');
   }

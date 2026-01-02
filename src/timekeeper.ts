@@ -2300,7 +2300,7 @@ if (hash && hash.length > 1) {
   const STORE_NAME_V2 = 'timestamps_v2';
   const SETTINGS_STORE_NAME = 'settings';
   const VIDEO_METADATA_STORE = 'video_metadata';
-  const VIDEOS_CSV_ETAG_KEY = 'videos_csv_etag';
+  const VIDEOS_CSV_LAST_FETCH_KEY = 'videos_csv_last_fetch';
 
   // Get or create the database connection (delegates to idb wrapper)
   function getDB(): Promise<any> {
@@ -2628,7 +2628,7 @@ if (hash && hash.length > 1) {
         saveGlobalSettings,
         executeTransaction,
         VIDEO_METADATA_STORE,
-        VIDEOS_CSV_ETAG_KEY,
+        VIDEOS_CSV_LAST_FETCH_KEY,
         log
       });
     } catch (err) {
