@@ -105,12 +105,12 @@ export async function getVideoMetadata(videoId: string): Promise<Record<string, 
     log('getVideoMetadata: error fetching from IDB for', videoId, err, 'warn');
     return null;
   }
-} 
+}
 
 export function clearVideoMetadataCache() {
   metadataCache.clear();
   log('Cleared video metadata cache');
-} 
+}
 
 // Fetch the videos CSV with conditional If-None-Match and update store when necessary
 export async function fetchAndUpdateVideosCsv(options: VMOptions): Promise<void> {

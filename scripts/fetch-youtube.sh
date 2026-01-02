@@ -98,7 +98,7 @@ fetch_playlist_items() {
     local resp
     resp=$(fetch_with_retries "$url")
     # Use jq to extract fields and normalize title/thumbnail (remove tabs/newlines)
-    echo "$resp" | jq -r --arg origin "$origin" '.items[]? | [ .snippet.resourceId.videoId, (.snippet.title | gsub("\t"; " ") | gsub("\n"; " ") ), (.contentDetails.videoPublishedAt // .snippet.publishedAt // ""), (.snippet.thumbnails.maxres.url // .snippet.thumbnails.high.url // .snippet.thumbnails.medium.url // .snippet.thumbnails.default.url // ""), $origin ] | @tsv' >> "$TMP_ITEMS"
+    echo "$resp" | jq -r --arg origin "$origin" '.items[]? | [ .snippet.resourceId.videoId, (.snippet.title | gsub("\t"; " ") | gsub("\n"; " ") ), (.contentDetails.videoPublishedAt // .snippet.publishedAt // ""), (.snippet.thumbnails.high.url // .snippet.thumbnails.maxres.url // .snippet.thumbnails.medium.url // .snippet.thumbnails.default.url // ""), $origin ] | @tsv' >> "$TMP_ITEMS"
 
     page_token=$(echo "$resp" | jq -r '.nextPageToken // empty')
     if [ -z "$page_token" ]; then

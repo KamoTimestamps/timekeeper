@@ -520,6 +520,16 @@ if (hash && hash.length > 1) {
   let currentLoadedVideoId: string | null = null; // Track the currently loaded video to prevent duplicate loads
   let currentVideoMetadata: Record<string, string> | null = null; // Cache for current video's metadata
 
+  function normalizeThumbnailUrl(url: string | undefined | null): string | undefined {
+    if (!url) return undefined;
+    try {
+      // Prefer hqdefault (YouTube "high") over maxres where possible
+      return url.replace(/maxresdefault/g, 'hqdefault');
+    } catch (err) {
+      return url;
+    }
+  }
+
   async function updateCurrentVideoMetadata() {
     try {
       const vid = getVideoId();
@@ -535,7 +545,7 @@ if (hash && hash.length > 1) {
         log('updateCurrentVideoMetadata: metadata found for', vid, meta.title ?? '');
         if (meta.thumbnail_url) {
           const img = new Image();
-          img.src = meta.thumbnail_url;
+          img.src = normalizeThumbnailUrl(meta.thumbnail_url) ?? '';
         }
       } else {
         log('updateCurrentVideoMetadata: no metadata found for', vid);
@@ -3029,6 +3039,9 @@ if (hash && hash.length > 1) {
         img.style.height = '68px';
         img.style.borderRadius = '3px';
         img.style.flexShrink = '0';
+        // If metadata exists but not loaded into currentVideoMetadata, we might also prefer hqdefault if present in stored CSV later
+        // (no action needed here; the actual <img> will be used once metadata loads)
+
 
         const titleDiv = document.createElement('div');
         titleDiv.textContent = 'Loading video metadata...';
@@ -3056,9 +3069,7 @@ if (hash && hash.length > 1) {
 
       const img = document.createElement('img');
       img.className = 'ytls-video-thumb';
-      img.src = currentVideoMetadata.thumbnail_url || '';
-      img.alt = currentVideoMetadata.title || '';
-      img.style.width = '120px';
+      img.src = normalizeThumbnailUrl(currentVideoMetadata.thumbnail_url) ?? '';
       img.style.height = '68px';
       img.style.objectFit = 'cover';
       img.style.borderRadius = '3px';
