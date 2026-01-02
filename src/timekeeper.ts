@@ -525,21 +525,31 @@ if (hash && hash.length > 1) {
       const vid = getVideoId();
       if (!vid) {
         currentVideoMetadata = null;
+        log('updateCurrentVideoMetadata: no video id found');
         return;
       }
+      log('updateCurrentVideoMetadata: looking up metadata for', vid);
       const meta = await getVideoMetadata(vid);
       currentVideoMetadata = meta;
-      if (meta && meta.thumbnail_url) {
-        const img = new Image();
-        img.src = meta.thumbnail_url;
+      if (meta) {
+        log('updateCurrentVideoMetadata: metadata found for', vid, meta.title ?? '');
+        if (meta.thumbnail_url) {
+          const img = new Image();
+          img.src = meta.thumbnail_url;
+        }
+      } else {
+        log('updateCurrentVideoMetadata: no metadata found for', vid);
       }
     } catch (err) {
       currentVideoMetadata = null;
+      log('updateCurrentVideoMetadata: error fetching metadata', err, 'warn');
     }
   }
 
   // Refresh cache when metadata store updates
-  window.addEventListener('video_metadata_updated', () => {
+  window.addEventListener('video_metadata_updated', (e: Event) => {
+    const count = (e as CustomEvent).detail?.count ?? null;
+    log('video_metadata_updated event received', count !== null ? `count=${count}` : '');
     clearVideoMetadataCache();
     updateCurrentVideoMetadata();
   });

@@ -1,4 +1,5 @@
 import * as IDB from './idb-wrapper';
+import { log } from './util';
 
 // Helpers for fetching and parsing videos.csv and updating the video_metadata IndexedDB store.
 
@@ -81,21 +82,35 @@ export async function updateVideoMetadataStore(parsed: Array<Record<string, stri
 const metadataCache = new Map<string, Record<string, string>>();
 
 export async function getVideoMetadata(videoId: string): Promise<Record<string, string> | null> {
-  if (!videoId) return null;
-  if (metadataCache.has(videoId)) return metadataCache.get(videoId)!;
-  try {
-    const rec = await IDB.get('video_metadata', videoId) as (Record<string, string> | undefined);
-    if (rec) metadataCache.set(videoId, rec);
-    return rec ?? null;
-  } catch (err) {
-    // ignore
+  if (!videoId) {
+    log('getVideoMetadata called with empty videoId');
     return null;
   }
-}
+  if (metadataCache.has(videoId)) {
+    const hit = metadataCache.get(videoId)!;
+    log('getVideoMetadata: cache hit for', videoId, hit.title ?? '');
+    return hit;
+  }
+  try {
+    const rec = await IDB.get('video_metadata', videoId) as (Record<string, string> | undefined);
+    if (rec) {
+      metadataCache.set(videoId, rec);
+      log('getVideoMetadata: loaded from IDB for', videoId, rec.title ?? '');
+      return rec;
+    } else {
+      log('getVideoMetadata: no record found for', videoId);
+      return null;
+    }
+  } catch (err) {
+    log('getVideoMetadata: error fetching from IDB for', videoId, err, 'warn');
+    return null;
+  }
+} 
 
 export function clearVideoMetadataCache() {
   metadataCache.clear();
-}
+  log('Cleared video metadata cache');
+} 
 
 // Fetch the videos CSV with conditional If-None-Match and update store when necessary
 export async function fetchAndUpdateVideosCsv(options: VMOptions): Promise<void> {
