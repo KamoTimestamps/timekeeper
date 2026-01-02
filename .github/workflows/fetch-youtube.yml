@@ -1,4 +1,4 @@
-name: Fetch YouTube Channel Videos
+name: YouTube Channel Video Metadata
 
 # Fetch videos for channel UClxj3GlGphZVgd1SLYhZKmg and upload a CSV artifact
 on:
@@ -46,7 +46,7 @@ jobs:
 
     - name: Commit CSV to repository
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
         mkdir -p metadata
         cp artifacts/videos.csv metadata/videos.csv
