@@ -15,8 +15,8 @@ command -v jq >/dev/null 2>&1 || { echo "jq is required but not installed" >&2; 
 command -v curl >/dev/null 2>&1 || { echo "curl is required but not installed" >&2; exit 1; }
 
 mkdir -p "$OUT_DIR"
-# CSV header
-printf "video_id,title,published_at,thumbnail_url\n" > "$OUT_FILE"
+# CSV header (members = true/false if the video appears in the members playlist)
+printf "video_id,title,published_at,thumbnail_url,members\n" > "$OUT_FILE"
 
 # Helper: fetch URL with retries and exponential backoff; returns response body
 fetch_with_retries() {
@@ -46,6 +46,35 @@ fetch_with_retries() {
   done
 }
 
+# Fetch members playlist IDs so we can mark videos that are members-only
+MEMBERS_PLAYLIST_ID="PLdYZ6BFI3lubQLzjXvXoQdbgWks1ntUBJ"
+declare -A MEMBERS_MAP
+fetch_playlist_ids() {
+  local playlist_id="$1"
+  local page_token=""
+  while :; do
+    local page_param=""
+    if [ -n "$page_token" ]; then
+      page_param="&pageToken=$page_token"
+    fi
+    local url="https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${playlist_id}&maxResults=50&key=${API_KEY}${page_param}"
+    local resp
+    resp=$(fetch_with_retries "$url")
+    echo "$resp" | jq -r '.items[]?.snippet.resourceId.videoId'
+    page_token=$(echo "$resp" | jq -r '.nextPageToken // empty')
+    if [ -z "$page_token" ]; then
+      break
+    fi
+  done
+}
+
+# populate MEMBERS_MAP
+while IFS= read -r vid; do
+  if [ -n "$vid" ]; then
+    MEMBERS_MAP["$vid"]=1
+  fi
+done < <(fetch_playlist_ids "$MEMBERS_PLAYLIST_ID")
+
 # Get the uploads playlist ID for the channel (more reliable for listing all uploads)
 CHANNEL_URL="https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${CHANNEL_ID}&key=${API_KEY}"
 CHANNEL_RESP=$(fetch_with_retries "$CHANNEL_URL")
@@ -72,7 +101,11 @@ while :; do
     clean_title=$(echo "$title" | tr '\n' ' ' | sed 's/"/""/g')
     clean_thumbnail=$(echo "$thumbnail" | tr '\n' ' ' | sed 's/"/""/g')
     clean_published=$(echo "$published_at" | tr '\n' ' ' | sed 's/"/""/g')
-    printf '"%s","%s","%s","%s"\n' "$id" "$clean_title" "$clean_published" "$clean_thumbnail" >> "$OUT_FILE"
+    members=false
+    if [ -n "${MEMBERS_MAP[$id]:-}" ]; then
+      members=true
+    fi
+    printf '"%s","%s","%s","%s","%s"\n' "$id" "$clean_title" "$clean_published" "$clean_thumbnail" "$members" >> "$OUT_FILE"
   done
 
   PAGE_TOKEN=$(echo "$RESPONSE" | jq -r '.nextPageToken // empty')
