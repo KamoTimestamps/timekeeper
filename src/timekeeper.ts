@@ -2344,6 +2344,77 @@ if (hash && hash.length > 1) {
     }
   }
 
+  // Build CSV payload with columns: Tag,Timestamp,URL
+  async function buildExportCsvPayload(): Promise<{ csv: string; filename: string; totalVideos: number; totalTimestamps: number }> {
+    // Get all timestamps from v2 store
+    const allTimestamps = (await getAllFromIndexedDB(STORE_NAME_V2)) as Array<{ guid: string; video_id: string; start: number; comment: string }>;
+
+    // Early return with header when no timestamps
+    if (!Array.isArray(allTimestamps) || allTimestamps.length === 0) {
+      const header = 'Tag,Timestamp,URL\n';
+      const filename = `timestamps-${getTimestampSuffix()}.csv`;
+      return { csv: header, filename, totalVideos: 0, totalTimestamps: 0 };
+    }
+
+    // Group timestamps by video_id
+    const videoGroups = new Map<string, Array<{ start: number; comment: string }>>();
+    for (const rec of allTimestamps) {
+      if (!videoGroups.has(rec.video_id)) {
+        videoGroups.set(rec.video_id, []);
+      }
+      videoGroups.get(rec.video_id)!.push({ start: rec.start, comment: rec.comment });
+    }
+
+    // Prepare CSV lines
+    const lines: string[] = [];
+    lines.push('Tag,Timestamp,URL');
+    let totalTimestamps = 0;
+
+    const escapeCsv = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
+
+    // Format timestamps strictly as HH:MM:SS for CSV consistency
+    const toHHMMSS = (s: number) => {
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const ss = String(s % 60).padStart(2, '0');
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${ss}`;
+    };
+
+    const videoIds = Array.from(videoGroups.keys()).sort();
+    for (const videoId of videoIds) {
+      const timestamps = videoGroups.get(videoId)!.sort((a, b) => a.start - b.start);
+      for (const ts of timestamps) {
+        const tag = ts.comment;
+        const human = toHHMMSS(ts.start);
+        const url = buildYouTubeUrlWithTimestamp(ts.start, `https://www.youtube.com/watch?v=${videoId}`);
+        lines.push([escapeCsv(tag), escapeCsv(human), escapeCsv(url)].join(','));
+        totalTimestamps++;
+      }
+    }
+
+    const csv = lines.join('\n');
+    const filename = `timestamps-${getTimestampSuffix()}.csv`;
+    return { csv, filename, totalVideos: videoGroups.size, totalTimestamps };
+  }
+
+  // Export all timestamps as CSV
+  async function exportAllTimestampsCsv(): Promise<void> {
+    try {
+      const { csv, filename, totalVideos, totalTimestamps } = await buildExportCsvPayload();
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      log(`Exported ${totalVideos} videos with ${totalTimestamps} timestamps (CSV)`);
+    } catch (err) {
+      log("Failed to export CSV data:", err, 'error');
+      throw err;
+    }
+  }
+
   function openIndexedDB(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -3624,6 +3695,14 @@ if (hash && hash.length > 1) {
       generalSection.appendChild(createButton("📂 Load", "Load", loadBtn.onclick));
       generalSection.appendChild(createButton("📤 Export All", "Export All Data", exportBtn.onclick));
       generalSection.appendChild(createButton("📥 Import All", "Import All Data", importBtn.onclick));
+      // Export all timestamps as CSV (Tag,Timestamp,URL)
+      generalSection.appendChild(createButton("📄 Export All (CSV)", "Export All Timestamps to CSV", async () => {
+        try {
+          await exportAllTimestampsCsv();
+        } catch (err) {
+          alert("Failed to export CSV: Could not read from database.");
+        }
+      }));
 
       // Build Google Drive section
       const signButton = createButton(
