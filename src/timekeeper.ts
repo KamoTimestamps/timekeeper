@@ -540,6 +540,14 @@ if (hash && hash.length > 1) {
       } else {
         log('updateCurrentVideoMetadata: no metadata found for', vid);
       }
+
+      // If the tooltip is visible, refresh it with the new metadata
+      try {
+        const t = document.getElementById('ytls-current-time');
+        if (t) refreshTooltip(t as HTMLElement);
+      } catch (err) {
+        // ignore
+      }
     } catch (err) {
       currentVideoMetadata = null;
       log('updateCurrentVideoMetadata: error fetching metadata', err, 'warn');
@@ -2996,11 +3004,56 @@ if (hash && hash.length > 1) {
 
     // Add tooltip to show video title + thumbnail when hovering current time
     addTooltip(timeDisplay, () => {
+      const vid = currentLoadedVideoId ?? getVideoId();
+      // If we have no metadata yet but we have a video id, show a placeholder with a link
       if (!currentVideoMetadata) {
-        return 'Current time';
+        if (!vid) return 'Current time';
+        const placeholder = document.createElement('div');
+        placeholder.className = 'ytls-video-tooltip';
+
+        const link = document.createElement('a');
+        link.href = `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}`;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.style.display = 'flex';
+        link.style.alignItems = 'center';
+        link.style.gap = '8px';
+        link.style.textDecoration = 'none';
+        link.style.color = 'inherit';
+
+        const img = document.createElement('div');
+        img.className = 'ytls-video-thumb';
+        // empty or placeholder background while loading
+        img.style.background = 'linear-gradient(90deg,#444,#666)';
+        img.style.width = '120px';
+        img.style.height = '68px';
+        img.style.borderRadius = '3px';
+        img.style.flexShrink = '0';
+
+        const titleDiv = document.createElement('div');
+        titleDiv.textContent = 'Loading video metadata...';
+        titleDiv.style.maxWidth = '260px';
+        titleDiv.style.fontWeight = '500';
+
+        link.appendChild(img);
+        link.appendChild(titleDiv);
+        placeholder.appendChild(link);
+        return placeholder;
       }
+
       const container = document.createElement('div');
       container.className = 'ytls-video-tooltip';
+
+      const link = document.createElement('a');
+      link.href = `https://www.youtube.com/watch?v=${encodeURIComponent(currentVideoMetadata.video_id || (currentLoadedVideoId ?? ''))}`;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.style.display = 'flex';
+      link.style.alignItems = 'center';
+      link.style.gap = '8px';
+      link.style.textDecoration = 'none';
+      link.style.color = 'inherit';
+
       const img = document.createElement('img');
       img.className = 'ytls-video-thumb';
       img.src = currentVideoMetadata.thumbnail_url || '';
@@ -3008,14 +3061,17 @@ if (hash && hash.length > 1) {
       img.style.width = '120px';
       img.style.height = '68px';
       img.style.objectFit = 'cover';
-      img.style.marginRight = '8px';
-      img.style.float = 'left';
+      img.style.borderRadius = '3px';
+      img.style.flexShrink = '0';
+
       const titleDiv = document.createElement('div');
       titleDiv.textContent = currentVideoMetadata.title || 'Unknown video';
       titleDiv.style.maxWidth = '260px';
       titleDiv.style.fontWeight = '500';
-      container.appendChild(img);
-      container.appendChild(titleDiv);
+
+      link.appendChild(img);
+      link.appendChild(titleDiv);
+      container.appendChild(link);
       return container;
     });
 
@@ -4571,10 +4627,22 @@ if (hash && hash.length > 1) {
         if (newVid !== currentLoadedVideoId) {
           log('Location change detected: video id changed, refreshing metadata early', { from: currentLoadedVideoId, to: newVid });
           try {
+            // Update the global video id immediately so tooltip URL updates right away
+            currentLoadedVideoId = newVid;
+            // Clear any cached metadata for safety
+            currentVideoMetadata = null;
             clearVideoMetadataCache();
-            // Fire-and-forget: update metadata early
+
+            // Immediately refresh tooltip to show placeholder/link for the new video
+            try {
+              const t = document.getElementById('ytls-current-time');
+              if (t) refreshTooltip(t as HTMLElement);
+            } catch (err) {
+              // ignore
+            }
+
+            // Fire-and-forget: update metadata early and refresh tooltip when done
             void updateCurrentVideoMetadata().then(() => {
-              // If the time display exists, refresh its tooltip immediately
               try {
                 const t = document.getElementById('ytls-current-time');
                 if (t) refreshTooltip(t as HTMLElement);
