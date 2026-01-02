@@ -603,4 +603,20 @@ export const PANE_STYLES = `
     opacity: 1;
   }
 
+  /* Video tooltip content (thumbnail + title) */
+  .ytls-video-tooltip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 320px;
+  }
+  .ytls-video-thumb {
+    width: 120px;
+    height: 68px;
+    object-fit: cover;
+    border-radius: 3px;
+    flex-shrink: 0;
+    display: block;
+  }
+
 `;

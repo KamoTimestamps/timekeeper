@@ -1,7 +1,7 @@
 import { openDB, IDBPDatabase } from 'idb';
 
 const DB_NAME = 'ytls-timestamps-db';
-const DB_VERSION = 4;
+const DB_VERSION = 7;
 
 let dbPromise: Promise<IDBPDatabase<any>> | null = null;
 

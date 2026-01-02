@@ -77,6 +77,26 @@ export async function updateVideoMetadataStore(parsed: Array<Record<string, stri
   }
 }
 
+// Simple cache for metadata
+const metadataCache = new Map<string, Record<string, string>>();
+
+export async function getVideoMetadata(videoId: string): Promise<Record<string, string> | null> {
+  if (!videoId) return null;
+  if (metadataCache.has(videoId)) return metadataCache.get(videoId)!;
+  try {
+    const rec = await IDB.get('video_metadata', videoId) as (Record<string, string> | undefined);
+    if (rec) metadataCache.set(videoId, rec);
+    return rec ?? null;
+  } catch (err) {
+    // ignore
+    return null;
+  }
+}
+
+export function clearVideoMetadataCache() {
+  metadataCache.clear();
+}
+
 // Fetch the videos CSV with conditional If-None-Match and update store when necessary
 export async function fetchAndUpdateVideosCsv(options: VMOptions): Promise<void> {
   const csvUrl = 'https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/metadata/videos.csv';

@@ -57,14 +57,20 @@ function positionTooltip(tooltip: HTMLDivElement, mouseX: number, mouseY: number
 /**
  * Show tooltip with delay
  */
-function showTooltip(text: string, mouseX: number, mouseY: number) {
+function showTooltip(content: string | HTMLElement, mouseX: number, mouseY: number) {
   if (tooltipTimeout) {
     clearTimeout(tooltipTimeout);
   }
 
   tooltipTimeout = setTimeout(() => {
     const tooltip = ensureTooltipElement();
-    tooltip.textContent = text;
+    // Set content (string or HTMLElement)
+    if (typeof content === 'string') {
+      tooltip.innerHTML = content;
+    } else {
+      tooltip.innerHTML = '';
+      tooltip.appendChild(content.cloneNode(true));
+    }
     tooltip.classList.remove('ytls-tooltip-visible');
 
     // Position first (with opacity 0) to get correct dimensions
@@ -96,16 +102,16 @@ function hideTooltip() {
  * @param element - The element to add tooltip to
  * @param getText - Function that returns tooltip text, or a string
  */
-export function addTooltip(element: HTMLElement, getText: string | (() => string)) {
+export function addTooltip(element: HTMLElement, getText: string | HTMLElement | (() => string | HTMLElement)) {
   let lastMouseX = 0;
   let lastMouseY = 0;
 
   const handleMouseEnter = (e: MouseEvent) => {
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
-    const text = typeof getText === 'function' ? getText() : getText;
-    if (text) {
-      showTooltip(text, lastMouseX, lastMouseY);
+    const content = typeof getText === 'function' ? getText() : getText;
+    if (content) {
+      showTooltip(content, lastMouseX, lastMouseY);
     }
   };
 

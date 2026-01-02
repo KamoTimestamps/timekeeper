@@ -1,6 +1,7 @@
 import { getHolidayEmoji } from './holidays';
 import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix } from './util';
 import { addTooltip } from './tooltip';
+import { getVideoMetadata, clearVideoMetadataCache } from './video-metadata';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
@@ -517,6 +518,32 @@ if (hash && hash.length > 1) {
   let settingsModalInstance: HTMLDivElement | null = null; // To keep a reference to the settings modal
   let settingsCogButtonElement: HTMLButtonElement | null = null; // To keep a reference to the settings cog button
   let currentLoadedVideoId: string | null = null; // Track the currently loaded video to prevent duplicate loads
+  let currentVideoMetadata: Record<string, string> | null = null; // Cache for current video's metadata
+
+  async function updateCurrentVideoMetadata() {
+    try {
+      const vid = getVideoId();
+      if (!vid) {
+        currentVideoMetadata = null;
+        return;
+      }
+      const meta = await getVideoMetadata(vid);
+      currentVideoMetadata = meta;
+      if (meta && meta.thumbnail_url) {
+        const img = new Image();
+        img.src = meta.thumbnail_url;
+      }
+    } catch (err) {
+      currentVideoMetadata = null;
+    }
+  }
+
+  // Refresh cache when metadata store updates
+  window.addEventListener('video_metadata_updated', () => {
+    clearVideoMetadataCache();
+    updateCurrentVideoMetadata();
+  });
+
   let visibilityAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let visibilitySizingTimeoutId: ReturnType<typeof setTimeout> | null = null;
   // When timestamps are loaded while a show animation is running, build the DOM nodes
@@ -2957,6 +2984,31 @@ if (hash && hash.length > 1) {
       setTimeout(() => { isSeeking = false; }, 500);
     };
 
+    // Add tooltip to show video title + thumbnail when hovering current time
+    addTooltip(timeDisplay, () => {
+      if (!currentVideoMetadata) {
+        return 'Current time';
+      }
+      const container = document.createElement('div');
+      container.className = 'ytls-video-tooltip';
+      const img = document.createElement('img');
+      img.className = 'ytls-video-thumb';
+      img.src = currentVideoMetadata.thumbnail_url || '';
+      img.alt = currentVideoMetadata.title || '';
+      img.style.width = '120px';
+      img.style.height = '68px';
+      img.style.objectFit = 'cover';
+      img.style.marginRight = '8px';
+      img.style.float = 'left';
+      const titleDiv = document.createElement('div');
+      titleDiv.textContent = currentVideoMetadata.title || 'Unknown video';
+      titleDiv.style.maxWidth = '260px';
+      titleDiv.style.fontWeight = '500';
+      container.appendChild(img);
+      container.appendChild(titleDiv);
+      return container;
+    });
+
     function updateTime() {
       // Skip updates during loading or seeking
       if (isLoadingTimestamps || isSeeking) {
@@ -4547,6 +4599,9 @@ if (hash && hash.length > 1) {
     // Set loading state to false after timestamps are loaded
     setLoadingState(false);
     log("Timestamps loaded and UI unlocked for video:", currentLoadedVideoId);
+
+    // Refresh video metadata cache for this video
+    await updateCurrentVideoMetadata();
 
     // Display the pane after loading timestamps (with correct visibility state)
     await displayPane();
