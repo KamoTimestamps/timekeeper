@@ -10,6 +10,7 @@ on:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    environment: production
     env:
       # This must be set in repo or org secrets (Settings → Secrets → Actions)
       YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
