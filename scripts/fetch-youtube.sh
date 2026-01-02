@@ -16,7 +16,7 @@ command -v curl >/dev/null 2>&1 || { echo "curl is required but not installed" >
 
 mkdir -p "$OUT_DIR"
 # CSV header
-printf "video_id,title\n" > "$OUT_FILE"
+printf "video_id,title,published_at,thumbnail_url\n" > "$OUT_FILE"
 
 # Helper: fetch URL with retries and exponential backoff; returns response body
 fetch_with_retries() {
@@ -63,14 +63,16 @@ while :; do
     PAGE_PARAM=""
   fi
 
-  URL="https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${UPLOADS_PLAYLIST}&maxResults=50&key=${API_KEY}${PAGE_PARAM}"
+  URL="https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${UPLOADS_PLAYLIST}&maxResults=50&key=${API_KEY}${PAGE_PARAM}"
   RESPONSE=$(fetch_with_retries "$URL")
 
-  # Extract video ID and title from snippet.resourceId.videoId
-  echo "$RESPONSE" | jq -r '.items[] | [.snippet.resourceId.videoId, .snippet.title] | @tsv' | while IFS=$'\t' read -r id title; do
-    # sanitize title: remove newlines and escape double quotes by doubling them
+  # Extract video ID, title, published_at (contentDetails.videoPublishedAt), thumbnail url (prefer maxres->high->medium->default)
+  echo "$RESPONSE" | jq -r '.items[] | [ .snippet.resourceId.videoId, .snippet.title, (.contentDetails.videoPublishedAt // .snippet.publishedAt // ""), (.snippet.thumbnails.maxres.url // .snippet.thumbnails.high.url // .snippet.thumbnails.medium.url // .snippet.thumbnails.default.url // "") ] | @tsv' | while IFS=$'\t' read -r id title published_at thumbnail; do
+    # sanitize title and thumbnail: remove newlines and escape double quotes by doubling them
     clean_title=$(echo "$title" | tr '\n' ' ' | sed 's/"/""/g')
-    printf '"%s","%s"\n' "$id" "$clean_title" >> "$OUT_FILE"
+    clean_thumbnail=$(echo "$thumbnail" | tr '\n' ' ' | sed 's/"/""/g')
+    clean_published=$(echo "$published_at" | tr '\n' ' ' | sed 's/"/""/g')
+    printf '"%s","%s","%s","%s"\n' "$id" "$clean_title" "$clean_published" "$clean_thumbnail" >> "$OUT_FILE"
   done
 
   PAGE_TOKEN=$(echo "$RESPONSE" | jq -r '.nextPageToken // empty')
