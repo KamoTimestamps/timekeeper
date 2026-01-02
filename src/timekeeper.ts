@@ -1,6 +1,6 @@
 import { getHolidayEmoji } from './holidays';
 import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix } from './util';
-import { addTooltip } from './tooltip';
+import { addTooltip, refreshTooltip } from './tooltip';
 import { getVideoMetadata, clearVideoMetadataCache } from './video-metadata';
 
 declare const GM: {
@@ -4566,6 +4566,26 @@ if (hash && hash.length > 1) {
     window.addEventListener('locationchange', () => {
       if (window.location.href !== lastHandledUrl) {
         log('Location changed (locationchange event) — deferring UI update until navigation finish');
+        // If the video id changes, fetch metadata early so tooltip and cached data are up-to-date ASAP
+        const newVid = getVideoId();
+        if (newVid !== currentLoadedVideoId) {
+          log('Location change detected: video id changed, refreshing metadata early', { from: currentLoadedVideoId, to: newVid });
+          try {
+            clearVideoMetadataCache();
+            // Fire-and-forget: update metadata early
+            void updateCurrentVideoMetadata().then(() => {
+              // If the time display exists, refresh its tooltip immediately
+              try {
+                const t = document.getElementById('ytls-current-time');
+                if (t) refreshTooltip(t as HTMLElement);
+              } catch (err) {
+                // ignore
+              }
+            });
+          } catch (err) {
+            log('Error while attempting early video metadata refresh', err, 'warn');
+          }
+        }
       }
     });
   }

@@ -57,12 +57,13 @@ function positionTooltip(tooltip: HTMLDivElement, mouseX: number, mouseY: number
 /**
  * Show tooltip with delay
  */
-function showTooltip(content: string | HTMLElement, mouseX: number, mouseY: number) {
+function showTooltip(content: string | HTMLElement, mouseX: number, mouseY: number, immediate = false) {
   if (tooltipTimeout) {
     clearTimeout(tooltipTimeout);
+    tooltipTimeout = null;
   }
 
-  tooltipTimeout = setTimeout(() => {
+  const doShow = () => {
     const tooltip = ensureTooltipElement();
     // Set content (string or HTMLElement) without using innerHTML
     if (typeof content === 'string') {
@@ -83,7 +84,14 @@ function showTooltip(content: string | HTMLElement, mouseX: number, mouseY: numb
     requestAnimationFrame(() => {
       tooltip.classList.add('ytls-tooltip-visible');
     });
-  }, TOOLTIP_DELAY);
+  };
+
+  if (immediate) {
+    // Show immediately
+    doShow();
+  } else {
+    tooltipTimeout = setTimeout(doShow, TOOLTIP_DELAY);
+  }
 }
 
 /**
@@ -109,9 +117,16 @@ export function addTooltip(element: HTMLElement, getText: string | HTMLElement |
   let lastMouseX = 0;
   let lastMouseY = 0;
 
+  // Store getText and last mouse coordinates on the element so it can be refreshed externally
+  (element as any).__tooltipGetText = getText;
+  (element as any).__tooltipLastMouseX = lastMouseX;
+  (element as any).__tooltipLastMouseY = lastMouseY;
+
   const handleMouseEnter = (e: MouseEvent) => {
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
+    (element as any).__tooltipLastMouseX = lastMouseX;
+    (element as any).__tooltipLastMouseY = lastMouseY;
     const content = typeof getText === 'function' ? getText() : getText;
     if (content) {
       showTooltip(content, lastMouseX, lastMouseY);
@@ -121,6 +136,8 @@ export function addTooltip(element: HTMLElement, getText: string | HTMLElement |
   const handleMouseMove = (e: MouseEvent) => {
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
+    (element as any).__tooltipLastMouseX = lastMouseX;
+    (element as any).__tooltipLastMouseY = lastMouseY;
   };
 
   const handleMouseLeave = () => {
@@ -147,4 +164,19 @@ export function removeTooltip(element: HTMLElement) {
     (element as any).__tooltipCleanup();
     delete (element as any).__tooltipCleanup;
   }
+}
+
+/**
+ * Refresh tooltip content for an element that has a tooltip attached.
+ * If the tooltip is currently visible, the new content will be shown immediately.
+ */
+export function refreshTooltip(element: HTMLElement) {
+  const getText = (element as any).__tooltipGetText;
+  if (!getText) return;
+  const lastX = (element as any).__tooltipLastMouseX ?? Math.floor(window.innerWidth / 2);
+  const lastY = (element as any).__tooltipLastMouseY ?? Math.floor(window.innerHeight / 2);
+  const content = typeof getText === 'function' ? getText() : getText;
+  if (!content) return;
+  const isVisible = tooltipElement && tooltipElement.classList.contains('ytls-tooltip-visible');
+  showTooltip(content, lastX, lastY, !!isVisible);
 }
