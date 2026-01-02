@@ -46,9 +46,10 @@ fetch_with_retries() {
   done
 }
 
-# Fetch members playlist IDs so we can mark videos that are members-only
-MEMBERS_PLAYLIST_ID="PLdYZ6BFI3lubQLzjXvXoQdbgWks1ntUBJ"
-declare -A MEMBERS_MAP
+# Members playlist (configurable via env var)
+MEMBERS_PLAYLIST_ID="${MEMBERS_PLAYLIST_ID:-PLdYZ6BFI3lubQLzjXvXoQdbgWks1ntUBJ}"
+
+# Helper to fetch all video IDs from a playlist (paginated)
 fetch_playlist_ids() {
   local playlist_id="$1"
   local page_token=""
@@ -57,23 +58,16 @@ fetch_playlist_ids() {
     if [ -n "$page_token" ]; then
       page_param="&pageToken=$page_token"
     fi
-    local url="https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${playlist_id}&maxResults=50&key=${API_KEY}${page_param}"
+    local url="https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${playlist_id}&maxResults=50&key=${API_KEY}${page_param}"
     local resp
     resp=$(fetch_with_retries "$url")
-    echo "$resp" | jq -r '.items[]?.snippet.resourceId.videoId'
+    echo "$resp" | jq -r '.items[]? | .snippet.resourceId.videoId'
     page_token=$(echo "$resp" | jq -r '.nextPageToken // empty')
     if [ -z "$page_token" ]; then
       break
     fi
   done
 }
-
-# populate MEMBERS_MAP
-while IFS= read -r vid; do
-  if [ -n "$vid" ]; then
-    MEMBERS_MAP["$vid"]=1
-  fi
-done < <(fetch_playlist_ids "$MEMBERS_PLAYLIST_ID")
 
 # Get the uploads playlist ID for the channel (more reliable for listing all uploads)
 CHANNEL_URL="https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${CHANNEL_ID}&key=${API_KEY}"
@@ -84,34 +78,61 @@ if [ -z "$UPLOADS_PLAYLIST" ]; then
   exit 1
 fi
 
-PAGE_TOKEN=""
-while :; do
-  if [ -n "$PAGE_TOKEN" ]; then
-    PAGE_PARAM="&pageToken=$PAGE_TOKEN"
-  else
-    PAGE_PARAM=""
-  fi
+# Temporary files
+TMP_ITEMS="$OUT_DIR/_yt_items.tsv"
+TMP_OUT="$OUT_DIR/_yt_out.csv"
+: > "$TMP_ITEMS"
 
-  URL="https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${UPLOADS_PLAYLIST}&maxResults=50&key=${API_KEY}${PAGE_PARAM}"
-  RESPONSE=$(fetch_with_retries "$URL")
-
-  # Extract video ID, title, published_at (contentDetails.videoPublishedAt), thumbnail url (prefer maxres->high->medium->default)
-  echo "$RESPONSE" | jq -r '.items[] | [ .snippet.resourceId.videoId, .snippet.title, (.contentDetails.videoPublishedAt // .snippet.publishedAt // ""), (.snippet.thumbnails.maxres.url // .snippet.thumbnails.high.url // .snippet.thumbnails.medium.url // .snippet.thumbnails.default.url // "") ] | @tsv' | while IFS=$'\t' read -r id title published_at thumbnail; do
-    # sanitize title and thumbnail: remove newlines and escape double quotes by doubling them
-    clean_title=$(echo "$title" | tr '\n' ' ' | sed 's/"/""/g')
-    clean_thumbnail=$(echo "$thumbnail" | tr '\n' ' ' | sed 's/"/""/g')
-    clean_published=$(echo "$published_at" | tr '\n' ' ' | sed 's/"/""/g')
-    members=false
-    if [ -n "${MEMBERS_MAP[$id]:-}" ]; then
-      members=true
+# Helper to fetch all playlistItems and append simplified TSV rows to $TMP_ITEMS
+# Columns: videoId, title (tabs/newlines replaced), published_at (contentDetails.videoPublishedAt or snippet.publishedAt), thumbnail_url, origin
+fetch_playlist_items() {
+  local playlist_id="$1"
+  local origin="$2"
+  local page_token=""
+  while :; do
+    local page_param=""
+    if [ -n "$page_token" ]; then
+      page_param="&pageToken=$page_token"
     fi
-    printf '"%s","%s","%s","%s","%s"\n' "$id" "$clean_title" "$clean_published" "$clean_thumbnail" "$members" >> "$OUT_FILE"
-  done
+    local url="https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${playlist_id}&maxResults=50&key=${API_KEY}${page_param}"
+    local resp
+    resp=$(fetch_with_retries "$url")
+    # Use jq to extract fields and normalize title/thumbnail (remove tabs/newlines)
+    echo "$resp" | jq -r --arg origin "$origin" '.items[]? | [ .snippet.resourceId.videoId, (.snippet.title | gsub("\t"; " ") | gsub("\n"; " ") ), (.contentDetails.videoPublishedAt // .snippet.publishedAt // ""), (.snippet.thumbnails.maxres.url // .snippet.thumbnails.high.url // .snippet.thumbnails.medium.url // .snippet.thumbnails.default.url // ""), $origin ] | @tsv' >> "$TMP_ITEMS"
 
-  PAGE_TOKEN=$(echo "$RESPONSE" | jq -r '.nextPageToken // empty')
-  if [ -z "$PAGE_TOKEN" ]; then
-    break
-  fi
-done
+    page_token=$(echo "$resp" | jq -r '.nextPageToken // empty')
+    if [ -z "$page_token" ]; then
+      break
+    fi
+  done
+}
+
+# Fetch members and uploads playlist items into the temp TSV
+fetch_playlist_items "$MEMBERS_PLAYLIST_ID" "members"
+fetch_playlist_items "$UPLOADS_PLAYLIST" "uploads"
+
+# Merge TSV rows: prefer non-empty fields and mark members=true if any origin=members
+awk -F"\t" '
+function esc(s){ gsub(/\r/,"",s); gsub(/\n/," ",s); gsub(/"/,"""",s); return s }
+{ id=$1; title=$2; pub=$3; thumb=$4; origin=$5;
+  if(!(id in seen)){
+    titlemap[id]=title; pubmap[id]=pub; thumbmap[id]=thumb; seen[id]=1; order[++n]=id
+  } else {
+    if(titlemap[id]=="" && title!="") titlemap[id]=title
+    if(pubmap[id]=="" && pub!="") pubmap[id]=pub
+    if(thumbmap[id]=="" && thumb!="") thumbmap[id]=thumb
+  }
+  if(origin=="members") members[id]=1
+}
+END{
+  for(i=1;i<=n;i++){ id=order[i]; t=esc(titlemap[id]); p=esc(pubmap[id]); th=esc(thumbmap[id]); m=(members[id]?"true":"false"); printf "\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n", id, t, p, th, m }
+}' "$TMP_ITEMS" > "$TMP_OUT"
+
+# Write header and sorted rows (sort by video id for determinism)
+printf "video_id,title,published_at,thumbnail_url,members\n" > "$OUT_FILE"
+sort -t, -k1,1 "$TMP_OUT" >> "$OUT_FILE"
+
+# Cleanup
+rm -f "$TMP_ITEMS" "$TMP_OUT"
 
 echo "Wrote $OUT_FILE"
