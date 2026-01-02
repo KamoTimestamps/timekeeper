@@ -64,12 +64,15 @@ function showTooltip(content: string | HTMLElement, mouseX: number, mouseY: numb
 
   tooltipTimeout = setTimeout(() => {
     const tooltip = ensureTooltipElement();
-    // Set content (string or HTMLElement)
+    // Set content (string or HTMLElement) without using innerHTML
     if (typeof content === 'string') {
-      tooltip.innerHTML = content;
+      tooltip.textContent = content;
     } else {
-      tooltip.innerHTML = '';
-      tooltip.appendChild(content.cloneNode(true));
+      // Remove children safely
+      while (tooltip.firstChild) {
+        tooltip.removeChild(tooltip.firstChild);
+      }
+      tooltip.appendChild(content.cloneNode(true) as Node);
     }
     tooltip.classList.remove('ytls-tooltip-visible');
 
