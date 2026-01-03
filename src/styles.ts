@@ -62,10 +62,10 @@ export const PANE_STYLES = `
     background: transparent;
     pointer-events: auto;
   }
-  #ytls-resize-tl { top: 0; left: 0; cursor: nwse-resize; }
-  #ytls-resize-tr { top: 0; right: 0; cursor: nesw-resize; }
-  #ytls-resize-bl { bottom: 0; left: 0; cursor: nesw-resize; }
-  #ytls-resize-br { bottom: 0; right: 0; cursor: nwse-resize; }
+  #ytls-resize-tl { top: -6px; left: -6px; width: 16px; height: 16px; cursor: nwse-resize; }
+  #ytls-resize-tr { top: -6px; right: -6px; width: 16px; height: 16px; cursor: nesw-resize; }
+  #ytls-resize-bl { bottom: -6px; left: -6px; width: 16px; height: 16px; cursor: nesw-resize; }
+  #ytls-resize-br { bottom: -6px; right: -6px; width: 16px; height: 16px; cursor: nwse-resize; }
   #ytls-content {
     display: flex;
     flex-direction: column;

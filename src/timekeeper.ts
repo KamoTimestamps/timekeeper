@@ -1,6 +1,6 @@
 import { getHolidayEmoji } from './holidays';
 import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix } from './util';
-import { addTooltip } from './tooltip';
+import { addTooltip, removeTooltip } from './tooltip';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
@@ -3200,13 +3200,9 @@ function safePostMessage(message: unknown) {
     timeDisplay.id = "ytls-current-time";
     timeDisplay.textContent = "⏳";
 
-    // Enable clicking on the current timestamp to jump to the latest point in the live stream
-    timeDisplay.onclick = () => {
-      isSeeking = true;
-      const player = getActivePlayer();
-      if (player) player.seekToLiveHead();
-      setTimeout(() => { isSeeking = false; }, 500);
-    };
+    // Click handler for live seek will be set dynamically in updateTime when a live stream is detected
+    timeDisplay.onclick = null;
+    timeDisplay.style.cursor = 'default';
 
     function updateTime() {
       // Skip updates during loading or seeking
@@ -3260,6 +3256,23 @@ function safePostMessage(message: unknown) {
 
       timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
       timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
+
+      // Only make current time clickable for live videos and show a tooltip "Skip to live"
+      if (isLive) {
+        timeDisplay.style.cursor = 'pointer';
+        timeDisplay.onclick = () => {
+          isSeeking = true;
+          const player = getActivePlayer();
+          if (player) player.seekToLiveHead();
+          setTimeout(() => { isSeeking = false; }, 500);
+        };
+        try { removeTooltip(timeDisplay); } catch (_) {}
+        addTooltip(timeDisplay, 'Skip to live');
+      } else {
+        timeDisplay.style.cursor = 'default';
+        timeDisplay.onclick = null;
+        try { removeTooltip(timeDisplay); } catch (_) {}
+      }
 
       // Always highlight the nearest timestamp; defer scrolling to mouse leave
       if (timestamps.length > 0) {

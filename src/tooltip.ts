@@ -5,7 +5,8 @@
 
 let tooltipElement: HTMLDivElement | null = null;
 let tooltipTimeout: ReturnType<typeof setTimeout> | null = null;
-const TOOLTIP_DELAY = 500; // milliseconds
+// No show/hide timeouts: show immediately and hide when cursor leaves
+const TOOLTIP_DELAY = 0; 
 
 // Active tooltip state
 let activeTarget: HTMLElement | null = null;
@@ -137,31 +138,30 @@ function showTooltip(text: string, mouseX: number, mouseY: number, target?: HTML
     elementHovered = true;
   }
 
-  tooltipTimeout = setTimeout(() => {
-    const tooltip = ensureTooltipElement();
-    tooltip.textContent = text;
-    tooltip.classList.remove('ytls-tooltip-visible');
+  // Show tooltip immediately (no timeout)
+  const tooltip = ensureTooltipElement();
+  tooltip.textContent = text;
+  tooltip.classList.remove('ytls-tooltip-visible');
 
-    // Position first (with opacity 0) to get correct dimensions. If target is provided,
-    // anchor the tooltip near the element; otherwise use the mouse position.
-    if (target) {
-      // Ensure layout has run so we can measure tooltip size correctly
-      requestAnimationFrame(() => {
-        positionTooltipNearElement(tooltip, target);
-        // Then show with fade-in
-        requestAnimationFrame(() => {
-          tooltip.classList.add('ytls-tooltip-visible');
-        });
-      });
-    } else {
-      // Position using mouse coordinates
-      positionTooltip(tooltip, mouseX, mouseY);
+  // Position first (with opacity 0) to get correct dimensions. If target is provided,
+  // anchor the tooltip near the element; otherwise use the mouse position.
+  if (target) {
+    // Ensure layout has run so we can measure tooltip size correctly
+    requestAnimationFrame(() => {
+      positionTooltipNearElement(tooltip, target);
       // Then show with fade-in
       requestAnimationFrame(() => {
         tooltip.classList.add('ytls-tooltip-visible');
       });
-    }
-  }, TOOLTIP_DELAY);
+    });
+  } else {
+    // Position using mouse coordinates
+    positionTooltip(tooltip, mouseX, mouseY);
+    // Then show with fade-in
+    requestAnimationFrame(() => {
+      tooltip.classList.add('ytls-tooltip-visible');
+    });
+  }
 }
 
 /**
@@ -209,11 +209,20 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
   const handleMouseMove = (e: MouseEvent) => {
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
-    // Do not reposition tooltip to follow cursor; tooltip is anchored to element.
+    // If a hide is pending (e.g., quick leave/enter jitter), cancel it while moving inside element
+    if (pendingHideTimeout) {
+      clearTimeout(pendingHideTimeout);
+      pendingHideTimeout = null;
+    }
+    // Reposition active tooltip to stay anchored if visible
+    if (tooltipElement && tooltipElement.classList.contains('ytls-tooltip-visible')) {
+      try { repositionActiveTooltip(); } catch (_) {}
+    }
   };
 
   const handleMouseLeave = () => {
     elementHovered = false;
+    // Hide immediately when pointer leaves the element
     scheduleHideIfNeeded();
   };
 
