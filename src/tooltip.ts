@@ -10,7 +10,6 @@ const TOOLTIP_DELAY = 500; // milliseconds
 // Active tooltip state
 let activeTarget: HTMLElement | null = null;
 let elementHovered = false;
-let tooltipHovered = false;
 let pendingHideTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /**
@@ -20,22 +19,9 @@ function ensureTooltipElement(): HTMLDivElement {
   if (!tooltipElement || !document.body.contains(tooltipElement)) {
     tooltipElement = document.createElement('div');
     tooltipElement.className = 'ytls-tooltip';
-    // Allow tooltip to receive hover events so we can keep it visible while hovered
-    tooltipElement.style.pointerEvents = 'auto';
+    // Make tooltip non-interactive so clicks pass through to underlying elements
+    tooltipElement.style.pointerEvents = 'none';
     document.body.appendChild(tooltipElement);
-
-    // Tooltip hover handlers
-    tooltipElement.addEventListener('mouseenter', () => {
-      tooltipHovered = true;
-      if (pendingHideTimeout) {
-        clearTimeout(pendingHideTimeout);
-        pendingHideTimeout = null;
-      }
-    });
-    tooltipElement.addEventListener('mouseleave', () => {
-      tooltipHovered = false;
-      scheduleHideIfNeeded();
-    });
 
     // Reposition tooltip on scroll/resize to stay anchored to the element
     window.addEventListener('scroll', repositionActiveTooltip, true);
@@ -129,8 +115,8 @@ function scheduleHideIfNeeded(delay = 50) {
     clearTimeout(pendingHideTimeout);
     pendingHideTimeout = null;
   }
-  // If tooltip or element is hovered, do not hide
-  if (elementHovered || tooltipHovered) return;
+  // If the element is hovered, don't hide; tooltip itself is non-interactive so we don't track its hover
+  if (elementHovered) return;
   pendingHideTimeout = setTimeout(() => {
     hideTooltip();
     pendingHideTimeout = null;
@@ -198,7 +184,6 @@ function hideTooltip() {
 
   activeTarget = null;
   elementHovered = false;
-  tooltipHovered = false;
 }
 
 /**
