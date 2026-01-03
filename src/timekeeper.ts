@@ -424,11 +424,41 @@ if (hash && hash.length > 1) {
   const DEFAULT_PANE_WIDTH = 300;
   const DEFAULT_PANE_HEIGHT = 300;
 
-  // Create a BroadcastChannel for cross-tab communication
-  let channel = new BroadcastChannel('ytls_timestamp_channel');
+// Create a BroadcastChannel for cross-tab communication only when on www.youtube.com
+let channel: BroadcastChannel | null = null;
 
-  // Safe wrapper for posting messages to avoid "Channel is closed" errors
-  function safePostMessage(message: unknown) {
+function isYouTubeOrigin() {
+  try {
+    return (new URL(window.location.href)).origin === 'https://www.youtube.com';
+  } catch (err) {
+    return false;
+  }
+}
+
+function ensureChannel() {
+  if (!isYouTubeOrigin()) return;
+  if (!channel) {
+    try {
+      channel = new BroadcastChannel('ytls_timestamp_channel');
+      channel.onmessage = handleChannelMessage;
+    } catch (err) {
+      log('Failed to create BroadcastChannel:', err, 'warn');
+      channel = null;
+    }
+  }
+}
+
+// Safe wrapper for posting messages to avoid "Channel is closed" errors
+function safePostMessage(message: unknown) {
+  if (!isYouTubeOrigin()) {
+    log('Skipping BroadcastChannel message: not on https://www.youtube.com', 'warn');
+    return;
+  }
+  ensureChannel();
+  if (!channel) {
+    log('No BroadcastChannel available to post message', 'warn');
+    return;
+  }
     try {
       channel.postMessage(message);
     } catch (err) {
@@ -492,7 +522,8 @@ if (hash && hash.length > 1) {
       }
     }
   }
-  channel.onmessage = handleChannelMessage;
+  // Initialize BroadcastChannel listener if on www.youtube.com
+  ensureChannel();
 
   // The user can configure 'timestampOffsetSeconds' in ViolentMonkey's script values.
   // A positive value will make it after current time, negative before.
