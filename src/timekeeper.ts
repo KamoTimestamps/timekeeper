@@ -3638,7 +3638,6 @@ function safePostMessage(message: unknown) {
       const closeButton = document.createElement("button");
       closeButton.className = "ytls-modal-close-button";
       closeButton.textContent = "✕";
-      addTooltip(closeButton, "Close");
       closeButton.onclick = () => {
         if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
           // Close all subdialogs first

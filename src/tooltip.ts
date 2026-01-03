@@ -122,12 +122,39 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
   element.addEventListener('mousemove', handleMouseMove);
   element.addEventListener('mouseleave', handleMouseLeave);
 
+  // Also observe for element being removed or hidden so we can hide tooltip
+  const observer = new MutationObserver(() => {
+    // If element is removed from the document or becomes hidden, hide tooltip
+    try {
+      if (!document.body.contains(element)) {
+        hideTooltip();
+      } else {
+        const cs = window.getComputedStyle(element);
+        if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') {
+          hideTooltip();
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  });
+  // Observe attribute changes on the element (class/style) and DOM changes under body
+  try {
+    observer.observe(element, { attributes: true, attributeFilter: ['class', 'style'] });
+    observer.observe(document.body, { childList: true, subtree: true });
+  } catch (e) {
+    // ignore if observer cannot be created
+  }
+
   // Store cleanup function on element for later removal if needed
   (element as any).__tooltipCleanup = () => {
     element.removeEventListener('mouseenter', handleMouseEnter);
     element.removeEventListener('mousemove', handleMouseMove);
     element.removeEventListener('mouseleave', handleMouseLeave);
+    try { observer.disconnect(); } catch (_) {}
+    delete (element as any).__tooltipObserver;
   };
+  (element as any).__tooltipObserver = observer;
 }
 
 /**
@@ -138,4 +165,6 @@ export function removeTooltip(element: HTMLElement) {
     (element as any).__tooltipCleanup();
     delete (element as any).__tooltipCleanup;
   }
+  // Ensure tooltip is hidden when tooltip is explicitly removed
+  hideTooltip();
 }
