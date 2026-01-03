@@ -7,6 +7,12 @@ let tooltipElement: HTMLDivElement | null = null;
 let tooltipTimeout: ReturnType<typeof setTimeout> | null = null;
 const TOOLTIP_DELAY = 500; // milliseconds
 
+// Active tooltip state
+let activeTarget: HTMLElement | null = null;
+let elementHovered = false;
+let tooltipHovered = false;
+let pendingHideTimeout: ReturnType<typeof setTimeout> | null = null;
+
 /**
  * Initialize the tooltip element
  */
@@ -14,7 +20,26 @@ function ensureTooltipElement(): HTMLDivElement {
   if (!tooltipElement || !document.body.contains(tooltipElement)) {
     tooltipElement = document.createElement('div');
     tooltipElement.className = 'ytls-tooltip';
+    // Allow tooltip to receive hover events so we can keep it visible while hovered
+    tooltipElement.style.pointerEvents = 'auto';
     document.body.appendChild(tooltipElement);
+
+    // Tooltip hover handlers
+    tooltipElement.addEventListener('mouseenter', () => {
+      tooltipHovered = true;
+      if (pendingHideTimeout) {
+        clearTimeout(pendingHideTimeout);
+        pendingHideTimeout = null;
+      }
+    });
+    tooltipElement.addEventListener('mouseleave', () => {
+      tooltipHovered = false;
+      scheduleHideIfNeeded();
+    });
+
+    // Reposition tooltip on scroll/resize to stay anchored to the element
+    window.addEventListener('scroll', repositionActiveTooltip, true);
+    window.addEventListener('resize', repositionActiveTooltip, true);
   }
   return tooltipElement;
 }
@@ -55,11 +80,75 @@ function positionTooltip(tooltip: HTMLDivElement, mouseX: number, mouseY: number
 }
 
 /**
+ * Position tooltip relative to an element (preferred: to the right, else left, else below)
+ */
+function positionTooltipNearElement(tooltip: HTMLDivElement, element: HTMLElement) {
+  const offset = 8;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  const elRect = element.getBoundingClientRect();
+  const rect = tooltip.getBoundingClientRect();
+  const tooltipWidth = rect.width;
+  const tooltipHeight = rect.height;
+
+  // Prefer to the right of the element, aligned to its top
+  let left = Math.round(elRect.right + offset);
+  let top = Math.round(elRect.top);
+
+  // If that would overflow right edge, try to place to the left
+  if (left + tooltipWidth > viewportWidth - offset) {
+    left = Math.round(elRect.left - tooltipWidth - offset);
+  }
+
+  // If still offscreen horizontally, clamp within viewport
+  left = Math.max(offset, Math.min(left, viewportWidth - tooltipWidth - offset));
+
+  // If tooltip would go off bottom, try aligning bottom of element
+  if (top + tooltipHeight > viewportHeight - offset) {
+    top = Math.round(elRect.bottom - tooltipHeight);
+  }
+
+  // If still offscreen vertically, clamp within viewport
+  top = Math.max(offset, Math.min(top, viewportHeight - tooltipHeight - offset));
+
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function repositionActiveTooltip() {
+  if (!tooltipElement || !activeTarget) return;
+  if (!tooltipElement.classList.contains('ytls-tooltip-visible')) return;
+  try {
+    positionTooltipNearElement(tooltipElement, activeTarget);
+  } catch (_) {}
+}
+
+function scheduleHideIfNeeded(delay = 50) {
+  if (pendingHideTimeout) {
+    clearTimeout(pendingHideTimeout);
+    pendingHideTimeout = null;
+  }
+  // If tooltip or element is hovered, do not hide
+  if (elementHovered || tooltipHovered) return;
+  pendingHideTimeout = setTimeout(() => {
+    hideTooltip();
+    pendingHideTimeout = null;
+  }, delay);
+}
+
+/**
  * Show tooltip with delay
  */
-function showTooltip(text: string, mouseX: number, mouseY: number) {
+function showTooltip(text: string, mouseX: number, mouseY: number, target?: HTMLElement) {
   if (tooltipTimeout) {
     clearTimeout(tooltipTimeout);
+  }
+
+  // Mark the active target and hover state
+  if (target) {
+    activeTarget = target;
+    elementHovered = true;
   }
 
   tooltipTimeout = setTimeout(() => {
@@ -67,13 +156,25 @@ function showTooltip(text: string, mouseX: number, mouseY: number) {
     tooltip.textContent = text;
     tooltip.classList.remove('ytls-tooltip-visible');
 
-    // Position first (with opacity 0) to get correct dimensions
-    positionTooltip(tooltip, mouseX, mouseY);
-
-    // Then show with fade-in
-    requestAnimationFrame(() => {
-      tooltip.classList.add('ytls-tooltip-visible');
-    });
+    // Position first (with opacity 0) to get correct dimensions. If target is provided,
+    // anchor the tooltip near the element; otherwise use the mouse position.
+    if (target) {
+      // Ensure layout has run so we can measure tooltip size correctly
+      requestAnimationFrame(() => {
+        positionTooltipNearElement(tooltip, target);
+        // Then show with fade-in
+        requestAnimationFrame(() => {
+          tooltip.classList.add('ytls-tooltip-visible');
+        });
+      });
+    } else {
+      // Position using mouse coordinates
+      positionTooltip(tooltip, mouseX, mouseY);
+      // Then show with fade-in
+      requestAnimationFrame(() => {
+        tooltip.classList.add('ytls-tooltip-visible');
+      });
+    }
   }, TOOLTIP_DELAY);
 }
 
@@ -86,9 +187,18 @@ function hideTooltip() {
     tooltipTimeout = null;
   }
 
+  if (pendingHideTimeout) {
+    clearTimeout(pendingHideTimeout);
+    pendingHideTimeout = null;
+  }
+
   if (tooltipElement) {
     tooltipElement.classList.remove('ytls-tooltip-visible');
   }
+
+  activeTarget = null;
+  elementHovered = false;
+  tooltipHovered = false;
 }
 
 /**
@@ -103,19 +213,23 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
   const handleMouseEnter = (e: MouseEvent) => {
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
+    elementHovered = true;
+    activeTarget = element;
     const text = typeof getText === 'function' ? getText() : getText;
     if (text) {
-      showTooltip(text, lastMouseX, lastMouseY);
+      showTooltip(text, lastMouseX, lastMouseY, element);
     }
   };
 
   const handleMouseMove = (e: MouseEvent) => {
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
+    // Do not reposition tooltip to follow cursor; tooltip is anchored to element.
   };
 
   const handleMouseLeave = () => {
-    hideTooltip();
+    elementHovered = false;
+    scheduleHideIfNeeded();
   };
 
   element.addEventListener('mouseenter', handleMouseEnter);
@@ -127,11 +241,11 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
     // If element is removed from the document or becomes hidden, hide tooltip
     try {
       if (!document.body.contains(element)) {
-        hideTooltip();
+        if (activeTarget === element) hideTooltip();
       } else {
         const cs = window.getComputedStyle(element);
         if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') {
-          hideTooltip();
+          if (activeTarget === element) hideTooltip();
         }
       }
     } catch (e) {
