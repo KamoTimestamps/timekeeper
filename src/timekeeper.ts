@@ -954,8 +954,25 @@ function safePostMessage(message: unknown) {
 
     if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
       li.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
+
       if (shouldScroll && !isMouseOverTimestamps) {
-        li.scrollIntoView({ behavior: "smooth", block: "center" });
+        try {
+          // If the timestamp list is present, only scroll when the element is not already visible
+          if (list instanceof HTMLElement) {
+            const liRect = li.getBoundingClientRect();
+            const listRect = list.getBoundingClientRect();
+            const isVisible = !(liRect.bottom < listRect.top || liRect.top > listRect.bottom);
+            if (!isVisible) {
+              li.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+          } else {
+            // Fallback: if we don't have a list container reference, just scroll
+            li.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        } catch (e) {
+          // Be defensive: if geometry checks fail for any reason, fallback to scrolling
+          try { li.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (_) {}
+        }
       }
     }
   }
@@ -2220,18 +2237,33 @@ function safePostMessage(message: unknown) {
       }
     };
 
-    // Handler for pause: add t parameter with current time
+    // Handler for pause: add t parameter with current time and scroll to nearest timestamp
     const handlePause = () => {
       const player = getActivePlayer();
-      const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
+      const currentTime = player ? Math.floor(player.getCurrentTime()) : NaN;
       if (Number.isFinite(currentTime)) {
         updateUrlTimeParam(currentTime);
+        try {
+          // Scroll to and highlight the nearest timestamp when playback pauses
+          highlightNearestTimestampAtTime(currentTime, true);
+        } catch (e) {
+          log('Failed to highlight nearest timestamp on pause:', e, 'warn');
+        }
       }
     };
 
-    // Handler for play: remove t parameter
+    // Handler for play: remove t parameter and scroll to nearest timestamp
     const handlePlay = () => {
       updateUrlTimeParam(null);
+      try {
+        const player = getActivePlayer();
+        const currentTime = player ? Math.floor(player.getCurrentTime()) : NaN;
+        if (Number.isFinite(currentTime)) {
+          highlightNearestTimestampAtTime(currentTime, true);
+        }
+      } catch (e) {
+        log('Failed to highlight nearest timestamp on play:', e, 'warn');
+      }
     };
 
     // Handler for seeking: highlight immediately on seek
@@ -2950,6 +2982,19 @@ function safePostMessage(message: unknown) {
         if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
         ensureMinPaneHeight();
         clampAndSavePanePosition(true);
+
+        // Scroll to the nearest timestamp now that the layout is settled
+        try {
+          const player = getActivePlayer();
+          const currentTime = player ? Math.floor(player.getCurrentTime()) : NaN;
+          if (Number.isFinite(currentTime)) {
+            highlightNearestTimestampAtTime(currentTime, true);
+          }
+        } catch (e) {
+          // Be resilient if player isn't ready; swallow errors
+          log('Failed to scroll to nearest timestamp after toggle:', e, 'warn');
+        }
+
         visibilitySizingTimeoutId = null;
       }, 450);
     } else {
