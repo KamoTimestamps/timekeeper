@@ -56,8 +56,9 @@ export const PANE_STYLES = `
   #ytls-resize-bl,
   #ytls-resize-br {
     position: absolute;
-    width: 20px;
-    height: 20px;
+    /* Use 16px click areas for corner resize handlers to match touch targets and reduce accidental drags */
+    width: 16px;
+    height: 16px;
     z-index: 11;
     background: transparent;
     pointer-events: auto;

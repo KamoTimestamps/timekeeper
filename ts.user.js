@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
-// @version      4.4.9
+// @version      4.4.10
 // @description  Enhanced timestamp tool for YouTube videos
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
@@ -76,8 +76,9 @@
   #ytls-resize-bl,
   #ytls-resize-br {
     position: absolute;
-    width: 20px;
-    height: 20px;
+    /* Use 16px click areas for corner resize handlers to match touch targets and reduce accidental drags */
+    width: 16px;
+    height: 16px;
     z-index: 11;
     background: transparent;
     pointer-events: auto;
