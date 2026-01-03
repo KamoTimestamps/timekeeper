@@ -805,6 +805,23 @@ export function formatBackupTime(ts: number): string {
   }
 }
 
+function getBackupStatusColor(): string {
+  // Determine color consistent with updateBackupStatusIndicator logic
+  if (!autoBackupEnabled) {
+    return '#ff4d4f'; // Red - off
+  } else if (isAutoBackupRunning) {
+    return '#4285f4'; // Blue - in progress
+  } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
+    return '#ffa500'; // Yellow - retrying
+  } else if (googleAuthState.isSignedIn && lastAutoBackupAt) {
+    return '#52c41a'; // Green - healthy
+  } else if (googleAuthState.isSignedIn) {
+    return '#ffa500'; // Yellow - no backup yet
+  } else {
+    return '#ff4d4f'; // Red - not signed in
+  }
+}
+
 export function updateBackupStatusDisplay() {
   if (!backupStatusDisplay) return;
   let text = '';
@@ -852,27 +869,21 @@ export function updateBackupStatusDisplay() {
   backupStatusDisplay.textContent = text;
   backupStatusDisplay.style.display = text ? 'inline' : 'none';
 
+  // Apply matching color to settings display so it matches main UI indicator
+  try {
+    const color = getBackupStatusColor();
+    backupStatusDisplay.style.color = color;
+  } catch (e) {
+    // ignore
+  }
+
   updateBackupStatusIndicator();
 }
 
 export function updateBackupStatusIndicator() {
   if (!backupStatusIndicator) return;
 
-  let color = '';
-
-  if (!autoBackupEnabled) {
-    color = '#ff4d4f'; // Red - off
-  } else if (isAutoBackupRunning) {
-    color = '#4285f4'; // Blue - in progress
-  } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
-    color = '#ffa500'; // Yellow - retrying
-  } else if (googleAuthState.isSignedIn && lastAutoBackupAt) {
-    color = '#52c41a'; // Green - healthy
-  } else if (googleAuthState.isSignedIn) {
-    color = '#ffa500'; // Yellow - no backup yet
-  } else {
-    color = '#ff4d4f'; // Red - not signed in
-  }
+  const color = getBackupStatusColor();
 
   backupStatusIndicator.style.backgroundColor = color;
   addTooltip(backupStatusIndicator, () => {
