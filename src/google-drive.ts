@@ -162,7 +162,7 @@ export function updateAuthStatusDisplay(status?: 'authenticating' | 'error', mes
   if (status === 'error') {
     authStatusDisplay.textContent = `❌ ${message || 'Authorization failed'}`;
     authStatusDisplay.style.color = '#ff4d4f';
-    updateBackupStatusIndicator();
+    updateBackupStatusDisplay();
     return;
   }
   if (!googleAuthState.isSignedIn) {
@@ -189,7 +189,7 @@ export function updateAuthStatusDisplay(status?: 'authenticating' | 'error', mes
       authStatusDisplay.onmouseleave = null;
     }
   }
-  updateBackupStatusIndicator();
+  updateBackupStatusDisplay();
 }
 
 export function blinkAuthStatusDisplay() {

@@ -3747,6 +3747,10 @@ function safePostMessage(message: unknown) {
           // Update label after action
           signButton.textContent = GoogleDrive.googleAuthState.isSignedIn ? "🔓 Sign Out" : "🔐 Sign In";
           addTooltip(signButton, GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive");
+          // Ensure main backup status indicator updates immediately
+          if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
+            (GoogleDrive as any).updateBackupStatusDisplay();
+          }
         }
       );
       driveSection.appendChild(signButton);
@@ -3757,6 +3761,10 @@ function safePostMessage(message: unknown) {
         async () => {
           await GoogleDrive.toggleAutoBackup();
           autoToggleButton.textContent = GoogleDrive.autoBackupEnabled ? "🔁 Auto Backup: On" : "🔁 Auto Backup: Off";
+          // Sync main indicator/text immediately
+          if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
+            (GoogleDrive as any).updateBackupStatusDisplay();
+          }
         }
       );
       driveSection.appendChild(autoToggleButton);
@@ -3767,12 +3775,20 @@ function safePostMessage(message: unknown) {
         async () => {
           await GoogleDrive.setAutoBackupIntervalPrompt();
           intervalButton.textContent = `⏱️ Backup Interval: ${GoogleDrive.autoBackupIntervalMinutes}min`;
+          // Ensure status is synced immediately
+          if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
+            (GoogleDrive as any).updateBackupStatusDisplay();
+          }
         }
       );
       driveSection.appendChild(intervalButton);
 
       driveSection.appendChild(createButton("🗄️ Backup Now", "Run a backup immediately", async () => {
         await GoogleDrive.runAutoBackupOnce(false);
+        // Update status display right away after initiating manual backup
+        if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
+          (GoogleDrive as any).updateBackupStatusDisplay();
+        }
       }));
 
       // Add status info displays at the bottom
