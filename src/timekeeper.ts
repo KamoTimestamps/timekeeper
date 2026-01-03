@@ -3185,6 +3185,23 @@ function safePostMessage(message: unknown) {
     togglePaneVisibility(false);
   });
 
+  // --- Prevent events from the Timekeeper UI reaching the YouTube UI ---
+  // Stop propagation for common user interactions so underlying YouTube handlers don't react.
+  // IMPORTANT: use bubble-phase listeners (default) so the event reaches Timekeeper's inner
+  // controls first, then is stopped from reaching the page-level handlers.
+  const stopPropagation = (e: Event) => { try { e.stopPropagation(); } catch (_) {} };
+  // Don't block 'mouseup'/'pointerup'/'touchend' so document-level handlers (drag end) still run.
+  ["click", "dblclick", "mousedown", "pointerdown", "touchstart", "wheel"].forEach(ev => {
+    pane.addEventListener(ev, stopPropagation); // default: bubble phase
+  });
+  // Also prevent keyboard events from reaching the page after Timekeeper handles them
+  pane.addEventListener('keydown', (e) => { try { e.stopPropagation(); } catch (_) {} });
+  pane.addEventListener('keyup', (e) => { try { e.stopPropagation(); } catch (_) {} });
+  // focus/blur don't bubble reliably - keep capture to prevent page from reacting
+  pane.addEventListener('focus', (e) => { try { e.stopPropagation(); } catch (_) {} }, true);
+  pane.addEventListener('blur', (e) => { try { e.stopPropagation(); } catch (_) {} }, true);
+
+
     const scriptVersion = GM_info.script.version; // Get script version
     versionDisplay.textContent = `v${scriptVersion}`;
     versionDisplay.classList.add("ytls-version-display"); // Add class for CSS targeting
