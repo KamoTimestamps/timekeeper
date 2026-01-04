@@ -5,7 +5,7 @@
 
 let tooltipElement: HTMLDivElement | null = null;
 let tooltipTimeout: ReturnType<typeof setTimeout> | null = null;
-const TOOLTIP_DELAY = 500; // milliseconds
+const TOOLTIP_DELAY = 250; // milliseconds
 
 // Active tooltip state
 let activeTarget: HTMLElement | null = null;
@@ -66,7 +66,7 @@ function positionTooltip(tooltip: HTMLDivElement, mouseX: number, mouseY: number
 }
 
 /**
- * Position tooltip relative to an element (preferred: to the right, else left, else below)
+ * Position tooltip relative to an element (preferred: above, else below)
  */
 function positionTooltipNearElement(tooltip: HTMLDivElement, element: HTMLElement) {
   const offset = 8;
@@ -78,24 +78,27 @@ function positionTooltipNearElement(tooltip: HTMLDivElement, element: HTMLElemen
   const tooltipWidth = rect.width;
   const tooltipHeight = rect.height;
 
-  // Prefer to the right of the element, aligned to its top
-  let left = Math.round(elRect.right + offset);
-  let top = Math.round(elRect.top);
+  // Prefer above the element, centered horizontally
+  let left = Math.round(elRect.left + (elRect.width / 2) - (tooltipWidth / 2));
+  let top = Math.round(elRect.top - tooltipHeight - offset);
 
-  // If that would overflow right edge, try to place to the left
+  // If tooltip would go off top edge, place below instead
+  if (top < offset) {
+    top = Math.round(elRect.bottom + offset);
+  }
+
+  // If tooltip would go off left edge, align to left side of element
+  if (left < offset) {
+    left = Math.round(elRect.left);
+  }
+
+  // If tooltip would go off right edge, align to right side of element
   if (left + tooltipWidth > viewportWidth - offset) {
-    left = Math.round(elRect.left - tooltipWidth - offset);
+    left = Math.round(elRect.right - tooltipWidth);
   }
 
-  // If still offscreen horizontally, clamp within viewport
+  // Final clamps to ensure tooltip stays within viewport
   left = Math.max(offset, Math.min(left, viewportWidth - tooltipWidth - offset));
-
-  // If tooltip would go off bottom, try aligning bottom of element
-  if (top + tooltipHeight > viewportHeight - offset) {
-    top = Math.round(elRect.bottom - tooltipHeight);
-  }
-
-  // If still offscreen vertically, clamp within viewport
   top = Math.max(offset, Math.min(top, viewportHeight - tooltipHeight - offset));
 
   tooltip.style.left = `${left}px`;
@@ -127,6 +130,18 @@ function scheduleHideIfNeeded(delay = 50) {
  * Show tooltip with delay
  */
 function showTooltip(text: string, mouseX: number, mouseY: number, target?: HTMLElement) {
+  // Cancel any pending hide operations since we're showing a new tooltip
+  if (pendingHideTimeout) {
+    clearTimeout(pendingHideTimeout);
+    pendingHideTimeout = null;
+  }
+
+  // If there's already a visible tooltip for a different target, hide it immediately
+  // to allow the new tooltip to show without confusion
+  if (activeTarget && target && activeTarget !== target && tooltipElement?.classList.contains('ytls-tooltip-visible')) {
+    tooltipElement.classList.remove('ytls-tooltip-visible');
+  }
+
   if (tooltipTimeout) {
     clearTimeout(tooltipTimeout);
   }
@@ -198,6 +213,13 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
   const handleMouseEnter = (e: MouseEvent) => {
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
+
+    // Cancel any pending hide operations immediately
+    if (pendingHideTimeout) {
+      clearTimeout(pendingHideTimeout);
+      pendingHideTimeout = null;
+    }
+
     elementHovered = true;
     activeTarget = element;
     const text = typeof getText === 'function' ? getText() : getText;
@@ -213,8 +235,12 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
   };
 
   const handleMouseLeave = () => {
-    elementHovered = false;
-    scheduleHideIfNeeded();
+    // Only mark as not hovered if we're still the active target
+    // This prevents race conditions when quickly moving between adjacent elements
+    if (activeTarget === element) {
+      elementHovered = false;
+      scheduleHideIfNeeded();
+    }
   };
 
   element.addEventListener('mouseenter', handleMouseEnter);
