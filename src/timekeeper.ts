@@ -20,13 +20,9 @@ declare const GM_info: {
 import { PANE_STYLES } from "./styles";
 import * as GoogleDrive from "./google-drive";
 import {
-  LegacyExportDataSchema,
-  LegacyVideoEntrySchema,
   PanePositionSchema,
   TimestampRecord,
-  TimestampRecordArraySchema,
   TimestampRecordSchema,
-  TimestampRowSchema
 } from './schema';
 
 // OAuth detection - always check URL for auth token, runs synchronously before any async operations
@@ -2367,10 +2363,7 @@ function safePostMessage(message: unknown) {
     buildExportPayload,
     exportAllTimestamps,
     buildExportCsvPayload,
-    exportAllTimestampsCsv,
-    getAllFromIndexedDB,
-    SETTINGS_STORE_NAME,
-    STORE_NAME_V2
+    exportAllTimestampsCsv
   } = TimestampModel;
 
 

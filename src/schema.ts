@@ -72,33 +72,3 @@ export const AutoBackupSettingsSchema = z.object({
   lastAutoBackupAt: z.number().int().positive().nullable().optional(),
 });
 export type AutoBackupSettings = z.infer<typeof AutoBackupSettingsSchema>;
-
-// OAuth message schemas
-export const OAuthTokenMessageSchema = z.object({
-  type: z.literal('timekeeper_oauth_token'),
-  token: z.string().min(1),
-  timestamp: z.number().optional(),
-});
-
-export const OAuthErrorMessageSchema = z.object({
-  type: z.literal('timekeeper_oauth_error'),
-  error: z.string(),
-  timestamp: z.number().optional(),
-});
-
-export const OAuthMessageSchema = z.union([
-  OAuthTokenMessageSchema,
-  OAuthErrorMessageSchema,
-]);
-
-export type OAuthMessage = z.infer<typeof OAuthMessageSchema>;
-
-// Google API user info response schema
-export const GoogleUserInfoSchema = z.object({
-  name: z.string().optional(),
-  email: z.string().email().optional(),
-  id: z.string().optional(),
-  picture: z.string().url().optional(),
-});
-
-export type GoogleUserInfo = z.infer<typeof GoogleUserInfoSchema>;
