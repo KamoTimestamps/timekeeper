@@ -3,6 +3,7 @@ import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix
 import { addTooltip } from './tooltip';
 import { renderTimestampDOM, renderErrorElement, renderEmptyPlaceholder } from './components';
 import delegate from 'delegate-it';
+import type { YouTubePlayer, TimekeeperWindow, GoogleDriveModule, HTMLElementWithDeleteHandler, HTMLInputElementWithLi, PanePosition } from './types';
 import {
   saveToIndexedDB,
   saveSingleTimestampToIndexedDB,
@@ -98,8 +99,8 @@ if (hash && hash.length > 1) {
   }
 
   // Initialize GoogleDrive callbacks early for OAuth handling
-  (GoogleDrive as any).setLoadGlobalSettings(earlyLoadGlobalSettings);
-  (GoogleDrive as any).setSaveGlobalSettings(earlySaveGlobalSettings);
+  (GoogleDrive as GoogleDriveModule).setLoadGlobalSettings?.(earlyLoadGlobalSettings);
+  (GoogleDrive as GoogleDriveModule).setSaveGlobalSettings?.(earlySaveGlobalSettings);
 
   // Check if we're in an OAuth popup and handle it
   const isOAuthPopup = await GoogleDrive.handleOAuthPopup();
@@ -113,7 +114,7 @@ if (hash && hash.length > 1) {
 
   const SUPPORTED_PATH_PREFIXES = ["/watch", "/live"] as const;
 
-  function isSupportedUrl(url = window.location.href) {
+  function isSupportedUrl(url: string = window.location.href): boolean {
     try {
       const parsed = new URL(url);
       if (parsed.origin !== "https://www.youtube.com") {
@@ -144,12 +145,12 @@ if (hash && hash.length > 1) {
   let urlChangeHandlersSetup = false;
 
   // --- Pane sizing helpers (available across module) ---
-  function getPaneRect() {
+  function getPaneRect(): DOMRect | null {
     if (!pane) return null;
     return pane.getBoundingClientRect();
   }
 
-  function updateLastSavedPanePositionFromRect(rect: DOMRect | null, xOverride?: number, yOverride?: number) {
+  function updateLastSavedPanePositionFromRect(rect: DOMRect | null, xOverride?: number, yOverride?: number): void {
     if (!rect) return;
     lastSavedPanePosition = {
       x: typeof xOverride === 'number' ? Math.round(xOverride) : Math.round(rect.left),
@@ -159,7 +160,7 @@ if (hash && hash.length > 1) {
     };
   }
 
-  function clampAndSavePanePosition(save = true) {
+  function clampAndSavePanePosition(save: boolean = true): void {
     if (!pane) return;
     clampPaneToViewport();
     const rect = getPaneRect();
@@ -173,7 +174,7 @@ if (hash && hash.length > 1) {
     }
   }
 
-  function ensureMinPaneHeight() {
+  function ensureMinPaneHeight(): void {
     if (!pane || !header || !btns || !list) return;
     let liH = 40;
     const itemsForSize = getTimestampItems();
@@ -194,16 +195,16 @@ if (hash && hash.length > 1) {
   }
 
   // Append any timestamps that were built while the pane was animating open.
-  function performSizingAndSave() {
+  function performSizingAndSave(): void {
     // Run a layout recalc then ensure pane sizing/clamping are applied
     requestAnimationFrame(() => {
-      if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+      if (typeof (window as TimekeeperWindow).recalculateTimestampsArea === 'function') (window as TimekeeperWindow).recalculateTimestampsArea();
       ensureMinPaneHeight();
       clampAndSavePanePosition(true);
     });
   }
 
-  function scheduleShowFinalizer(delay = 450) {
+  function scheduleShowFinalizer(delay: number = 450): void {
     if (visibilitySizingTimeoutId) {
       clearTimeout(visibilitySizingTimeoutId);
       visibilitySizingTimeoutId = null;
@@ -216,14 +217,14 @@ if (hash && hash.length > 1) {
     }, delay);
   }
 
-  function cancelScheduledShowFinalizer() {
+  function cancelScheduledShowFinalizer(): void {
     if (visibilitySizingTimeoutId) {
       clearTimeout(visibilitySizingTimeoutId);
       visibilitySizingTimeoutId = null;
     }
   }
 
-  function startShowAnimation() {
+  function startShowAnimation(): void {
     if (list) {
       list.style.visibility = 'hidden';
       log('Hiding timestamps during show animation');
@@ -232,7 +233,7 @@ if (hash && hash.length > 1) {
     scheduleShowFinalizer();
   }
 
-  function startHideAnimation() {
+  function startHideAnimation(): void {
     // If any deferred timestamps exist, append them now (they'll remain hidden)
     appendPendingTimestamps();
     // Cancel any scheduled show finalizer since we're hiding instead
@@ -250,7 +251,7 @@ if (hash && hash.length > 1) {
     }, 400);
   }
 
-  function appendPendingTimestamps() {
+  function appendPendingTimestamps(): void {
     if (!list) {
       // Resolve any pending promise so awaiters don't hang
       if (pendingTimestampsResolve) {
@@ -295,8 +296,8 @@ if (hash && hash.length > 1) {
 
     updateIndentMarkers();
     updateSeekbarMarkers();
-    if (typeof (window as any).recalculateTimestampsArea === 'function') {
-      requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
+    if (typeof (window as TimekeeperWindow).recalculateTimestampsArea === 'function') {
+      requestAnimationFrame(() => (window as TimekeeperWindow).recalculateTimestampsArea());
     }
 
     const playerForHighlight = getActivePlayer();
@@ -316,8 +317,8 @@ if (hash && hash.length > 1) {
   const HEADER_ICON_HOVER_URL = "https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_Eyebrow_64px_Indexed.png";
 
   // Preload header images once at script startup so they're cached for later use
-  function preloadHeaderIcons() {
-    const preloadImage = (url: string) => {
+  function preloadHeaderIcons(): void {
+    const preloadImage = (url: string): void => {
       const img = new Image();
       img.src = url;
     };
@@ -358,30 +359,30 @@ if (hash && hash.length > 1) {
     "getDuration"
   ]);
 
-  function methodHasFallback(method) {
+  function methodHasFallback(method: string): boolean {
     return PLAYER_METHODS_WITH_FALLBACK.has(method);
   }
 
-  function getVideoElement() {
+  function getVideoElement(): HTMLVideoElement | null {
     return document.querySelector("video");
   }
 
-  let lastValidatedPlayer = null;
+  let lastValidatedPlayer: YouTubePlayer | null = null;
 
-  function getActivePlayer() {
-    if (lastValidatedPlayer && document.contains(lastValidatedPlayer)) {
+  function getActivePlayer(): YouTubePlayer | null {
+    if (lastValidatedPlayer && document.contains(lastValidatedPlayer as unknown as Node)) {
       return lastValidatedPlayer;
     }
-    const player = document.getElementById("movie_player");
-    if (player && document.contains(player)) {
+    const player = document.getElementById("movie_player") as unknown as YouTubePlayer | null;
+    if (player && document.contains(player as unknown as Node)) {
       return player;
     }
     return null;
   }
 
-  function hasRequiredPlayerMethods(playerInstance) {
+  function hasRequiredPlayerMethods(playerInstance: YouTubePlayer | null): boolean {
     return REQUIRED_PLAYER_METHODS.every(method => {
-      if (typeof playerInstance?.[method] === "function") {
+      if (typeof (playerInstance as any)?.[method] === "function") {
         return true;
       }
       if (!methodHasFallback(method)) {
@@ -391,9 +392,9 @@ if (hash && hash.length > 1) {
     });
   }
 
-  function missingPlayerMethods(playerInstance) {
+  function missingPlayerMethods(playerInstance: YouTubePlayer | null): string[] {
     return REQUIRED_PLAYER_METHODS.filter(method => {
-      if (typeof playerInstance?.[method] === "function") {
+      if (typeof (playerInstance as any)?.[method] === "function") {
         return false;
       }
       if (!methodHasFallback(method)) {
@@ -403,7 +404,7 @@ if (hash && hash.length > 1) {
     });
   }
 
-  async function waitForPlayerWithMethods(timeoutMs = PLAYER_METHOD_CHECK_TIMEOUT_MS) {
+  async function waitForPlayerWithMethods(timeoutMs: number = PLAYER_METHOD_CHECK_TIMEOUT_MS): Promise<YouTubePlayer | null> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const playerInstance = getActivePlayer();
@@ -562,9 +563,9 @@ function safePostMessage(message: unknown) {
   let pendingTimestampsPromise: Promise<void> | null = null;
   let pendingTimestampsResolve: (() => void) | null = null;
   let headerButtonImage: HTMLImageElement | null = null;
-  let isHeaderButtonHovered = false;
-  let lastSavedPanePosition: { x: number; y: number; width: number; height: number } | null = null;
-  let isPaneInitializing = false; // Lock flag to prevent concurrent pane initialization
+  let isHeaderButtonHovered: boolean = false;
+  let lastSavedPanePosition: PanePosition | null = null;
+  let isPaneInitializing: boolean = false; // Lock flag to prevent concurrent pane initialization
 
   // Event listener references for cleanup to prevent memory leaks
   let documentMousemoveHandler: ((e: MouseEvent) => void) | null = null;
@@ -732,7 +733,7 @@ function safePostMessage(message: unknown) {
     }
   }
 
-  function clearTimestampsDisplay() {
+  function clearTimestampsDisplay(): void {
     if (!list) return;
     while (list.firstChild) { // Clear the existing timestamps
       list.removeChild(list.firstChild);
@@ -751,7 +752,7 @@ function safePostMessage(message: unknown) {
   }
 
   // Ensure that when there are no timestamps shown, a friendly placeholder appears
-  function ensureEmptyPlaceholder() {
+  function ensureEmptyPlaceholder(): void {
     if (!list) return;
     // If loading is in progress or we have a deferred fragment coming, don't show the empty placeholder
     if (isLoadingTimestamps || pendingTimestampsFragment) return;
@@ -775,7 +776,7 @@ function safePostMessage(message: unknown) {
     list.style.overflowY = 'hidden';
   }
 
-  function clearListPlaceholder() {
+  function clearListPlaceholder(): void {
     if (!list) return;
     const placeholder = list.querySelector('.ytls-placeholder');
     if (placeholder) placeholder.remove();
@@ -860,7 +861,7 @@ function safePostMessage(message: unknown) {
   }
 
   // Update existing calls to formatTimeString to pass only the timestamp value itself
-  function formatTime(anchor: HTMLAnchorElement, timeInSeconds: number) {
+  function formatTime(anchor: HTMLAnchorElement, timeInSeconds: number): void {
     // Format the timestamp based solely on its own value.
     anchor.textContent = formatTimeString(timeInSeconds);
     anchor.dataset.time = String(timeInSeconds);
@@ -1181,7 +1182,7 @@ function safePostMessage(message: unknown) {
     invalidateLatestTimestampValue();
 
     // Attach delete handler logic to the delete button
-    (del as any).__deleteHandler = () => {
+    (del as HTMLElementWithDeleteHandler).__deleteHandler = () => {
       // Track the timeout so we can cancel it if the timestamp is removed early
       let cancelTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -1358,13 +1359,13 @@ function safePostMessage(message: unknown) {
     } else {
       // Do not append to the live DOM yet; expose the constructed li for callers that are
       // building a fragment to append later.
-      (commentInput as any).__ytls_li = li;
+      (commentInput as HTMLInputElementWithLi).__ytls_li = li;
     }
 
     return commentInput;
   }
 
-  function updateTimeDifferences() {
+  function updateTimeDifferences(): void {
     if (!list || list.querySelector('.ytls-error-message')) {
       return;
     }
@@ -1408,7 +1409,7 @@ function safePostMessage(message: unknown) {
     });
   }
 
-  function sortTimestampsAndUpdateDisplay() {
+  function sortTimestampsAndUpdateDisplay(): void {
     if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
       return;
     }
@@ -1497,13 +1498,13 @@ function safePostMessage(message: unknown) {
     }
   }
 
-  function updateScroll() {
+  function updateScroll(): void {
     if (!list || !pane || !header || !btns) return;
     const tsCount = getTimestampItems().length;
 
     // Always size the list to fill the available pane height, let the resize observer
     // and recalculateTimestampsArea handle the exact maxHeight calculation.
-    if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+    if (typeof (window as TimekeeperWindow).recalculateTimestampsArea === 'function') (window as TimekeeperWindow).recalculateTimestampsArea();
 
     // Decide whether to show a scrollbar based on content height vs available height
     const paneRect = pane.getBoundingClientRect();
@@ -1521,7 +1522,7 @@ function safePostMessage(message: unknown) {
     }
   }
 
-  function updateSeekbarMarkers() {
+  function updateSeekbarMarkers(): void {
     if (!list) return;
     const video = getVideoElement();
     const progressBar = document.querySelector<HTMLDivElement>(".ytp-progress-bar");
@@ -1625,7 +1626,7 @@ function safePostMessage(message: unknown) {
     safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
   }
 
-  async function saveTimestampsAs(format) {
+  async function saveTimestampsAs(format: 'json' | 'text'): Promise<void> {
     if (!list || list.querySelector('.ytls-error-message')) {
       alert("Cannot export timestamps while displaying an error message.");
       return;
@@ -1660,7 +1661,7 @@ function safePostMessage(message: unknown) {
     }
   }
 
-  function displayPaneError(message) {
+  function displayPaneError(message: string): void {
     if (!pane || !list) {
       log("Timekeeper error:", message, 'error');
       return;
@@ -1673,11 +1674,11 @@ function safePostMessage(message: unknown) {
     updateSeekbarMarkers();
   }
 
-  function removeSeekbarMarkers() {
+  function removeSeekbarMarkers(): void {
     document.querySelectorAll(".ytls-marker").forEach(marker => marker.remove());
   }
 
-  function clampPaneToViewport() {
+  function clampPaneToViewport(): void {
     if (!pane || !document.body.contains(pane)) return;
 
     const rect = pane.getBoundingClientRect();
@@ -1932,7 +1933,7 @@ function safePostMessage(message: unknown) {
         finalTimestampsToDisplay.forEach(ts => {
           // Construct LI without appending to the live list
           const input = addTimestamp(ts.start, ts.comment, true, ts.guid, false);
-          const li = (input as any).__ytls_li as HTMLLIElement | undefined;
+          const li = (input as HTMLInputElementWithLi).__ytls_li;
           if (li) frag.appendChild(li);
         });
 
@@ -1953,8 +1954,8 @@ function safePostMessage(message: unknown) {
             updateIndentMarkers();
             updateSeekbarMarkers();
             // Ensure scroll area is recalculated after DOM updates
-            if (typeof (window as any).recalculateTimestampsArea === 'function') {
-              requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
+            if (typeof (window as TimekeeperWindow).recalculateTimestampsArea === 'function') {
+              requestAnimationFrame(() => (window as TimekeeperWindow).recalculateTimestampsArea());
             }
           }
         }
@@ -1972,8 +1973,8 @@ function safePostMessage(message: unknown) {
         showListPlaceholder('No timestamps for this video');
         updateSeekbarMarkers(); // Ensure seekbar markers are cleared
         // Still recalculate area in case list is now empty
-        if (typeof (window as any).recalculateTimestampsArea === 'function') {
-          requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
+        if (typeof (window as TimekeeperWindow).recalculateTimestampsArea === 'function') {
+          requestAnimationFrame(() => (window as TimekeeperWindow).recalculateTimestampsArea());
         }
       }
     } catch (err) {
@@ -1986,8 +1987,8 @@ function safePostMessage(message: unknown) {
       }
       requestAnimationFrame(restoreScrollPosition);
       // Ensure scroll area is recalculated after loading timestamps
-      if (typeof (window as any).recalculateTimestampsArea === 'function') {
-        requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
+      if (typeof (window as TimekeeperWindow).recalculateTimestampsArea === 'function') {
+        requestAnimationFrame(() => (window as TimekeeperWindow).recalculateTimestampsArea());
       }
       // If there is no error being shown, ensure a friendly placeholder appears when the list is empty
       if (list && !list.querySelector('.ytls-error-message')) {
@@ -2335,7 +2336,7 @@ function safePostMessage(message: unknown) {
       visibilitySizingTimeoutId = setTimeout(() => {
         // If timestamps were deferred while animating, append them first so sizing sees them
         appendPendingTimestamps();
-        if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+        if (typeof (window as TimekeeperWindow).recalculateTimestampsArea === 'function') (window as TimekeeperWindow).recalculateTimestampsArea();
         ensureMinPaneHeight();
         clampAndSavePanePosition(true);
 
@@ -2748,7 +2749,7 @@ function safePostMessage(message: unknown) {
     if (!li) return;
 
     // Call the stored delete handler
-    const handler = (del as any).__deleteHandler;
+    const handler = (del as HTMLElementWithDeleteHandler).__deleteHandler;
     if (handler) {
       handler();
     }
@@ -3346,8 +3347,8 @@ function safePostMessage(message: unknown) {
           signButton.textContent = GoogleDrive.googleAuthState.isSignedIn ? "🔓 Sign Out" : "🔐 Sign In";
           addTooltip(signButton, GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive");
           // Ensure main backup status indicator updates immediately
-          if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
-            (GoogleDrive as any).updateBackupStatusDisplay();
+          if (typeof (GoogleDrive as GoogleDriveModule).updateBackupStatusDisplay === 'function') {
+            (GoogleDrive as GoogleDriveModule).updateBackupStatusDisplay();
           }
         }
       );
@@ -3360,8 +3361,8 @@ function safePostMessage(message: unknown) {
           await GoogleDrive.toggleAutoBackup();
           autoToggleButton.textContent = GoogleDrive.autoBackupEnabled ? "🔁 Auto Backup: On" : "🔁 Auto Backup: Off";
           // Sync main indicator/text immediately
-          if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
-            (GoogleDrive as any).updateBackupStatusDisplay();
+          if (typeof (GoogleDrive as GoogleDriveModule).updateBackupStatusDisplay === 'function') {
+            (GoogleDrive as GoogleDriveModule).updateBackupStatusDisplay();
           }
         }
       );
@@ -3374,8 +3375,8 @@ function safePostMessage(message: unknown) {
           await GoogleDrive.setAutoBackupIntervalPrompt();
           intervalButton.textContent = `⏱️ Backup Interval: ${GoogleDrive.autoBackupIntervalMinutes}min`;
           // Ensure status is synced immediately
-          if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
-            (GoogleDrive as any).updateBackupStatusDisplay();
+          if (typeof (GoogleDrive as GoogleDriveModule).updateBackupStatusDisplay === 'function') {
+            (GoogleDrive as GoogleDriveModule).updateBackupStatusDisplay();
           }
         }
       );
@@ -3384,8 +3385,8 @@ function safePostMessage(message: unknown) {
       driveSection.appendChild(createButton("🗄️ Backup Now", "Run a backup immediately", async () => {
         await GoogleDrive.runAutoBackupOnce(false);
         // Update status display right away after initiating manual backup
-        if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
-          (GoogleDrive as any).updateBackupStatusDisplay();
+        if (typeof (GoogleDrive as GoogleDriveModule).updateBackupStatusDisplay === 'function') {
+          (GoogleDrive as GoogleDriveModule).updateBackupStatusDisplay();
         }
       }));
 
@@ -3789,8 +3790,8 @@ function safePostMessage(message: unknown) {
       if (!pane) return;
       log('Loading window position from IndexedDB');
       loadGlobalSettings('windowPosition').then(value => {
-        if (value && typeof (value as any).x === 'number' && typeof (value as any).y === 'number') {
-          const pos = value as { x: number; y: number; width?: number; height?: number };
+        const pos = value as PanePosition | null;
+        if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
           pane.style.left = `${pos.x}px`;
           pane.style.top = `${pos.y}px`;
           pane.style.right = "auto";
@@ -3825,7 +3826,7 @@ function safePostMessage(message: unknown) {
           updateLastSavedPanePositionFromRect(rect);
         }
         // Ensure the scroll area is sized after restoring position/size
-        if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+        if (typeof (window as TimekeeperWindow).recalculateTimestampsArea === 'function') (window as TimekeeperWindow).recalculateTimestampsArea();
       }).catch(err => {
         log("failed to load pane position from IndexedDB:", err, 'warn');
         clampPaneToViewport();
@@ -3838,7 +3839,7 @@ function safePostMessage(message: unknown) {
             height: Math.round(rect.height)
           };
         }
-        if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+        if (typeof (window as TimekeeperWindow).recalculateTimestampsArea === 'function') (window as TimekeeperWindow).recalculateTimestampsArea();
       });
     }
 
@@ -4132,7 +4133,7 @@ function safePostMessage(message: unknown) {
         list.style.overflowY = available > 0 ? 'auto' : 'hidden';
       }
     }
-    (window as any).recalculateTimestampsArea = recalculateTimestampsArea;
+    (window as TimekeeperWindow).recalculateTimestampsArea = recalculateTimestampsArea;
 
     setTimeout(() => {
       recalculateTimestampsArea();
@@ -4205,17 +4206,17 @@ function safePostMessage(message: unknown) {
     await loadUIVisibilityState();
 
     // Initialize Google Drive module callbacks using setter functions
-    if (typeof (GoogleDrive as any).setBuildExportPayload === 'function') {
-      (GoogleDrive as any).setBuildExportPayload(buildExportPayload);
+    if (typeof (GoogleDrive as GoogleDriveModule).setBuildExportPayload === 'function') {
+      (GoogleDrive as GoogleDriveModule).setBuildExportPayload(buildExportPayload);
     }
-    if (typeof (GoogleDrive as any).setSaveGlobalSettings === 'function') {
-      (GoogleDrive as any).setSaveGlobalSettings(saveGlobalSettings);
+    if (typeof (GoogleDrive as GoogleDriveModule).setSaveGlobalSettings === 'function') {
+      (GoogleDrive as GoogleDriveModule).setSaveGlobalSettings(saveGlobalSettings);
     }
-    if (typeof (GoogleDrive as any).setLoadGlobalSettings === 'function') {
-      (GoogleDrive as any).setLoadGlobalSettings(loadGlobalSettings);
+    if (typeof (GoogleDrive as GoogleDriveModule).setLoadGlobalSettings === 'function') {
+      (GoogleDrive as GoogleDriveModule).setLoadGlobalSettings(loadGlobalSettings);
     }
-    if (typeof (GoogleDrive as any).setBackupStatusIndicator === 'function') {
-      (GoogleDrive as any).setBackupStatusIndicator(backupStatusIndicator);
+    if (typeof (GoogleDrive as GoogleDriveModule).setBackupStatusIndicator === 'function') {
+      (GoogleDrive as GoogleDriveModule).setBackupStatusIndicator(backupStatusIndicator);
     }
 
     // Load Google auth state
@@ -4226,8 +4227,8 @@ function safePostMessage(message: unknown) {
     await GoogleDrive.scheduleAutoBackup();
 
     // Update backup status indicator after everything is loaded
-    if (typeof (GoogleDrive as any).updateBackupStatusIndicator === 'function') {
-      (GoogleDrive as any).updateBackupStatusIndicator();
+    if (typeof (GoogleDrive as GoogleDriveModule).updateBackupStatusIndicator === 'function') {
+      (GoogleDrive as GoogleDriveModule).updateBackupStatusIndicator();
     }
 
     // Aggressively ensure no duplicate panes exist before appending
@@ -4256,7 +4257,7 @@ function safePostMessage(message: unknown) {
     visibilitySizingTimeoutId = setTimeout(() => {
       // If timestamps were deferred while animating, append them first so sizing sees them
       appendPendingTimestamps();
-      if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+      if (typeof (window as TimekeeperWindow).recalculateTimestampsArea === 'function') (window as TimekeeperWindow).recalculateTimestampsArea();
       ensureMinPaneHeight();
       clampAndSavePanePosition(true);
       visibilitySizingTimeoutId = null;
@@ -4352,17 +4353,17 @@ function safePostMessage(message: unknown) {
       }
     }
 
-    history.pushState = function () {
-      const res = origPush.apply(this, arguments as any);
+    history.pushState = function (data: unknown, unused: string, url?: string | URL | null) {
+      const res = origPush.apply(this, arguments as unknown as Parameters<typeof origPush>);
       dispatchLocationChange();
       return res;
-    } as any;
+    };
 
-    history.replaceState = function () {
-      const res = origReplace.apply(this, arguments as any);
+    history.replaceState = function (data: unknown, unused: string, url?: string | URL | null) {
+      const res = origReplace.apply(this, arguments as unknown as Parameters<typeof origReplace>);
       dispatchLocationChange();
       return res;
-    } as any;
+    };
 
     window.addEventListener('popstate', dispatchLocationChange);
 
