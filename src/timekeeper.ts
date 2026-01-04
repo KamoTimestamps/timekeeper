@@ -1,6 +1,19 @@
 import { getHolidayEmoji } from './holidays';
 import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix } from './util';
 import { addTooltip } from './tooltip';
+import delegate from 'delegate-it';
+import {
+  saveToIndexedDB,
+  saveSingleTimestampToIndexedDB,
+  deleteSingleTimestampFromIndexedDB,
+  loadFromIndexedDB,
+  saveGlobalSettings,
+  loadGlobalSettings,
+  getAllFromIndexedDB,
+  removeFromIndexedDB,
+  getDB,
+  TimestampRecord
+} from './indexed-db';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
@@ -44,18 +57,12 @@ if (hash && hash.length > 1) {
           token: token,
           timestamp: Date.now()
         };
-        // Direct IndexedDB write (can't use async helper here as it's not defined yet)
-        const openReq = indexedDB.open('ytls-timestamps-db', 3);
-        openReq.onsuccess = () => {
-          const db = openReq.result;
-          const tx = db.transaction('settings', 'readwrite');
-          const store = tx.objectStore('settings');
-          store.put({ key: 'oauth_message', value: message });
-          tx.oncomplete = () => {
-            console.log('[Timekeeper] Token broadcast via IndexedDB completed, timestamp:', message.timestamp);
-            db.close();
-          };
-        };
+        // Use saveGlobalSettings to store the message
+        saveGlobalSettings('oauth_message', message).then(() => {
+          console.log('[Timekeeper] Token broadcast via IndexedDB completed, timestamp:', message.timestamp);
+        }).catch((err) => {
+          console.log('[Timekeeper] Failed to save oauth_message to IndexedDB:', err);
+        });
       }
 
       // Clean up the hash from the URL
@@ -158,7 +165,8 @@ if (hash && hash.length > 1) {
     if (rect && (rect.width || rect.height)) {
       updateLastSavedPanePositionFromRect(rect);
       if (save) {
-        saveGlobalSettings('windowPosition', lastSavedPanePosition);
+        saveGlobalSettings('windowPosition', lastSavedPanePosition)
+          .catch(err => log(`Failed to save window position: ${err}`, 'error'));
         safePostMessage({ type: 'window_position_updated', position: lastSavedPanePosition, timestamp: Date.now() });
       }
     }
@@ -577,13 +585,6 @@ function safePostMessage(message: unknown) {
   let suppressSortUntilRefocus = false;
   // Track the most recently modified timestamp (GUID) for negative-diff-based sorting
   let mostRecentlyModifiedTimestampGuid: string | null = null;
-
-  type TimestampRecord = {
-    start: number;
-    comment: string;
-    guid: string;
-  };
-
 
   // Global cache for latest timestamp value
   let latestTimestampValue: number | null = null;
@@ -1186,64 +1187,19 @@ function safePostMessage(message: unknown) {
     // Setup indent gutter - displays in left margin without affecting layout
     const indentGutter = document.createElement("div");
     indentGutter.style.cssText = "position:absolute;left:0;top:0;width:20px;height:100%;display:flex;align-items:center;justify-content:center;cursor:pointer;";
+    indentGutter.dataset.action = "toggle-indent";
     addTooltip(indentGutter, "Click to toggle indent");
 
     const indentToggle = document.createElement("span");
     indentToggle.style.cssText = "color:#999;font-size:12px;pointer-events:none;display:none;";
+    indentToggle.className = "indent-toggle";
 
-    // Helper function to update arrow icon based on current indent state
-    const updateArrowIcon = () => {
-      const currentIndent = extractIndentLevel(commentInput.value);
-      indentToggle.textContent = currentIndent === 1 ? "◀" : "▶";
-    };
-
-    // Handle indent toggle on entire gutter click
-    const handleIndentToggle = (e: Event) => {
-      e.stopPropagation();
-      const currentIndent = extractIndentLevel(commentInput.value);
-      const cleanComment = removeIndentMarker(commentInput.value);
-      const newIndent = currentIndent === 0 ? 1 : 0;
-
-      // Determine marker based on list context when indenting
-      let marker = "";
-      if (newIndent === 1) {
-        const items = getTimestampItems();
-        const currentIndex = items.indexOf(li);
-        marker = determineIndentMarkerForIndex(currentIndex);
-      }
-
-      commentInput.value = `${marker}${cleanComment}`;
-
-      // Immediately update arrow icon
-      updateArrowIcon();
-      updateIndentMarkers();
-      const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
-      saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
-    };
-
-    indentGutter.onclick = handleIndentToggle;
     indentGutter.append(indentToggle);
 
     // Add padding to li for gutter space
     li.style.cssText = "position:relative;padding-left:20px;";
 
-    li.addEventListener("mouseenter", () => {
-      // Update arrow direction based on current indent state
-      updateArrowIcon();
-      indentToggle.style.display = "inline";
-    });
-
-    li.addEventListener("mouseleave", () => {
-      indentToggle.style.display = "none";
-    });
-
-    // Add mouseleave listener to check for negative time diff and sort if needed
-    li.addEventListener("mouseleave", () => {
-      // Only sort immediately if this is the most recently modified timestamp and it has a negative diff
-      if (li.dataset.guid === mostRecentlyModifiedTimestampGuid && hasNegativeTimeDifference(li)) {
-        sortTimestampsAndUpdateDisplay();
-      }
-    });
+    // Mouseenter/mouseleave now handled via delegation
 
     commentInput.value = comment || "";
     commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
@@ -1252,111 +1208,37 @@ function safePostMessage(message: unknown) {
     commentInput.autocapitalize = "off" as any;
     commentInput.autocomplete = "off";
     commentInput.spellcheck = false;
-    commentInput.addEventListener("focusin", () => {
-      suppressSortUntilRefocus = false;
-    });
-    // If blur occurs without recent pointer interaction and without a local focus target, restore focus
-    commentInput.addEventListener("focusout", (ev) => {
-      const rt = (ev as FocusEvent).relatedTarget as Element | null;
-      const recentPointer = Date.now() - lastPointerDownTs < 250;
-      const movingWithinPane = !!rt && !!pane && pane.contains(rt);
-      if (!recentPointer && !movingWithinPane) {
-        suppressSortUntilRefocus = true;
-        setTimeout(() => {
-          // If nothing else took focus, restore here
-          if (document.activeElement === document.body || document.activeElement == null) {
-            commentInput.focus({ preventScroll: true });
-            suppressSortUntilRefocus = false;
-          }
-        }, 0);
-      }
-    });
-    // Save on input, but avoid saving mid-composition (IME/emoji picker)
-    commentInput.addEventListener("input", (ev) => {
-      const ie = ev as InputEvent;
-      if (ie && (ie.isComposing || ie.inputType === "insertCompositionText")) {
-        return;
-      }
-      // Debounce comment saves with 500ms delay
-      const existingTimeout = commentSaveTimeouts.get(timestampGuid);
-      if (existingTimeout) {
-        clearTimeout(existingTimeout);
-      }
-
-      const timeout = setTimeout(() => {
-        const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
-        saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
-        commentSaveTimeouts.delete(timestampGuid);
-      }, 500);
-
-      commentSaveTimeouts.set(timestampGuid, timeout);
-    });
-    // Commit a quick save when composition ends (e.g., emoji/IME finalized)
-    commentInput.addEventListener("compositionend", () => {
-      const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
-      // Let the finalized character land, then save
-      setTimeout(() => {
-        saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
-      }, 50);
-    });
+    commentInput.dataset.action = "comment";
+    // Event handlers now managed via delegation
 
     minus.textContent = "➖";
     minus.dataset.increment = "-1";
     minus.style.cursor = "pointer";
     minus.style.margin = "0px";
-    minus.addEventListener("mouseenter", () => {
-      minus.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
-    });
-    minus.addEventListener("mouseleave", () => {
-      minus.style.textShadow = "none";
-    });
+    minus.className = "ts-button ts-minus";
 
     plus.textContent = "➕";
     plus.dataset.increment = "1";
     plus.style.cursor = "pointer";
     plus.style.margin = "0px";
-    plus.addEventListener("mouseenter", () => {
-      plus.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
-    });
-    plus.addEventListener("mouseleave", () => {
-      plus.style.textShadow = "none";
-    });
+    plus.className = "ts-button ts-plus";
 
     record.textContent = "⏺️";
     record.style.cursor = "pointer";
     record.style.margin = "0px";
+    record.className = "ts-button ts-record";
+    record.dataset.action = "record";
     addTooltip(record, "Set to current playback time");
-    record.addEventListener("mouseenter", () => {
-      record.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
-    });
-    record.addEventListener("mouseleave", () => {
-      record.style.textShadow = "none";
-    });
-    record.onclick = () => {
-      const player = getActivePlayer();
-      const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
-      if (Number.isFinite(currentTime)) {
-        log(`Timestamps changedset to current playback time ${currentTime}`);
-        formatTime(anchor, currentTime);
-        updateTimeDifferences();
-        updateIndentMarkers();
-        saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
-        mostRecentlyModifiedTimestampGuid = timestampGuid;
-      }
-    };
 
     formatTime(anchor, sanitizedStart);
     invalidateLatestTimestampValue();
 
     del.textContent = "🗑️";
     del.style.cssText = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
-    del.addEventListener("mouseenter", () => {
-      del.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(255, 100, 100, 0.6)";
-    });
-    del.addEventListener("mouseleave", () => {
-      del.style.textShadow = "none";
-    });
-    del.onclick = () => {
+    del.className = "ts-button ts-delete";
+    del.dataset.action = "delete";
+    // Delete handler logic now in delegated handler
+    (del as any).__deleteHandler = () => {
       // Track the timeout so we can cancel it if the timestamp is removed early
       let cancelTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -2297,70 +2179,12 @@ function safePostMessage(message: unknown) {
     video.addEventListener("seeking", handleSeeking);
   }
 
-  // === IndexedDB Helper Functions ===
-  const DB_NAME = 'ytls-timestamps-db';
-  const DB_VERSION = 3;
-  const STORE_NAME = 'timestamps';
-  const STORE_NAME_V2 = 'timestamps_v2';
-  const SETTINGS_STORE_NAME = 'settings';
-
-  // Persistent database connection
-  let dbConnection: IDBDatabase | null = null;
-  let dbConnectionPromise: Promise<IDBDatabase> | null = null;
-
-  // Get or create the database connection
-  function getDB(): Promise<IDBDatabase> {
-    // If we have a valid connection, return it
-    if (dbConnection) {
-      try {
-        // Verify the connection is actually usable by checking objectStoreNames
-        // This will throw if the connection is closed
-        const isValid = dbConnection.objectStoreNames.length >= 0;
-        if (isValid) {
-          return Promise.resolve(dbConnection);
-        }
-      } catch (err) {
-        // Connection is closed/invalid, clear it
-        log('IndexedDB connection is no longer usable:', err, 'warn');
-        dbConnection = null;
-      }
-    }
-
-    // If a connection is already being established, return that promise
-    if (dbConnectionPromise) {
-      return dbConnectionPromise;
-    }
-
-    // Create a new connection
-    dbConnectionPromise = openIndexedDB().then(db => {
-      dbConnection = db;
-      dbConnectionPromise = null;
-
-      // Handle unexpected closes
-      db.onclose = () => {
-        log('IndexedDB connection closed unexpectedly', 'warn');
-        dbConnection = null;
-      };
-
-      db.onerror = (event) => {
-        log('IndexedDB connection error:', event, 'error');
-      };
-
-      return db;
-    }).catch(err => {
-      dbConnectionPromise = null;
-      throw err;
-    });
-
-    return dbConnectionPromise;
-  }
-
   // Build export JSON and filename for all timestamps
   async function buildExportPayload(): Promise<{ json: string; filename: string; totalVideos: number; totalTimestamps: number }> {
     const exportData = {} as Record<string, unknown>;
 
     // Get all timestamps from v2 store
-    const allTimestamps = await getAllFromIndexedDB(STORE_NAME_V2);
+    const allTimestamps = await getAllFromIndexedDB('timestamps_v2');
 
     // Group timestamps by video_id
     const videoGroups = new Map<string, TimestampRecord[]>();
@@ -2410,7 +2234,7 @@ function safePostMessage(message: unknown) {
   // Build CSV payload with columns: Tag,Timestamp,URL
   async function buildExportCsvPayload(): Promise<{ csv: string; filename: string; totalVideos: number; totalTimestamps: number }> {
     // Get all timestamps from v2 store
-    const allTimestamps = (await getAllFromIndexedDB(STORE_NAME_V2)) as Array<{ guid: string; video_id: string; start: number; comment: string }>;
+    const allTimestamps = (await getAllFromIndexedDB('timestamps_v2')) as Array<{ guid: string; video_id: string; start: number; comment: string }>;
 
     // Early return with header when no timestamps
     if (!Array.isArray(allTimestamps) || allTimestamps.length === 0) {
@@ -2478,396 +2302,6 @@ function safePostMessage(message: unknown) {
     }
   }
 
-  function openIndexedDB(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-      request.onupgradeneeded = event => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        const oldVersion = event.oldVersion;
-        const transaction = (event.target as IDBOpenDBRequest).transaction!;
-
-        // Version 1: Create initial timestamps store
-        if (oldVersion < 1) {
-          db.createObjectStore(STORE_NAME, { keyPath: 'video_id' });
-        }
-
-        // Version 2: Create settings store
-        if (oldVersion < 2 && !db.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
-          db.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'key' });
-        }
-
-        // Version 3: Migrate from timestamps to timestamps_v2 and delete old store
-        if (oldVersion < 3) {
-          // Export backup before migration
-          if (db.objectStoreNames.contains(STORE_NAME)) {
-            log('Exporting backup before v2 migration...');
-            const v1Store = transaction.objectStore(STORE_NAME);
-            const exportRequest = v1Store.getAll();
-
-            exportRequest.onsuccess = () => {
-              const v1Records = exportRequest.result as Array<{
-                video_id: string;
-                timestamps: TimestampRecord[];
-              }>;
-
-              if (v1Records.length > 0) {
-                try {
-                  const exportData = {} as Record<string, unknown>;
-                  let totalTimestamps = 0;
-
-                  v1Records.forEach(record => {
-                    if (Array.isArray(record.timestamps) && record.timestamps.length > 0) {
-                      const timestampsWithGuids = record.timestamps.map(ts => ({
-                        guid: ts.guid || crypto.randomUUID(),
-                        start: ts.start,
-                        comment: ts.comment
-                      }));
-
-                      exportData[`ytls-${record.video_id}`] = {
-                        video_id: record.video_id,
-                        timestamps: timestampsWithGuids.sort((a, b) => a.start - b.start)
-                      };
-                      totalTimestamps += timestampsWithGuids.length;
-                    }
-                  });
-
-                  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `timekeeper-data-${getTimestampSuffix()}.json`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-
-                  log(`Pre-migration backup exported: ${v1Records.length} videos, ${totalTimestamps} timestamps`);
-                } catch (err) {
-                  log('Failed to export pre-migration backup:', err, 'error');
-                }
-              }
-            };
-          }
-
-          // Create v2 store with new structure: guid -> {guid, video_id, start, comment}
-          const v2Store = db.createObjectStore(STORE_NAME_V2, { keyPath: 'guid' });
-          v2Store.createIndex('video_id', 'video_id', { unique: false });
-          v2Store.createIndex('video_start', ['video_id', 'start'], { unique: false });
-
-          // Migrate data from v1 to v2 if v1 exists
-          if (db.objectStoreNames.contains(STORE_NAME)) {
-            const v1Store = transaction.objectStore(STORE_NAME);
-            const getAllRequest = v1Store.getAll();
-
-            getAllRequest.onsuccess = () => {
-              const v1Records = getAllRequest.result as Array<{
-                video_id: string;
-                timestamps: TimestampRecord[];
-              }>;
-
-              if (v1Records.length > 0) {
-                let totalMigrated = 0;
-                v1Records.forEach(record => {
-                  if (Array.isArray(record.timestamps) && record.timestamps.length > 0) {
-                    record.timestamps.forEach(ts => {
-                      v2Store.put({
-                        guid: ts.guid || crypto.randomUUID(),
-                        video_id: record.video_id,
-                        start: ts.start,
-                        comment: ts.comment
-                      });
-                      totalMigrated++;
-                    });
-                  }
-                });
-                log(`Migrated ${totalMigrated} timestamps from ${v1Records.length} videos to v2 store`);
-              }
-            };
-
-            // Delete the old store after migration
-            db.deleteObjectStore(STORE_NAME);
-            log('Deleted old timestamps store after migration to v2');
-          }
-        }
-      };
-      request.onsuccess = event => {
-        resolve((event.target as IDBOpenDBRequest).result);
-      };
-      request.onerror = event => {
-        const error = (event.target as IDBOpenDBRequest).error;
-        reject(error ?? new Error('Failed to open IndexedDB'));
-      };
-    });
-  }
-
-  // Helper to execute a transaction with error handling
-  function executeTransaction<T>(
-    storeName: string,
-    mode: IDBTransactionMode,
-    operation: (store: IDBObjectStore) => IDBRequest<T> | void
-  ): Promise<T | undefined> {
-    return getDB().then(db => {
-      return new Promise<T | undefined>((resolve, reject) => {
-        let tx: IDBTransaction;
-        try {
-          tx = db.transaction(storeName, mode);
-        } catch (err) {
-          reject(new Error(`Failed to create transaction for ${storeName}: ${err}`));
-          return;
-        }
-
-        const store = tx.objectStore(storeName);
-        let request: IDBRequest<T> | undefined;
-
-        try {
-          request = operation(store) as IDBRequest<T> | undefined;
-        } catch (err) {
-          reject(new Error(`Failed to execute operation on ${storeName}: ${err}`));
-          return;
-        }
-
-        if (request) {
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error ?? new Error(`IndexedDB ${mode} operation failed`));
-        }
-
-        tx.oncomplete = () => {
-          if (!request) resolve(undefined);
-        };
-        tx.onerror = () => reject(tx.error ?? new Error(`IndexedDB transaction failed`));
-        tx.onabort = () => reject(tx.error ?? new Error(`IndexedDB transaction aborted`));
-      });
-    });
-  }
-
-  function saveToIndexedDB(videoId: string, data: TimestampRecord[]): Promise<void> {
-    // Save to v2 store only
-    return getDB().then(db => {
-      return new Promise<void>((resolve, reject) => {
-        let tx: IDBTransaction;
-        try {
-          tx = db.transaction([STORE_NAME_V2], 'readwrite');
-        } catch (err) {
-          reject(new Error(`Failed to create transaction: ${err}`));
-          return;
-        }
-
-        const v2Store = tx.objectStore(STORE_NAME_V2);
-        const v2Index = v2Store.index('video_id');
-
-        // Get existing records for this video
-        const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
-
-        getRequest.onsuccess = () => {
-          try {
-            const existingRecords = getRequest.result as Array<{guid: string}>;
-            const newGuids = new Set(data.map(ts => ts.guid));
-
-            // Delete removed timestamps
-            existingRecords.forEach(record => {
-              if (!newGuids.has(record.guid)) {
-                v2Store.delete(record.guid);
-              }
-            });
-
-            // Add/update timestamps
-            data.forEach(ts => {
-              v2Store.put({
-                guid: ts.guid,
-                video_id: videoId,
-                start: ts.start,
-                comment: ts.comment
-              });
-            });
-          } catch (err) {
-            log('Error during save operation:', err, 'error');
-            // Let the transaction abort handler catch this
-          }
-        };
-
-        getRequest.onerror = () => {
-          reject(getRequest.error ?? new Error('Failed to get existing records'));
-        };
-
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error('Failed to save to IndexedDB'));
-        tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted during save'));
-      });
-    });
-  }
-
-  function saveSingleTimestampToIndexedDB(videoId: string, timestamp: TimestampRecord): Promise<void> {
-    // Save single timestamp to v2 store only
-    return getDB().then(db => {
-      return new Promise<void>((resolve, reject) => {
-        let tx: IDBTransaction;
-        try {
-          tx = db.transaction([STORE_NAME_V2], 'readwrite');
-        } catch (err) {
-          reject(new Error(`Failed to create transaction: ${err}`));
-          return;
-        }
-
-        // Write to v2 store (individual record)
-        const v2Store = tx.objectStore(STORE_NAME_V2);
-        const putRequest = v2Store.put({
-          guid: timestamp.guid,
-          video_id: videoId,
-          start: timestamp.start,
-          comment: timestamp.comment
-        });
-
-        putRequest.onerror = () => {
-          reject(putRequest.error ?? new Error('Failed to put timestamp'));
-        };
-
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error('Failed to save single timestamp to IndexedDB'));
-        tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted during single timestamp save'));
-      });
-    });
-  }
-
-  function deleteSingleTimestampFromIndexedDB(videoId: string, guid: string): Promise<void> {
-    // Delete single timestamp from v2 store only
-    log(`Deleting timestamp ${guid} for video ${videoId}`);
-    return getDB().then(db => {
-      return new Promise<void>((resolve, reject) => {
-        let tx: IDBTransaction;
-        try {
-          tx = db.transaction([STORE_NAME_V2], 'readwrite');
-        } catch (err) {
-          reject(new Error(`Failed to create transaction: ${err}`));
-          return;
-        }
-
-        // Delete from v2 store
-        const v2Store = tx.objectStore(STORE_NAME_V2);
-        const deleteRequest = v2Store.delete(guid);
-
-        deleteRequest.onerror = () => {
-          reject(deleteRequest.error ?? new Error('Failed to delete timestamp'));
-        };
-
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error('Failed to delete single timestamp from IndexedDB'));
-        tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted during timestamp deletion'));
-      });
-    });
-  }
-
-  function loadFromIndexedDB(videoId: string): Promise<TimestampRecord[] | null> {
-    // Load from v2 store only
-    return getDB().then(db => {
-      return new Promise<TimestampRecord[] | null>((resolve) => {
-        let tx: IDBTransaction;
-        try {
-          tx = db.transaction([STORE_NAME_V2], 'readonly');
-        } catch (err) {
-          log('Failed to create read transaction:', err, 'warn');
-          resolve(null);
-          return;
-        }
-
-        const v2Store = tx.objectStore(STORE_NAME_V2);
-        const v2Index = v2Store.index('video_id');
-
-        const v2Request = v2Index.getAll(IDBKeyRange.only(videoId));
-
-        v2Request.onsuccess = () => {
-          const v2Records = v2Request.result as Array<{guid: string; video_id: string; start: number; comment: string}>;
-
-          if (v2Records.length > 0) {
-            // Found data in v2 store
-            const timestamps = v2Records.map(r => ({
-              guid: r.guid,
-              start: r.start,
-              comment: r.comment
-            })).sort((a, b) => a.start - b.start);
-            resolve(timestamps);
-          } else {
-            // No data found
-            resolve(null);
-          }
-        };
-
-        v2Request.onerror = () => {
-          log('Failed to load timestamps:', v2Request.error, 'warn');
-          resolve(null);
-        };
-
-        tx.onabort = () => {
-          log('Transaction aborted during load:', tx.error, 'warn');
-          resolve(null);
-        };
-      });
-    });
-  }
-
-  function removeFromIndexedDB(videoId: string): Promise<void> {
-    // Remove all timestamps for a video from v2 store
-    return getDB().then(db => {
-      return new Promise<void>((resolve, reject) => {
-        let tx: IDBTransaction;
-        try {
-          tx = db.transaction([STORE_NAME_V2], 'readwrite');
-        } catch (err) {
-          reject(new Error(`Failed to create transaction: ${err}`));
-          return;
-        }
-
-        const v2Store = tx.objectStore(STORE_NAME_V2);
-        const v2Index = v2Store.index('video_id');
-        const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
-
-        getRequest.onsuccess = () => {
-          try {
-            const records = getRequest.result as Array<{guid: string}>;
-            records.forEach(record => {
-              v2Store.delete(record.guid);
-            });
-          } catch (err) {
-            log('Error during remove operation:', err, 'error');
-          }
-        };
-
-        getRequest.onerror = () => {
-          reject(getRequest.error ?? new Error('Failed to get records for removal'));
-        };
-
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error('Failed to remove timestamps'));
-        tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted during timestamp removal'));
-      });
-    });
-  }
-
-  function getAllFromIndexedDB(storeName: string): Promise<unknown[]> {
-    return executeTransaction(storeName, 'readonly', (store) => {
-      return store.getAll();
-    }).then(result => {
-      return Array.isArray(result) ? result : [];
-    });
-  }
-
-
-
-  function saveGlobalSettings(key: string, value: unknown) {
-    executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
-      store.put({ key, value });
-    }).catch(err => {
-      log(`Failed to save setting '${key}' to IndexedDB:`, err, 'error');
-    });
-  }
-
-  function loadGlobalSettings(key: string): Promise<unknown> {
-    return executeTransaction(SETTINGS_STORE_NAME, 'readonly', (store) => {
-      return store.get(key);
-    }).then(result => {
-      return (result as { value?: unknown } | undefined)?.value;
-    }).catch(err => {
-      log(`Failed to load setting '${key}' from IndexedDB:`, err, 'error');
-      return undefined;
-    });
-  }
 
 
 
@@ -2876,7 +2310,8 @@ function safePostMessage(message: unknown) {
     if (!pane) return;
 
     const isVisible = pane.style.display !== "none";
-    saveGlobalSettings('uiVisible', isVisible);
+    saveGlobalSettings('uiVisible', isVisible)
+      .catch(err => log(`Failed to save UI visibility state: ${err}`, 'error'));
   }
 
   function syncToggleButtons(visibilityOverride?: boolean) {
@@ -2896,38 +2331,29 @@ function safePostMessage(message: unknown) {
     }
   }
 
-  function loadUIVisibilityState() {
+  async function loadUIVisibilityState() {
     if (!pane) return;
 
-    loadGlobalSettings('uiVisible').then(value => {
-      const isVisible = value as boolean | undefined;
-      if (typeof isVisible === 'boolean') {
-        if (isVisible) {
-          pane.style.display = "flex";
-          // Apply zoom-in animation when showing initially
-          pane.classList.remove("ytls-zoom-out");
-          pane.classList.add("ytls-zoom-in");
-        } else {
-          pane.style.display = "none";
-        }
-        syncToggleButtons(isVisible);
-      } else {
-        // Default to visible if not found
+    const value = await loadGlobalSettings('uiVisible');
+    const isVisible = value as boolean | undefined;
+    if (typeof isVisible === 'boolean') {
+      if (isVisible) {
         pane.style.display = "flex";
         // Apply zoom-in animation when showing initially
         pane.classList.remove("ytls-zoom-out");
         pane.classList.add("ytls-zoom-in");
-        syncToggleButtons(true);
+      } else {
+        pane.style.display = "none";
       }
-    }).catch(err => {
-      log("Failed to load UI visibility state:", err, 'error');
-      // Default to visible on error
+      syncToggleButtons(isVisible);
+    } else {
+      // Default to visible if not found
       pane.style.display = "flex";
       // Apply zoom-in animation when showing initially
       pane.classList.remove("ytls-zoom-out");
       pane.classList.add("ytls-zoom-in");
       syncToggleButtons(true);
-    });
+    }
   }
 
   function togglePaneVisibility(force?: boolean) {
@@ -3217,6 +2643,186 @@ function safePostMessage(message: unknown) {
         }
       }
     });
+
+  // Set up delegated event handlers for list items
+  // Hover effects for buttons
+  delegate('li .ts-button', 'mouseenter', (event: MouseEvent) => {
+    const btn = event.target as HTMLElement;
+    btn.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
+  }, { base: list });
+
+  delegate('li .ts-button', 'mouseleave', (event: MouseEvent) => {
+    const btn = event.target as HTMLElement;
+    btn.style.textShadow = "none";
+  }, { base: list });
+
+  delegate('li .ts-delete', 'mouseenter', (event: MouseEvent) => {
+    const btn = event.target as HTMLElement;
+    btn.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(255, 100, 100, 0.6)";
+  }, { base: list });
+
+  // Show/hide indent toggle on li hover
+  delegate('li', 'mouseenter', (event: MouseEvent) => {
+    const li = event.target as HTMLLIElement;
+    const toggle = li.querySelector('.indent-toggle') as HTMLElement;
+    if (toggle) {
+      const commentInput = li.querySelector('input[data-action="comment"]') as HTMLInputElement;
+      if (commentInput) {
+        const currentIndent = extractIndentLevel(commentInput.value);
+        toggle.textContent = currentIndent === 1 ? "◀" : "▶";
+      }
+      toggle.style.display = "inline";
+    }
+  }, { base: list });
+
+  delegate('li', 'mouseleave', (event: MouseEvent) => {
+    const li = event.target as HTMLLIElement;
+    const toggle = li.querySelector('.indent-toggle') as HTMLElement;
+    if (toggle) {
+      toggle.style.display = "none";
+    }
+    // Check for negative time diff and sort if needed
+    if (li.dataset.guid === mostRecentlyModifiedTimestampGuid && hasNegativeTimeDifference(li)) {
+      sortTimestampsAndUpdateDisplay();
+    }
+  }, { base: list });
+
+  // Indent toggle handler
+  delegate('[data-action="toggle-indent"]', 'click', (event: MouseEvent) => {
+    event.stopPropagation();
+    const gutter = event.target as HTMLElement;
+    const li = gutter.closest('li') as HTMLLIElement;
+    if (!li) return;
+
+    const commentInput = li.querySelector('input[data-action="comment"]') as HTMLInputElement;
+    const anchor = li.querySelector('a[data-time]') as HTMLAnchorElement;
+    if (!commentInput || !anchor) return;
+
+    const currentIndent = extractIndentLevel(commentInput.value);
+    const cleanComment = removeIndentMarker(commentInput.value);
+    const newIndent = currentIndent === 0 ? 1 : 0;
+
+    let marker = "";
+    if (newIndent === 1) {
+      const items = getTimestampItems();
+      const currentIndex = items.indexOf(li);
+      marker = determineIndentMarkerForIndex(currentIndex);
+    }
+
+    commentInput.value = `${marker}${cleanComment}`;
+
+    // Update arrow icon
+    const toggle = gutter.querySelector('.indent-toggle') as HTMLElement;
+    if (toggle) {
+      toggle.textContent = newIndent === 1 ? "◀" : "▶";
+    }
+
+    updateIndentMarkers();
+    const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
+    const guid = li.dataset.guid;
+    if (guid) {
+      saveSingleTimestampDirect(currentLoadedVideoId, guid, currentTime, commentInput.value);
+    }
+  }, { base: list });
+
+  // Comment input handlers
+  delegate('[data-action="comment"]', 'focusin', () => {
+    suppressSortUntilRefocus = false;
+  }, { base: list });
+
+  delegate('[data-action="comment"]', 'focusout', (event: FocusEvent) => {
+    const rt = event.relatedTarget as Element | null;
+    const recentPointer = Date.now() - lastPointerDownTs < 250;
+    const movingWithinPane = !!rt && !!pane && pane.contains(rt);
+    if (!recentPointer && !movingWithinPane) {
+      suppressSortUntilRefocus = true;
+      const input = event.target as HTMLInputElement;
+      setTimeout(() => {
+        if (document.activeElement === document.body || document.activeElement == null) {
+          input.focus({ preventScroll: true });
+          suppressSortUntilRefocus = false;
+        }
+      }, 0);
+    }
+  }, { base: list });
+
+  delegate('[data-action="comment"]', 'input', (event: Event) => {
+    const ie = event as InputEvent;
+    if (ie && (ie.isComposing || ie.inputType === "insertCompositionText")) {
+      return;
+    }
+    const input = event.target as HTMLInputElement;
+    const li = input.closest('li') as HTMLLIElement;
+    if (!li) return;
+
+    const guid = li.dataset.guid;
+    if (!guid) return;
+
+    const existingTimeout = commentSaveTimeouts.get(guid);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+    }
+
+    const timeout = setTimeout(() => {
+      const anchor = li.querySelector('a[data-time]') as HTMLAnchorElement;
+      const currentTime = Number.parseInt(anchor?.dataset.time ?? "0", 10);
+      saveSingleTimestampDirect(currentLoadedVideoId, guid, currentTime, input.value);
+      commentSaveTimeouts.delete(guid);
+    }, 500);
+
+    commentSaveTimeouts.set(guid, timeout);
+  }, { base: list });
+
+  delegate('[data-action="comment"]', 'compositionend', (event: CompositionEvent) => {
+    const input = event.target as HTMLInputElement;
+    const li = input.closest('li') as HTMLLIElement;
+    if (!li) return;
+
+    const guid = li.dataset.guid;
+    if (!guid) return;
+
+    setTimeout(() => {
+      const anchor = li.querySelector('a[data-time]') as HTMLAnchorElement;
+      const currentTime = Number.parseInt(anchor?.dataset.time ?? "0", 10);
+      saveSingleTimestampDirect(currentLoadedVideoId, guid, currentTime, input.value);
+    }, 50);
+  }, { base: list });
+
+  // Record button handler
+  delegate('[data-action="record"]', 'click', (event: MouseEvent) => {
+    const record = event.target as HTMLElement;
+    const li = record.closest('li') as HTMLLIElement;
+    if (!li) return;
+
+    const anchor = li.querySelector('a[data-time]') as HTMLAnchorElement;
+    const commentInput = li.querySelector('input[data-action="comment"]') as HTMLInputElement;
+    const guid = li.dataset.guid;
+    if (!anchor || !commentInput || !guid) return;
+
+    const player = getActivePlayer();
+    const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
+    if (Number.isFinite(currentTime)) {
+      log(`Timestamps changed: set to current playback time ${currentTime}`);
+      formatTime(anchor, currentTime);
+      updateTimeDifferences();
+      updateIndentMarkers();
+      saveSingleTimestampDirect(currentLoadedVideoId, guid, currentTime, commentInput.value);
+      mostRecentlyModifiedTimestampGuid = guid;
+    }
+  }, { base: list });
+
+  // Delete button handler
+  delegate('[data-action="delete"]', 'click', (event: MouseEvent) => {
+    const del = event.target as HTMLElement;
+    const li = del.closest('li') as HTMLLIElement;
+    if (!li) return;
+
+    // Call the stored delete handler
+    const handler = (del as any).__deleteHandler;
+    if (handler) {
+      handler();
+    }
+  }, { base: list });
 
   pane.id = "ytls-pane";
   header.id = "ytls-pane-header";
@@ -4330,7 +3936,8 @@ function safePostMessage(message: unknown) {
 
       lastSavedPanePosition = { ...positionData };
       log(`Saving window position and size to IndexedDB: x=${positionData.x}, y=${positionData.y}, width=${positionData.width}, height=${positionData.height}`);
-      saveGlobalSettings('windowPosition', positionData);
+      saveGlobalSettings('windowPosition', positionData)
+        .catch(err => log(`Failed to save window position: ${err}`, 'error'));
 
       safePostMessage({
         type: 'window_position_updated',

@@ -1,6 +1,6 @@
 {
   "name": "timekeeper",
-  "version": "4.4.15",
+  "version": "4.4.18",
   "private": true,
   "description": "Timekeeper userscript TypeScript project",
   "scripts": {
@@ -11,10 +11,13 @@
   "devDependencies": {
     "esbuild": "^0.27.2",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.16"
+    "vitest": "^4.0.16",
+    "idb": "^7.1.1"
   },
   "dependencies": {
     "dayjs": "^1.11.19",
-    "fflate": "^0.8.2"
+    "delegate-it": "^6.3.0",
+    "fflate": "^0.8.2",
+    "fake-indexeddb": "^6.2.5"
   }
 }
