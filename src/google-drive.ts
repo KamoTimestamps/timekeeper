@@ -233,16 +233,17 @@ export async function loadGoogleAuthState() {
 export async function saveGoogleAuthState() {
   try {
     // Validate state before saving
-    const validationResult = GoogleAuthStateSchema.safeParse(googleAuthState);
+    const currentAuthState = getGoogleAuthState();
+    const validationResult = GoogleAuthStateSchema.safeParse(currentAuthState);
     if (!validationResult.success) {
-      const stateRedacted = { ...googleAuthState, accessToken: googleAuthState.accessToken ? '[REDACTED]' : null };
+      const stateRedacted = { ...currentAuthState, accessToken: currentAuthState.accessToken ? '[REDACTED]' : null };
       log('Invalid auth state, cannot save', { state: stateRedacted, errors: validationResult.error.format() }, 'error');
       return;
     }
 
-    await saveGlobalSettings('googleAuthState', googleAuthState);
-    if (googleAuthState.isSignedIn && googleAuthState.accessToken) {
-      log(`Saved Google auth state to IndexedDB for ${googleAuthState.userName || googleAuthState.email || 'user'}`);
+    await saveGlobalSettings('googleAuthState', currentAuthState);
+    if (currentAuthState.isSignedIn && currentAuthState.accessToken) {
+      log(`Saved Google auth state to IndexedDB for ${currentAuthState.userName || currentAuthState.email || 'user'}`);
     } else {
       log('Cleared Google auth state in IndexedDB (signed out)');
     }
@@ -712,13 +713,14 @@ export async function signOutFromGoogle() {
 
 // Verify that the user is still signed in by making a lightweight API call
 export async function verifySignedIn(): Promise<boolean> {
-  if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
+  const authState = getGoogleAuthState();
+  if (!authState.isSignedIn || !authState.accessToken) {
     return false;
   }
 
   try {
     const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { 'Authorization': `Bearer ${googleAuthState.accessToken}` }
+      headers: { 'Authorization': `Bearer ${authState.accessToken}` }
     });
 
     if (response.status === 401) {
@@ -1151,9 +1153,8 @@ export async function runAutoBackupOnce(silent = true) {
     if (isAuthError) {
       // Auth error - clear token immediately and don't retry
       log('Auth error detected, clearing token and stopping retries', null, 'warn');
-      googleAuthState.isSignedIn = false;
       const currentAuth = getGoogleAuthState();
-      setGoogleAuthStateInternal({ ...currentAuth, accessToken: null });
+      AppState.setGoogleAuthState({ ...currentAuth, accessToken: null, isSignedIn: false });
       await saveGoogleAuthState();
       updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
       updateBackupStatusDisplay(); // Update backup status indicator immediately

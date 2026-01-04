@@ -184,6 +184,23 @@ if (hash && hash.length > 1) {
     AppState.setPanePosition(position as any);
   }
 
+  // --- Timestamp state helpers ---
+  function getTimestampsFromState(): TimestampRecord[] {
+    return AppState.getState().timestamps.items;
+  }
+
+  function setTimestampsInState(items: TimestampRecord[]): void {
+    AppState.setTimestamps(items);
+  }
+
+  function getCurrentTimestampIndexFromState(): number | null {
+    return AppState.getState().timestamps.currentIndex;
+  }
+
+  function setCurrentTimestampIndexInState(index: number | null): void {
+    AppState.setCurrentTimestampIndex(index);
+  }
+
   // --- Pane sizing helpers (available across module) ---
   function getPaneRect() {
     if (!pane) return null;
@@ -1747,6 +1764,9 @@ function safePostMessage(message: unknown) {
       return;
     }
 
+    // Sync timestamps to centralized state before saving
+    setTimestampsInState(currentTimestampsFromUI);
+
     saveToIndexedDB(videoId, currentTimestampsFromUI)
       .then(() => log(`Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`))
       .catch(err => log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, 'error'));
@@ -2120,6 +2140,9 @@ function safePostMessage(message: unknown) {
           }
         }
 
+        // Sync loaded timestamps to centralized state
+        setTimestampsInState(finalTimestampsToDisplay);
+
         const playerForHighlight = getActivePlayer();
         const currentTimeForHighlight = playerForHighlight
           ? Math.floor(playerForHighlight.getCurrentTime())
@@ -2132,6 +2155,8 @@ function safePostMessage(message: unknown) {
         clearTimestampsDisplay(); // Ensure UI is cleared if no timestamps are found
         showListPlaceholder('No timestamps for this video');
         updateSeekbarMarkers(); // Ensure seekbar markers are cleared
+        // Sync empty timestamps to centralized state
+        setTimestampsInState([]);
         // Still recalculate area in case list is now empty
         if (typeof (window as any).recalculateTimestampsArea === 'function') {
           requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
