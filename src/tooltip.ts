@@ -3,6 +3,8 @@
  * Creates styled tooltips that appear after a delay
  */
 
+import type { HTMLElementWithTooltip } from './types';
+
 let tooltipElement: HTMLDivElement | null = null;
 let tooltipTimeout: ReturnType<typeof setTimeout> | null = null;
 const TOOLTIP_DELAY = 500; // milliseconds
@@ -246,23 +248,24 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
   }
 
   // Store cleanup function on element for later removal if needed
-  (element as any).__tooltipCleanup = () => {
+  (element as HTMLElementWithTooltip).__tooltipCleanup = () => {
     element.removeEventListener('mouseenter', handleMouseEnter);
     element.removeEventListener('mousemove', handleMouseMove);
     element.removeEventListener('mouseleave', handleMouseLeave);
     try { observer.disconnect(); } catch (_) {}
-    delete (element as any).__tooltipObserver;
+    delete (element as HTMLElementWithTooltip).__tooltipObserver;
   };
-  (element as any).__tooltipObserver = observer;
+  (element as HTMLElementWithTooltip).__tooltipObserver = observer;
 }
 
 /**
  * Remove tooltip from an element
  */
 export function removeTooltip(element: HTMLElement) {
-  if ((element as any).__tooltipCleanup) {
-    (element as any).__tooltipCleanup();
-    delete (element as any).__tooltipCleanup;
+  const elem = element as HTMLElementWithTooltip;
+  if (elem.__tooltipCleanup) {
+    elem.__tooltipCleanup();
+    delete elem.__tooltipCleanup;
   }
   // Ensure tooltip is hidden when tooltip is explicitly removed
   hideTooltip();

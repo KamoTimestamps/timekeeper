@@ -4,19 +4,28 @@ declare const GM_info: {
   };
 };
 
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+import type { LogLevel } from './types';
 
-export function log(message: string, ...args: any[]) {
-  let logLevel: LogLevel = 'debug';
-  const consoleArgs = [...args];
+/**
+ * Log a message to the console with optional log level
+ * @param message - The message to log
+ * @param args - Additional arguments (last can be a log level)
+ */
+export function log(message: string, ...args: (unknown | LogLevel)[]): void {
+  let logLevel: LogLevel = 'log';
+  const consoleArgs: unknown[] = [...args];
   if (args.length > 0 && typeof args[args.length - 1] === 'string' &&
-    ['debug', 'info', 'warn', 'error'].includes(args[args.length - 1])) {
+    ['debug', 'info', 'warn', 'error', 'log'].includes(args[args.length - 1])) {
     logLevel = consoleArgs.pop() as LogLevel;
   }
   const version = GM_info.script.version;
   const prefix = `[Timekeeper v${version}]`;
-  const methodMap: Record<LogLevel, (...args: any[]) => void> = {
-    'debug': console.log, 'info': console.info, 'warn': console.warn, 'error': console.error
+  const methodMap: Record<LogLevel, (...args: unknown[]) => void> = {
+    'debug': console.log,
+    'info': console.info,
+    'warn': console.warn,
+    'error': console.error,
+    'log': console.log
   };
   methodMap[logLevel](`${prefix} ${message}`, ...consoleArgs);
 }

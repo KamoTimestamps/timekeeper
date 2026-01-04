@@ -37,16 +37,23 @@ export let googleAuthState: GoogleAuthState = {
 
 export let autoBackupEnabled = true;
 export let autoBackupIntervalMinutes = 30;
+import type {
+  BuildExportPayloadFn,
+  SaveGlobalSettingsFn,
+  LoadGlobalSettingsFn,
+  ExportPayload,
+} from './types';
+
 export let lastAutoBackupAt: number | null = null;
 export let isAutoBackupRunning = false;
 export let autoBackupRetryAttempts = 0;
 export let autoBackupBackoffMs: number | null = null;
 
 // Display elements (set from main script)
-export let googleUserDisplay: any = null;
-export let backupStatusDisplay: any = null;
-export let authStatusDisplay: any = null;
-export let backupStatusIndicator: any = null;
+export let googleUserDisplay: HTMLElement | null = null;
+export let backupStatusDisplay: HTMLElement | null = null;
+export let authStatusDisplay: HTMLElement | null = null;
+export let backupStatusIndicator: HTMLSpanElement | null = null;
 
 // Helper functions to set display elements
 export function setGoogleUserDisplay(el: HTMLElement | null) {
@@ -82,20 +89,20 @@ function ensureAuthSpinnerStyles() {
 }
 
 // Callbacks (set from main script)
-export let buildExportPayload: any = null;
-export let saveGlobalSettings: any = null;
-export let loadGlobalSettings: any = null;
+export let buildExportPayload: BuildExportPayloadFn | null = null;
+export let saveGlobalSettings: SaveGlobalSettingsFn | null = null;
+export let loadGlobalSettings: LoadGlobalSettingsFn | null = null;
 
 // Helper functions to set callbacks
-export function setBuildExportPayload(fn: any) {
+export function setBuildExportPayload(fn: BuildExportPayloadFn) {
   buildExportPayload = fn;
 }
 
-export function setSaveGlobalSettings(fn: any) {
+export function setSaveGlobalSettings(fn: SaveGlobalSettingsFn) {
   saveGlobalSettings = fn;
 }
 
-export function setLoadGlobalSettings(fn: any) {
+export function setLoadGlobalSettings(fn: LoadGlobalSettingsFn) {
   loadGlobalSettings = fn;
 }
 

@@ -1,6 +1,7 @@
 import { getHolidayEmoji } from './holidays';
 import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix } from './util';
 import { addTooltip } from './tooltip';
+import type { TimekeeperWindow, GoogleDriveModule, HTMLInputElementWithLi, YouTubePlayer, PanePosition } from './types';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
@@ -15,6 +16,10 @@ declare const GM_info: {
 
 import { PANE_STYLES } from "./styles";
 import * as GoogleDrive from "./google-drive";
+const GoogleDriveModule = GoogleDrive as unknown as GoogleDriveModule;
+
+// Helper function to get typed window instance
+const getTimekeeperWindow = (): TimekeeperWindow => window as TimekeeperWindow;
 
 // OAuth detection - always check URL for auth token, runs synchronously before any async operations
 const hash = window.location.hash;
@@ -90,8 +95,8 @@ if (hash && hash.length > 1) {
   }
 
   // Initialize GoogleDrive callbacks early for OAuth handling
-  (GoogleDrive as any).setLoadGlobalSettings(earlyLoadGlobalSettings);
-  (GoogleDrive as any).setSaveGlobalSettings(earlySaveGlobalSettings);
+  GoogleDriveModule.setLoadGlobalSettings?.(earlyLoadGlobalSettings);
+  GoogleDriveModule.setSaveGlobalSettings?.(earlySaveGlobalSettings);
 
   // Check if we're in an OAuth popup and handle it
   const isOAuthPopup = await GoogleDrive.handleOAuthPopup();
@@ -188,7 +193,8 @@ if (hash && hash.length > 1) {
   function performSizingAndSave() {
     // Run a layout recalc then ensure pane sizing/clamping are applied
     requestAnimationFrame(() => {
-      if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+      const tkWindow = getTimekeeperWindow();
+      if (typeof tkWindow.recalculateTimestampsArea === 'function') tkWindow.recalculateTimestampsArea();
       ensureMinPaneHeight();
       clampAndSavePanePosition(true);
     });
@@ -286,8 +292,9 @@ if (hash && hash.length > 1) {
 
     updateIndentMarkers();
     updateSeekbarMarkers();
-    if (typeof (window as any).recalculateTimestampsArea === 'function') {
-      requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
+    const tkWindow = getTimekeeperWindow();
+    if (typeof tkWindow.recalculateTimestampsArea === 'function') {
+      requestAnimationFrame(() => tkWindow.recalculateTimestampsArea());
     }
 
     const playerForHighlight = getActivePlayer();
@@ -874,7 +881,7 @@ function safePostMessage(message: unknown) {
   let isSeeking = false;
 
   // Detect whether playback is behind the live edge using YouTube player internals.
-  function isBehindLiveEdge(playerInstance: any): boolean {
+  function isBehindLiveEdge(playerInstance: YouTubePlayer): boolean {
     if (!playerInstance || typeof playerInstance.getVideoData !== "function") {
       return false;
     }
@@ -1249,7 +1256,7 @@ function safePostMessage(message: unknown) {
     commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
     commentInput.type = "text";
     commentInput.setAttribute("inputmode", "text");
-    commentInput.autocapitalize = "off" as any;
+    commentInput.setAttribute("autocapitalize", "off");
     commentInput.autocomplete = "off";
     commentInput.spellcheck = false;
     commentInput.addEventListener("focusin", () => {
@@ -1539,7 +1546,7 @@ function safePostMessage(message: unknown) {
     } else {
       // Do not append to the live DOM yet; expose the constructed li for callers that are
       // building a fragment to append later.
-      (commentInput as any).__ytls_li = li;
+      (commentInput as HTMLInputElementWithLi).__ytls_li = li;
     }
 
     return commentInput;
@@ -1684,7 +1691,8 @@ function safePostMessage(message: unknown) {
 
     // Always size the list to fill the available pane height, let the resize observer
     // and recalculateTimestampsArea handle the exact maxHeight calculation.
-    if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+    const tkWindow = getTimekeeperWindow();
+    if (typeof tkWindow.recalculateTimestampsArea === 'function') tkWindow.recalculateTimestampsArea();
 
     // Decide whether to show a scrollbar based on content height vs available height
     const paneRect = pane.getBoundingClientRect();
@@ -2120,7 +2128,7 @@ function safePostMessage(message: unknown) {
         finalTimestampsToDisplay.forEach(ts => {
           // Construct LI without appending to the live list
           const input = addTimestamp(ts.start, ts.comment, true, ts.guid, false);
-          const li = (input as any).__ytls_li as HTMLLIElement | undefined;
+          const li = (input as HTMLInputElementWithLi).__ytls_li;
           if (li) frag.appendChild(li);
         });
 
@@ -2141,8 +2149,9 @@ function safePostMessage(message: unknown) {
             updateIndentMarkers();
             updateSeekbarMarkers();
             // Ensure scroll area is recalculated after DOM updates
-            if (typeof (window as any).recalculateTimestampsArea === 'function') {
-              requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
+            const tkWindow = getTimekeeperWindow();
+            if (typeof tkWindow.recalculateTimestampsArea === 'function') {
+              requestAnimationFrame(() => tkWindow.recalculateTimestampsArea());
             }
           }
         }
@@ -2160,8 +2169,9 @@ function safePostMessage(message: unknown) {
         showListPlaceholder('No timestamps for this video');
         updateSeekbarMarkers(); // Ensure seekbar markers are cleared
         // Still recalculate area in case list is now empty
-        if (typeof (window as any).recalculateTimestampsArea === 'function') {
-          requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
+        const tkWindow = getTimekeeperWindow();
+        if (typeof tkWindow.recalculateTimestampsArea === 'function') {
+          requestAnimationFrame(() => tkWindow.recalculateTimestampsArea());
         }
       }
     } catch (err) {
@@ -2174,8 +2184,9 @@ function safePostMessage(message: unknown) {
       }
       requestAnimationFrame(restoreScrollPosition);
       // Ensure scroll area is recalculated after loading timestamps
-      if (typeof (window as any).recalculateTimestampsArea === 'function') {
-        requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
+      const tkWindow = getTimekeeperWindow();
+      if (typeof tkWindow.recalculateTimestampsArea === 'function') {
+        requestAnimationFrame(() => tkWindow.recalculateTimestampsArea());
       }
       // If there is no error being shown, ensure a friendly placeholder appears when the list is empty
       if (list && !list.querySelector('.ytls-error-message')) {
@@ -2850,8 +2861,8 @@ function safePostMessage(message: unknown) {
 
 
 
-  function saveGlobalSettings(key: string, value: unknown) {
-    executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
+  async function saveGlobalSettings(key: string, value: unknown) {
+    await executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
       store.put({ key, value });
     }).catch(err => {
       log(`Failed to save setting '${key}' to IndexedDB:`, err, 'error');
@@ -2979,7 +2990,8 @@ function safePostMessage(message: unknown) {
       visibilitySizingTimeoutId = setTimeout(() => {
         // If timestamps were deferred while animating, append them first so sizing sees them
         appendPendingTimestamps();
-        if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+        const tkWindow = getTimekeeperWindow();
+        if (typeof tkWindow.recalculateTimestampsArea === 'function') tkWindow.recalculateTimestampsArea();
         ensureMinPaneHeight();
         clampAndSavePanePosition(true);
 
@@ -3810,9 +3822,7 @@ function safePostMessage(message: unknown) {
           signButton.textContent = GoogleDrive.googleAuthState.isSignedIn ? "🔓 Sign Out" : "🔐 Sign In";
           addTooltip(signButton, GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive");
           // Ensure main backup status indicator updates immediately
-          if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
-            (GoogleDrive as any).updateBackupStatusDisplay();
-          }
+          GoogleDriveModule.updateBackupStatusDisplay?.();
         }
       );
       driveSection.appendChild(signButton);
@@ -3824,9 +3834,7 @@ function safePostMessage(message: unknown) {
           await GoogleDrive.toggleAutoBackup();
           autoToggleButton.textContent = GoogleDrive.autoBackupEnabled ? "🔁 Auto Backup: On" : "🔁 Auto Backup: Off";
           // Sync main indicator/text immediately
-          if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
-            (GoogleDrive as any).updateBackupStatusDisplay();
-          }
+          GoogleDriveModule.updateBackupStatusDisplay?.();
         }
       );
       driveSection.appendChild(autoToggleButton);
@@ -3838,9 +3846,7 @@ function safePostMessage(message: unknown) {
           await GoogleDrive.setAutoBackupIntervalPrompt();
           intervalButton.textContent = `⏱️ Backup Interval: ${GoogleDrive.autoBackupIntervalMinutes}min`;
           // Ensure status is synced immediately
-          if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
-            (GoogleDrive as any).updateBackupStatusDisplay();
-          }
+          GoogleDriveModule.updateBackupStatusDisplay?.();
         }
       );
       driveSection.appendChild(intervalButton);
@@ -3848,9 +3854,7 @@ function safePostMessage(message: unknown) {
       driveSection.appendChild(createButton("🗄️ Backup Now", "Run a backup immediately", async () => {
         await GoogleDrive.runAutoBackupOnce(false);
         // Update status display right away after initiating manual backup
-        if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
-          (GoogleDrive as any).updateBackupStatusDisplay();
-        }
+        GoogleDriveModule.updateBackupStatusDisplay?.();
       }));
 
       // Add status info displays at the bottom
@@ -4253,8 +4257,8 @@ function safePostMessage(message: unknown) {
       if (!pane) return;
       log('Loading window position from IndexedDB');
       loadGlobalSettings('windowPosition').then(value => {
-        if (value && typeof (value as any).x === 'number' && typeof (value as any).y === 'number') {
-          const pos = value as { x: number; y: number; width?: number; height?: number };
+        if (value && typeof (value as PanePosition).x === 'number' && typeof (value as PanePosition).y === 'number') {
+          const pos = value as PanePosition;
           pane.style.left = `${pos.x}px`;
           pane.style.top = `${pos.y}px`;
           pane.style.right = "auto";
@@ -4289,7 +4293,8 @@ function safePostMessage(message: unknown) {
           updateLastSavedPanePositionFromRect(rect);
         }
         // Ensure the scroll area is sized after restoring position/size
-        if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+        const tkWindow = getTimekeeperWindow();
+        if (typeof tkWindow.recalculateTimestampsArea === 'function') tkWindow.recalculateTimestampsArea();
       }).catch(err => {
         log("failed to load pane position from IndexedDB:", err, 'warn');
         clampPaneToViewport();
@@ -4302,7 +4307,8 @@ function safePostMessage(message: unknown) {
             height: Math.round(rect.height)
           };
         }
-        if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+        const tkWindow2 = getTimekeeperWindow();
+        if (typeof tkWindow2.recalculateTimestampsArea === 'function') tkWindow2.recalculateTimestampsArea();
       });
     }
 
@@ -4595,7 +4601,7 @@ function safePostMessage(message: unknown) {
         list.style.overflowY = available > 0 ? 'auto' : 'hidden';
       }
     }
-    (window as any).recalculateTimestampsArea = recalculateTimestampsArea;
+    getTimekeeperWindow().recalculateTimestampsArea = recalculateTimestampsArea;
 
     setTimeout(() => {
       recalculateTimestampsArea();
@@ -4668,17 +4674,17 @@ function safePostMessage(message: unknown) {
     await loadUIVisibilityState();
 
     // Initialize Google Drive module callbacks using setter functions
-    if (typeof (GoogleDrive as any).setBuildExportPayload === 'function') {
-      (GoogleDrive as any).setBuildExportPayload(buildExportPayload);
+    if (typeof GoogleDriveModule.setBuildExportPayload === 'function') {
+      GoogleDriveModule.setBuildExportPayload?.(buildExportPayload);
     }
-    if (typeof (GoogleDrive as any).setSaveGlobalSettings === 'function') {
-      (GoogleDrive as any).setSaveGlobalSettings(saveGlobalSettings);
+    if (typeof GoogleDriveModule.setSaveGlobalSettings === 'function') {
+      GoogleDriveModule.setSaveGlobalSettings(saveGlobalSettings);
     }
-    if (typeof (GoogleDrive as any).setLoadGlobalSettings === 'function') {
-      (GoogleDrive as any).setLoadGlobalSettings(loadGlobalSettings);
+    if (typeof GoogleDriveModule.setLoadGlobalSettings === 'function') {
+      GoogleDriveModule.setLoadGlobalSettings(loadGlobalSettings);
     }
-    if (typeof (GoogleDrive as any).setBackupStatusIndicator === 'function') {
-      (GoogleDrive as any).setBackupStatusIndicator(backupStatusIndicator);
+    if (typeof GoogleDriveModule.setBackupStatusIndicator === 'function') {
+      GoogleDriveModule.setBackupStatusIndicator(backupStatusIndicator);
     }
 
     // Load Google auth state
@@ -4689,9 +4695,7 @@ function safePostMessage(message: unknown) {
     await GoogleDrive.scheduleAutoBackup();
 
     // Update backup status indicator after everything is loaded
-    if (typeof (GoogleDrive as any).updateBackupStatusIndicator === 'function') {
-      (GoogleDrive as any).updateBackupStatusIndicator();
-    }
+    GoogleDriveModule.updateBackupStatusIndicator?.();
 
     // Aggressively ensure no duplicate panes exist before appending
     const allExistingPanes = document.querySelectorAll("#ytls-pane");
@@ -4719,7 +4723,8 @@ function safePostMessage(message: unknown) {
     visibilitySizingTimeoutId = setTimeout(() => {
       // If timestamps were deferred while animating, append them first so sizing sees them
       appendPendingTimestamps();
-      if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+      const tkWindow = getTimekeeperWindow();
+      if (typeof tkWindow.recalculateTimestampsArea === 'function') tkWindow.recalculateTimestampsArea();
       ensureMinPaneHeight();
       clampAndSavePanePosition(true);
       visibilitySizingTimeoutId = null;
@@ -4815,17 +4820,17 @@ function safePostMessage(message: unknown) {
       }
     }
 
-    history.pushState = function () {
-      const res = origPush.apply(this, arguments as any);
+    history.pushState = function (...args: Parameters<typeof history.pushState>) {
+      const res = origPush.apply(this, args);
       dispatchLocationChange();
       return res;
-    } as any;
+    };
 
-    history.replaceState = function () {
-      const res = origReplace.apply(this, arguments as any);
+    history.replaceState = function (...args: Parameters<typeof history.replaceState>) {
+      const res = origReplace.apply(this, args);
       dispatchLocationChange();
       return res;
-    } as any;
+    };
 
     window.addEventListener('popstate', dispatchLocationChange);
 

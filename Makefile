@@ -8,7 +8,7 @@ server:
 	 @http-server -a 127.0.0.1 -c5
 
 watch:
-	@watchman-make --pattern 'src/**' 'package.json' 'Makefile' --target build
+	@watchman-make --pattern 'src/*.ts' 'Makefile' --target bump build
 
 bump:
 	@current=$$(jq -r '.version' package.json); \
