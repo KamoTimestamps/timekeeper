@@ -1190,7 +1190,7 @@ export async function runAutoBackupOnce(silent = true) {
 
 export async function scheduleAutoBackup(skipImmediateCheck = false) {
   clearAutoBackupSchedule();
-  if (!autoBackupEnabled) return;
+  if (!getAutoBackupEnabled()) return;
   if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) return;
 
   autoBackupIntervalId = setInterval(() => {
@@ -1200,8 +1200,9 @@ export async function scheduleAutoBackup(skipImmediateCheck = false) {
   // Only run immediate backup if not skipped and interval has elapsed
   if (!skipImmediateCheck) {
     const now = Date.now();
-    const intervalMs = Math.max(1, autoBackupIntervalMinutes) * 60 * 1000;
-    if (!lastAutoBackupAt || now - lastAutoBackupAt >= intervalMs) {
+    const intervalMs = Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000;
+    const last = getLastAutoBackupAt();
+    if (!last || now - last >= intervalMs) {
       runAutoBackupOnce(true);
     }
   }

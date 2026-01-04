@@ -163,19 +163,22 @@ export function highlightTimestamp(
   li: HTMLLIElement | null,
   shouldScroll = false
 ): void {
-  if (!li || !list) return;
+  if (!list) return;
 
   const items = getTimestampItems(list);
+  // Clear any existing highlights
   items.forEach(item => {
     if (!item.classList.contains(TIMESTAMP_DELETE_CLASS)) {
       item.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
     }
   });
 
+  if (!li) return;
+
   if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
     li.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
 
-    if (shouldScroll && !isMouseOverTimestamps) {
+    if (shouldScroll) {
       try {
         if (list instanceof HTMLElement) {
           const liRect = li.getBoundingClientRect();

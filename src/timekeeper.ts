@@ -354,13 +354,7 @@ if (hash && hash.length > 1) {
       requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
     }
 
-    const playerForHighlight = getActivePlayer();
-    const currentTimeForHighlight = playerForHighlight
-      ? Math.floor(playerForHighlight.getCurrentTime())
-      : getLatestTimestampValue();
-    if (Number.isFinite(currentTimeForHighlight)) {
-      highlightNearestTimestampAtTime(currentTimeForHighlight, false);
-    }
+    autoHighlightNearest(true);
   }
 
   let timeUpdateIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -895,6 +889,29 @@ function safePostMessage(message: unknown) {
     highlightTimestamp(nearestLi, shouldScroll);
   }
 
+  /**
+   * Auto highlight helper: computes the proper current time (player or latest) and highlights
+   * the nearest timestamp unless the pointer is over the Timekeeper UI. Optionally accepts a
+   * precomputed `currentSeconds` to avoid recomputing.
+   */
+  function autoHighlightNearest(shouldScroll = false, currentSeconds?: number) {
+    // If pointer is over the UI, skip automatic highlight unless caller explicitly requests scrolling
+    if (isMouseOverTimestamps && !shouldScroll) return;
+
+    let currentTime: number;
+    if (typeof currentSeconds === 'number' && Number.isFinite(currentSeconds)) {
+      currentTime = Math.max(0, Math.floor(currentSeconds));
+    } else {
+      const player = getActivePlayer();
+      const rawTime = player ? player.getCurrentTime() : NaN;
+      currentTime = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
+    }
+
+    if (Number.isFinite(currentTime)) {
+      highlightNearestTimestampAtTime(currentTime, shouldScroll);
+    }
+  }
+
   // Find and return the nearest timestamp at or before the given time
   function findNearestTimestamp(currentTime: number): HTMLLIElement | null {
     if (!Number.isFinite(currentTime)) {
@@ -931,19 +948,20 @@ function safePostMessage(message: unknown) {
 
   // Highlight a timestamp and optionally scroll it into view
   function highlightTimestamp(li: HTMLLIElement | null, shouldScroll = false) {
-    if (!li) return;
-
     const items = getTimestampItems();
+    // Always clear existing highlights first
     items.forEach(item => {
       if (!item.classList.contains(TIMESTAMP_DELETE_CLASS)) {
         item.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
       }
     });
 
+    if (!li) return;
+
     if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
       li.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
 
-      if (shouldScroll && !isMouseOverTimestamps) {
+      if (shouldScroll) {
         try {
           // If the timestamp list is present, only scroll when the element is not already visible
           if (list instanceof HTMLElement) {
@@ -2139,14 +2157,8 @@ function safePostMessage(message: unknown) {
         // Sync loaded timestamps to centralized state
         setTimestampsInState(finalTimestampsToDisplay);
 
-        const playerForHighlight = getActivePlayer();
-        const currentTimeForHighlight = playerForHighlight
-          ? Math.floor(playerForHighlight.getCurrentTime())
-          : getLatestTimestampValue();
-        if (Number.isFinite(currentTimeForHighlight)) {
-          highlightNearestTimestampAtTime(currentTimeForHighlight, false);
-          shouldRestoreScroll = false;
-        }
+        autoHighlightNearest(true);
+        shouldRestoreScroll = false;
       } else {
         clearTimestampsDisplay(); // Ensure UI is cleared if no timestamps are found
         showListPlaceholder('No timestamps for this video');
@@ -2258,7 +2270,7 @@ function safePostMessage(message: unknown) {
     const video = getVideoElement();
     if (!video) return;
 
-    // Handler for timeupdate: always highlight the nearest timestamp and update time display
+    // Handler for timeupdate: keep nearest timestamp highlighted during playback
     const handleTimeUpdate = () => {
       if (!list) return;
 
@@ -2271,8 +2283,8 @@ function safePostMessage(message: unknown) {
         updateTimeDisplay(currentTime, player);
       }
 
-      const nearestLi = findNearestTimestamp(currentTime);
-      highlightTimestamp(nearestLi, false);
+      // Use centralized helper to perform highlight (respects hover and forces scroll when requested)
+      autoHighlightNearest(false, currentTime);
     };
 
     // Helper function to update URL t parameter
@@ -2293,12 +2305,13 @@ function safePostMessage(message: unknown) {
     // Handler for pause: add t parameter with current time and scroll to nearest timestamp
     const handlePause = () => {
       const player = getActivePlayer();
-      const currentTime = player ? Math.floor(player.getCurrentTime()) : NaN;
+      const rawTime = player ? player.getCurrentTime() : NaN;
+      const currentTime = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
       if (Number.isFinite(currentTime)) {
         updateUrlTimeParam(currentTime);
         try {
-          // Scroll to and highlight the nearest timestamp when playback pauses
-          highlightNearestTimestampAtTime(currentTime, true);
+          // Only update highlight automatically if the pointer is not over the UI
+          autoHighlightNearest(true);
         } catch (e) {
           log('Failed to highlight nearest timestamp on pause:', e, 'warn');
         }
@@ -2310,9 +2323,10 @@ function safePostMessage(message: unknown) {
       updateUrlTimeParam(null);
       try {
         const player = getActivePlayer();
-        const currentTime = player ? Math.floor(player.getCurrentTime()) : NaN;
+        const rawTime = player ? player.getCurrentTime() : NaN;
+        const currentTime = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
         if (Number.isFinite(currentTime)) {
-          highlightNearestTimestampAtTime(currentTime, true);
+          autoHighlightNearest(true);
         }
       } catch (e) {
         log('Failed to highlight nearest timestamp on play:', e, 'warn');
@@ -2333,9 +2347,8 @@ function safePostMessage(message: unknown) {
         updateUrlTimeParam(currentTime);
       }
 
-      // Always highlight immediately on seek, regardless of pause state
-      const nearestLi = findNearestTimestamp(currentTime);
-      highlightTimestamp(nearestLi, true);
+      // Always highlight and scroll immediately on seek, regardless of pause state
+      autoHighlightNearest(true, currentTime);
     };
 
     // Store handlers for cleanup
@@ -2487,11 +2500,7 @@ function safePostMessage(message: unknown) {
 
         // Scroll to the nearest timestamp now that the layout is settled
         try {
-          const player = getActivePlayer();
-          const currentTime = player ? Math.floor(player.getCurrentTime()) : NaN;
-          if (Number.isFinite(currentTime)) {
-            highlightNearestTimestampAtTime(currentTime, true);
-          }
+          autoHighlightNearest(true);
         } catch (e) {
           // Be resilient if player isn't ready; swallow errors
           log('Failed to scroll to nearest timestamp after toggle:', e, 'warn');
@@ -2685,17 +2694,17 @@ function safePostMessage(message: unknown) {
     // Add event listeners to `list` after it is initialized
     list.addEventListener("mouseenter", () => {
       isMouseOverTimestamps = true;
+      TimestampView.setMouseOverTimestamps(true);
       suppressSortUntilRefocus = false;
        });
 
     list.addEventListener("mouseleave", () => {
       isMouseOverTimestamps = false;
+      TimestampView.setMouseOverTimestamps(false);
       if (suppressSortUntilRefocus) {
         return;
       }
-      const player = getActivePlayer();
-      const currentTime = player ? Math.floor(player.getCurrentTime()) : getLatestTimestampValue();
-      highlightNearestTimestampAtTime(currentTime, false);
+      autoHighlightNearest(false);
 
       // Preserve focus on the currently focused timestamp when sorting
       let focusedTimestampGuid: string | null = null;
@@ -2871,10 +2880,10 @@ function safePostMessage(message: unknown) {
 
       updateTimeDisplay(currentSeconds, playerInstance);
 
-      // Always highlight the nearest timestamp; defer scrolling to mouse leave
+      // Only auto-highlight when the pointer is not over the UI; defer scrolling to mouse leave
       const timestamps = list ? getTimestampItems() : [];
       if (timestamps.length > 0) {
-        highlightNearestTimestampAtTime(currentSeconds, false);
+        autoHighlightNearest(false, currentSeconds);
       }
     }
     updateTime();
@@ -4133,8 +4142,21 @@ function safePostMessage(message: unknown) {
       }
     });
 
+    pane.addEventListener('mouseenter', () => {
+      isMouseOverTimestamps = true;
+      TimestampView.setMouseOverTimestamps(true);
+    });
+
     pane.addEventListener('mouseleave', () => {
       if (!isResizing && !isDragging) document.body.style.cursor = '';
+      isMouseOverTimestamps = false;
+      TimestampView.setMouseOverTimestamps(false);
+      // Restore highlight when leaving the pane
+      try {
+        autoHighlightNearest(false);
+      } catch (e) {
+        // ignore
+      }
     });
 
     // Dynamically set min-height: header + buttons + 1 li row
@@ -4433,6 +4455,12 @@ function safePostMessage(message: unknown) {
 
     // Display the pane after loading timestamps (with correct visibility state)
     await displayPane();
+
+    try {
+      autoHighlightNearest(true);
+    } catch (e) {
+      // ignore errors when trying to compute or highlight on navigation
+    }
 
     addHeaderButton();
 
