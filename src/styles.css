@@ -146,12 +146,17 @@
   align-items: center;
 }
 #ytls-pane .time-row a {
-  flex-grow: 1; /* Allow the timestamp text to take up available space */
+  flex-grow: 0; /* Don't allow the timestamp anchor to grow and fill empty space */
+  flex-shrink: 0; /* Prevent shrinking */
   max-width: 100%; /* Constrain the width to the parent container */
   text-align: left; /* Align the text to the left */
   overflow: hidden; /* Prevent overflow */
   text-overflow: ellipsis; /* Add ellipsis for long text */
   white-space: nowrap; /* Prevent wrapping */
+}
+#ytls-pane .time-row .time-diff {
+  flex-grow: 1; /* Allow time-diff to fill remaining space */
+  text-align: right; /* Align time diff text to the right, next to trash icon */
 }
 #ytls-pane .ytls-marker {
   position: absolute;
