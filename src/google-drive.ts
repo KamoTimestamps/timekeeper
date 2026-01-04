@@ -3,9 +3,11 @@
  * Handles OAuth2 authentication, backup scheduling, and Drive uploads
  */
 
+import { z } from 'zod';
 import { log } from './util';
 import { addTooltip } from './tooltip';
 import { zipSync, strToU8 } from 'fflate';
+import { AutoBackupSettingsSchema, GoogleAuthStateSchema } from './schema';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
@@ -115,14 +117,17 @@ let autoBackupBackoffTimeoutId: ReturnType<typeof setTimeout> | null = null;
 export async function loadGoogleAuthState() {
   try {
     const stored = await loadGlobalSettings('googleAuthState');
-    if (stored && typeof stored === 'object') {
-      googleAuthState = { ...googleAuthState, ...stored as GoogleAuthState };
+    const parsed = GoogleAuthStateSchema.safeParse(stored);
+    if (parsed.success) {
+      googleAuthState = { ...googleAuthState, ...parsed.data };
       updateGoogleUserDisplay();
 
       // If user is signed in, schedule auto-backup (skip immediate check on init)
       if (googleAuthState.isSignedIn && googleAuthState.accessToken) {
         await scheduleAutoBackup(true);
       }
+    } else if (stored !== undefined) {
+      log('Google auth state failed validation, ignoring stored value', parsed.error.format(), 'warn');
     }
   } catch (err) {
     log('Failed to load Google auth state:', err, 'error');
@@ -761,12 +766,19 @@ export async function exportAllTimestampsToGoogleDrive(opts?: { silent?: boolean
 // Auto-backup settings
 export async function loadAutoBackupSettings() {
   try {
-    const enabled = await loadGlobalSettings('autoBackupEnabled');
-    const interval = await loadGlobalSettings('autoBackupIntervalMinutes');
-    const lastAt = await loadGlobalSettings('lastAutoBackupAt');
-    if (typeof enabled === 'boolean') autoBackupEnabled = enabled;
-    if (typeof interval === 'number' && interval > 0) autoBackupIntervalMinutes = interval;
-    if (typeof lastAt === 'number' && lastAt > 0) lastAutoBackupAt = lastAt;
+    const parsed = AutoBackupSettingsSchema.partial().safeParse({
+      autoBackupEnabled: await loadGlobalSettings('autoBackupEnabled'),
+      autoBackupIntervalMinutes: await loadGlobalSettings('autoBackupIntervalMinutes'),
+      lastAutoBackupAt: await loadGlobalSettings('lastAutoBackupAt')
+    });
+
+    if (parsed.success) {
+      if (typeof parsed.data.autoBackupEnabled === 'boolean') autoBackupEnabled = parsed.data.autoBackupEnabled;
+      if (typeof parsed.data.autoBackupIntervalMinutes === 'number') autoBackupIntervalMinutes = parsed.data.autoBackupIntervalMinutes;
+      if (typeof parsed.data.lastAutoBackupAt === 'number') lastAutoBackupAt = parsed.data.lastAutoBackupAt;
+    } else {
+      log('Failed to validate auto backup settings:', parsed.error.format(), 'warn');
+    }
   } catch (err) {
     log('Failed to load auto backup settings:', err, 'error');
   }

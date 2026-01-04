@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { getHolidayEmoji } from './holidays';
 import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix } from './util';
 import { addTooltip } from './tooltip';
@@ -15,6 +16,15 @@ declare const GM_info: {
 
 import { PANE_STYLES } from "./styles";
 import * as GoogleDrive from "./google-drive";
+import {
+  LegacyExportDataSchema,
+  LegacyVideoEntrySchema,
+  PanePositionSchema,
+  TimestampRecord,
+  TimestampRecordArraySchema,
+  TimestampRecordSchema,
+  TimestampRowSchema
+} from './schema';
 
 // OAuth detection - always check URL for auth token, runs synchronously before any async operations
 const hash = window.location.hash;
@@ -578,13 +588,6 @@ function safePostMessage(message: unknown) {
   // Track the most recently modified timestamp (GUID) for negative-diff-based sorting
   let mostRecentlyModifiedTimestampGuid: string | null = null;
 
-  type TimestampRecord = {
-    start: number;
-    comment: string;
-    guid: string;
-  };
-
-
   // Global cache for latest timestamp value
   let latestTimestampValue: number | null = null;
 
@@ -611,9 +614,15 @@ function safePostMessage(message: unknown) {
         const comment = commentInput?.value ?? '';
         const guid = li.dataset.guid ?? crypto.randomUUID();
         if (!li.dataset.guid) li.dataset.guid = guid;
-        return { start: startTime, comment, guid };
+
+        const parsed = TimestampRecordSchema.safeParse({ start: startTime, comment, guid });
+        if (!parsed.success) {
+          log(`Skipping invalid timestamp in UI: ${parsed.error.message}`, 'warn');
+          return null;
+        }
+        return parsed.data;
       })
-      .filter(isTimestampRecord);
+      .filter((record): record is TimestampRecord => record !== null);
   }
 
   function getLatestTimestampValue(): number {
@@ -856,7 +865,8 @@ function safePostMessage(message: unknown) {
 
   // Helper function to format timestamps based on total duration
   function isTimestampRecord(value: TimestampRecord | null | undefined): value is TimestampRecord {
-    return !!value && Number.isFinite(value.start) && typeof value.comment === "string" && typeof value.guid === "string";
+    if (!value) return false;
+    return TimestampRecordSchema.safeParse(value).success;
   }
 
   // Update existing calls to formatTimeString to pass only the timestamp value itself
@@ -2361,11 +2371,16 @@ function safePostMessage(message: unknown) {
 
     // Get all timestamps from v2 store
     const allTimestamps = await getAllFromIndexedDB(STORE_NAME_V2);
+    const parsedRows = TimestampRowSchema.array().safeParse(allTimestamps);
+
+    if (!parsedRows.success) {
+      log('Failed to parse timestamp rows for export:', parsedRows.error.format(), 'warn');
+      return { json: '{}', filename: 'timekeeper-data.json', totalVideos: 0, totalTimestamps: 0 };
+    }
 
     // Group timestamps by video_id
     const videoGroups = new Map<string, TimestampRecord[]>();
-    for (const record of allTimestamps) {
-      const ts = record as { guid: string; video_id: string; start: number; comment: string };
+    for (const ts of parsedRows.data) {
       if (!videoGroups.has(ts.video_id)) {
         videoGroups.set(ts.video_id, []);
       }
@@ -2386,7 +2401,7 @@ function safePostMessage(message: unknown) {
 
     const filename = `timekeeper-data.json`;
     const json = JSON.stringify(exportData, null, 2);
-    return { json, filename, totalVideos: videoGroups.size, totalTimestamps: allTimestamps.length };
+    return { json, filename, totalVideos: videoGroups.size, totalTimestamps: parsedRows.data.length };
   }
 
   // Standalone export function to export all timestamps to a local file
@@ -2410,14 +2425,19 @@ function safePostMessage(message: unknown) {
   // Build CSV payload with columns: Tag,Timestamp,URL
   async function buildExportCsvPayload(): Promise<{ csv: string; filename: string; totalVideos: number; totalTimestamps: number }> {
     // Get all timestamps from v2 store
-    const allTimestamps = (await getAllFromIndexedDB(STORE_NAME_V2)) as Array<{ guid: string; video_id: string; start: number; comment: string }>;
+    const allTimestampsResult = TimestampRowSchema.array().safeParse(await getAllFromIndexedDB(STORE_NAME_V2));
 
-    // Early return with header when no timestamps
-    if (!Array.isArray(allTimestamps) || allTimestamps.length === 0) {
+    // Early return with header when no timestamps or parse failure
+    if (!allTimestampsResult.success || allTimestampsResult.data.length === 0) {
+      if (!allTimestampsResult.success) {
+        log('Failed to parse timestamp rows for CSV export:', allTimestampsResult.error.format(), 'warn');
+      }
       const header = 'Tag,Timestamp,URL\n';
       const filename = `timestamps-${getTimestampSuffix()}.csv`;
       return { csv: header, filename, totalVideos: 0, totalTimestamps: 0 };
     }
+
+    const allTimestamps = allTimestampsResult.data;
 
     // Group timestamps by video_id
     const videoGroups = new Map<string, Array<{ start: number; comment: string }>>();
@@ -2505,27 +2525,20 @@ function safePostMessage(message: unknown) {
             const exportRequest = v1Store.getAll();
 
             exportRequest.onsuccess = () => {
-              const v1Records = exportRequest.result as Array<{
-                video_id: string;
-                timestamps: TimestampRecord[];
-              }>;
+              const parsedRecords = LegacyVideoEntrySchema.array().safeParse(exportRequest.result);
 
-              if (v1Records.length > 0) {
+              if (parsedRecords.success && parsedRecords.data.length > 0) {
                 try {
                   const exportData = {} as Record<string, unknown>;
                   let totalTimestamps = 0;
 
-                  v1Records.forEach(record => {
-                    if (Array.isArray(record.timestamps) && record.timestamps.length > 0) {
-                      const timestampsWithGuids = record.timestamps.map(ts => ({
-                        guid: ts.guid || crypto.randomUUID(),
-                        start: ts.start,
-                        comment: ts.comment
-                      }));
+                  parsedRecords.data.forEach(record => {
+                    if (record.timestamps.length > 0) {
+                      const timestampsWithGuids = TimestampRecordArraySchema.parse(record.timestamps);
 
                       exportData[`ytls-${record.video_id}`] = {
                         video_id: record.video_id,
-                        timestamps: timestampsWithGuids.sort((a, b) => a.start - b.start)
+                        timestamps: [...timestampsWithGuids].sort((a, b) => a.start - b.start)
                       };
                       totalTimestamps += timestampsWithGuids.length;
                     }
@@ -2539,10 +2552,12 @@ function safePostMessage(message: unknown) {
                   a.click();
                   URL.revokeObjectURL(url);
 
-                  log(`Pre-migration backup exported: ${v1Records.length} videos, ${totalTimestamps} timestamps`);
+                  log(`Pre-migration backup exported: ${parsedRecords.data.length} videos, ${totalTimestamps} timestamps`);
                 } catch (err) {
                   log('Failed to export pre-migration backup:', err, 'error');
                 }
+              } else if (!parsedRecords.success) {
+                log('Skipping pre-migration backup: legacy data failed validation', parsedRecords.error.format(), 'warn');
               }
             };
           }
@@ -2558,18 +2573,15 @@ function safePostMessage(message: unknown) {
             const getAllRequest = v1Store.getAll();
 
             getAllRequest.onsuccess = () => {
-              const v1Records = getAllRequest.result as Array<{
-                video_id: string;
-                timestamps: TimestampRecord[];
-              }>;
+              const parsedRecords = LegacyVideoEntrySchema.array().safeParse(getAllRequest.result);
 
-              if (v1Records.length > 0) {
+              if (parsedRecords.success && parsedRecords.data.length > 0) {
                 let totalMigrated = 0;
-                v1Records.forEach(record => {
-                  if (Array.isArray(record.timestamps) && record.timestamps.length > 0) {
+                parsedRecords.data.forEach(record => {
+                  if (record.timestamps.length > 0) {
                     record.timestamps.forEach(ts => {
                       v2Store.put({
-                        guid: ts.guid || crypto.randomUUID(),
+                        guid: ts.guid,
                         video_id: record.video_id,
                         start: ts.start,
                         comment: ts.comment
@@ -2578,7 +2590,9 @@ function safePostMessage(message: unknown) {
                     });
                   }
                 });
-                log(`Migrated ${totalMigrated} timestamps from ${v1Records.length} videos to v2 store`);
+                log(`Migrated ${totalMigrated} timestamps from ${parsedRecords.data.length} videos to v2 store`);
+              } else if (!parsedRecords.success) {
+                log('Skipping v1 → v2 migration: legacy data failed validation', parsedRecords.error.format(), 'warn');
               }
             };
 
@@ -2639,6 +2653,12 @@ function safePostMessage(message: unknown) {
   }
 
   function saveToIndexedDB(videoId: string, data: TimestampRecord[]): Promise<void> {
+    const parsed = TimestampRecordArraySchema.safeParse(data);
+    if (!parsed.success) {
+      return Promise.reject(new Error(`Invalid timestamp payload for ${videoId}`));
+    }
+
+    const timestamps = parsed.data;
     // Save to v2 store only
     return getDB().then(db => {
       return new Promise<void>((resolve, reject) => {
@@ -2659,7 +2679,7 @@ function safePostMessage(message: unknown) {
         getRequest.onsuccess = () => {
           try {
             const existingRecords = getRequest.result as Array<{guid: string}>;
-            const newGuids = new Set(data.map(ts => ts.guid));
+            const newGuids = new Set(timestamps.map(ts => ts.guid));
 
             // Delete removed timestamps
             existingRecords.forEach(record => {
@@ -2669,7 +2689,7 @@ function safePostMessage(message: unknown) {
             });
 
             // Add/update timestamps
-            data.forEach(ts => {
+            timestamps.forEach(ts => {
               v2Store.put({
                 guid: ts.guid,
                 video_id: videoId,
@@ -2695,6 +2715,11 @@ function safePostMessage(message: unknown) {
   }
 
   function saveSingleTimestampToIndexedDB(videoId: string, timestamp: TimestampRecord): Promise<void> {
+    const parsed = TimestampRecordSchema.safeParse(timestamp);
+    if (!parsed.success) {
+      return Promise.reject(new Error(`Invalid timestamp: ${parsed.error.message}`));
+    }
+    const ts = parsed.data;
     // Save single timestamp to v2 store only
     return getDB().then(db => {
       return new Promise<void>((resolve, reject) => {
@@ -2709,10 +2734,10 @@ function safePostMessage(message: unknown) {
         // Write to v2 store (individual record)
         const v2Store = tx.objectStore(STORE_NAME_V2);
         const putRequest = v2Store.put({
-          guid: timestamp.guid,
+          guid: ts.guid,
           video_id: videoId,
-          start: timestamp.start,
-          comment: timestamp.comment
+          start: ts.start,
+          comment: ts.comment
         });
 
         putRequest.onerror = () => {
@@ -2775,18 +2800,26 @@ function safePostMessage(message: unknown) {
         v2Request.onsuccess = () => {
           const v2Records = v2Request.result as Array<{guid: string; video_id: string; start: number; comment: string}>;
 
-          if (v2Records.length > 0) {
-            // Found data in v2 store
-            const timestamps = v2Records.map(r => ({
-              guid: r.guid,
-              start: r.start,
-              comment: r.comment
-            })).sort((a, b) => a.start - b.start);
-            resolve(timestamps);
-          } else {
-            // No data found
+          if (v2Records.length === 0) {
             resolve(null);
+            return;
           }
+
+          const mapped = v2Records.map(r => ({
+            guid: r.guid,
+            start: r.start,
+            comment: r.comment
+          }));
+
+          const parsed = TimestampRecordArraySchema.safeParse(mapped);
+          if (!parsed.success) {
+            log('Failed to parse timestamps from IndexedDB:', parsed.error.format(), 'warn');
+            resolve(null);
+            return;
+          }
+
+          const timestamps = [...parsed.data].sort((a, b) => a.start - b.start);
+          resolve(timestamps);
         };
 
         v2Request.onerror = () => {
@@ -2900,7 +2933,9 @@ function safePostMessage(message: unknown) {
     if (!pane) return;
 
     loadGlobalSettings('uiVisible').then(value => {
-      const isVisible = value as boolean | undefined;
+      const parsed = z.boolean().safeParse(value);
+      const isVisible = parsed.success ? parsed.data : undefined;
+
       if (typeof isVisible === 'boolean') {
         if (isVisible) {
           pane.style.display = "flex";
@@ -2912,6 +2947,9 @@ function safePostMessage(message: unknown) {
         }
         syncToggleButtons(isVisible);
       } else {
+        if (!parsed.success && value !== undefined) {
+          log('UI visibility state failed validation, defaulting to visible', parsed.error.format(), 'warn');
+        }
         // Default to visible if not found
         pane.style.display = "flex";
         // Apply zoom-in animation when showing initially
@@ -4253,8 +4291,9 @@ function safePostMessage(message: unknown) {
       if (!pane) return;
       log('Loading window position from IndexedDB');
       loadGlobalSettings('windowPosition').then(value => {
-        if (value && typeof (value as any).x === 'number' && typeof (value as any).y === 'number') {
-          const pos = value as { x: number; y: number; width?: number; height?: number };
+        const parsed = PanePositionSchema.safeParse(value);
+        if (parsed.success) {
+          const pos = parsed.data;
           pane.style.left = `${pos.x}px`;
           pane.style.top = `${pos.y}px`;
           pane.style.right = "auto";
@@ -4277,7 +4316,11 @@ function safePostMessage(message: unknown) {
           updateLastSavedPanePositionFromRect(rect, pos.x, pos.y);
           log('Restored window position from IndexedDB:', lastSavedPanePosition);
         } else {
-          log('No window position found in IndexedDB, applying default size and leaving default position');
+          if (!parsed.success) {
+            log('Window position in IndexedDB failed validation:', parsed.error.format(), 'warn');
+          } else {
+            log('No window position found in IndexedDB, applying default size and leaving default position');
+          }
           // Ensure default size is applied when no stored position exists
           pane.style.width = `${DEFAULT_PANE_WIDTH}px`;
           pane.style.height = `${DEFAULT_PANE_HEIGHT}px`;
