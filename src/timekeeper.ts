@@ -623,89 +623,65 @@ function safePostMessage(message: unknown) {
     return text.startsWith('-');
   }
 
-  function getIndentMarker(isIndented: boolean, isLast: boolean): string {
-    if (!isIndented) return "";
-    return isLast ? "└─ " : "├─ ";
-  }
+  // Indent marker constants
+  const INDENT_MARKER_BRANCH = "├─ ";
+  const INDENT_MARKER_CORNER = "└─ ";
+  const INDENT_REGEX = /^[├└]─\s/;
 
-  function extractIndentLevel(commentText: string): number {
-    // Check if comment starts with indent marker (├─ or └─)
-    return (commentText.startsWith("├─ ") || commentText.startsWith("└─ ")) ? 1 : 0;
+  function isIndented(commentText: string): boolean {
+    return INDENT_REGEX.test(commentText);
   }
 
   function removeIndentMarker(commentText: string): string {
-    return commentText.replace(/^[├└]─\s/, "");
+    return commentText.replace(INDENT_REGEX, "");
   }
 
   /**
-   * Determine the appropriate indent marker for a timestamp based on its position in the list.
-   * @param itemIndex - The index of the timestamp to evaluate
-   * @returns The marker to use when indenting: "├─ " (branch) or "└─ " (corner)
+   * Get the appropriate indent marker for an item at the given index.
+   * Returns the branch marker (├─ ) if there's another indented item following,
+   * or the corner marker (└─ ) if this is the last indented item.
    */
-  function determineIndentMarkerForIndex(itemIndex: number): string {
+  function getMarkerForIndex(itemIndex: number): string {
     const items = getTimestampItems();
+    const isLastItem = itemIndex >= items.length - 1;
 
-    // If it's the final item or no next item exists, use └─ (corner)
-    if (itemIndex >= items.length - 1) {
-      return "└─ ";
+    if (isLastItem) {
+      return INDENT_MARKER_CORNER;
     }
 
-    // Check if next item is indented
-    const nextCommentInput = items[itemIndex + 1].querySelector<HTMLInputElement>('input');
-    if (!nextCommentInput) {
-      return "└─ ";
-    }
+    const nextItem = items[itemIndex + 1];
+    const nextInput = nextItem.querySelector<HTMLInputElement>('input');
+    const nextIsIndented = nextInput && isIndented(nextInput.value);
 
-    const nextIsIndented = extractIndentLevel(nextCommentInput.value) === 1;
+    return nextIsIndented ? INDENT_MARKER_BRANCH : INDENT_MARKER_CORNER;
+  }
 
-    // Use ├─ (branch) if next is indented, └─ (corner) if unindented
-    return nextIsIndented ? "├─ " : "└─ ";
+  /**
+   * Get the full comment text with the appropriate indent marker.
+   */
+  function getIndentedComment(cleanComment: string, itemIndex: number): string {
+    return `${getMarkerForIndex(itemIndex)}${cleanComment}`;
   }
 
   function updateIndentMarkers() {
     if (!list) return;
     const items = getTimestampItems();
-
-    // Update markers based on the next item's indent state
-    // We need to iterate multiple times to handle cascading changes
     let changed = true;
     let iterations = 0;
-    const maxIterations = items.length; // Prevent infinite loops
 
-    while (changed && iterations < maxIterations) {
+    while (changed && iterations < items.length) {
       changed = false;
       iterations++;
 
       items.forEach((item, index) => {
-        const commentInput = item.querySelector<HTMLInputElement>('input');
-        if (!commentInput) return;
+        const input = item.querySelector<HTMLInputElement>('input');
+        if (!input || !isIndented(input.value)) return;
 
-        const isIndented = extractIndentLevel(commentInput.value) === 1;
-        if (!isIndented) return; // Skip non-indented items
+        const cleanComment = removeIndentMarker(input.value);
+        const newValue = getIndentedComment(cleanComment, index);
 
-        // Determine the marker based on what comes next
-        // Default to ├─ (branch), only use └─ if next item is unindented or if this is the final item
-        let isLastInSeries = false;
-
-        if (index < items.length - 1) {
-          const nextCommentInput = items[index + 1].querySelector<HTMLInputElement>('input');
-          if (nextCommentInput) {
-            const nextIsIndented = extractIndentLevel(nextCommentInput.value) === 1;
-            // Use └─ (corner) only if next item is unindented, otherwise ├─ (branch)
-            isLastInSeries = !nextIsIndented;
-          }
-        } else {
-          // Final item in list: treat as if followed by unindented, so use └─
-          isLastInSeries = true;
-        }
-
-        const cleanComment = removeIndentMarker(commentInput.value);
-        const marker = getIndentMarker(true, isLastInSeries);
-        const newValue = `${marker}${cleanComment}`;
-
-        // If the marker changed, track that we made a change
-        if (commentInput.value !== newValue) {
-          commentInput.value = newValue;
+        if (input.value !== newValue) {
+          input.value = newValue;
           changed = true;
         }
       });
@@ -1153,26 +1129,24 @@ function safePostMessage(message: unknown) {
 
     // Helper function to update arrow icon based on current indent state
     const updateArrowIcon = () => {
-      const currentIndent = extractIndentLevel(commentInput.value);
-      indentToggle.textContent = currentIndent === 1 ? "◀" : "▶";
+      indentToggle.textContent = isIndented(commentInput.value) ? "◀" : "▶";
     };
 
     // Handle indent toggle on entire gutter click
     const handleIndentToggle = (e: Event) => {
       e.stopPropagation();
-      const currentIndent = extractIndentLevel(commentInput.value);
+      const currentlyIndented = isIndented(commentInput.value);
       const cleanComment = removeIndentMarker(commentInput.value);
-      const newIndent = currentIndent === 0 ? 1 : 0;
 
       // Determine marker based on list context when indenting
       let marker = "";
-      if (newIndent === 1) {
+      if (!currentlyIndented) {
         const items = getTimestampItems();
         const currentIndex = items.indexOf(li);
-        marker = determineIndentMarkerForIndex(currentIndex);
+        marker = getMarkerForIndex(currentIndex);
       }
 
-      commentInput.value = `${marker}${cleanComment}`;
+      commentInput.value = marker ? `${marker}${cleanComment}` : cleanComment;
 
       // Immediately update arrow icon
       updateArrowIcon();
