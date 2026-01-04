@@ -2732,13 +2732,39 @@ function safePostMessage(message: unknown) {
 
     timeDisplay.id = "ytls-current-time";
     timeDisplay.textContent = "⏳";
+    timeDisplay.style.cursor = "default";
 
-    // Enable clicking on the current timestamp to jump to the latest point in the live stream
-    timeDisplay.onclick = () => {
-      isSeeking = true;
+    // Dynamic tooltip getter for timeDisplay - shows tooltip only during live streams
+    const getTimeDisplayTooltip = () => {
       const player = getActivePlayer();
-      if (player) player.seekToLiveHead();
+      const { isLive } = player ? (player.getVideoData() || { isLive: false }) : { isLive: false };
+      return isLive ? "Skip to live" : "";
+    };
+
+    // Add tooltip to timeDisplay with dynamic text
+    addTooltip(timeDisplay, getTimeDisplayTooltip);
+
+    // Enable clicking on the current timestamp to jump to the latest point in the live stream (only for live streams)
+    timeDisplay.onclick = () => {
+      const player = getActivePlayer();
+      if (!player) return;
+      const { isLive } = player.getVideoData() || { isLive: false };
+      if (!isLive) return; // Only allow clicking during live streams
+
+      isSeeking = true;
+      player.seekToLiveHead();
       setTimeout(() => { isSeeking = false; }, 500);
+    };
+
+    // Update cursor and interaction state based on live stream status
+    const updateTimeDisplayInteractivity = () => {
+      const player = getActivePlayer();
+      if (!player) {
+        timeDisplay.style.cursor = "default";
+        return;
+      }
+      const { isLive } = player.getVideoData() || { isLive: false };
+      timeDisplay.style.cursor = isLive ? "pointer" : "default";
     };
 
     // Helper function to update time display with current video time
@@ -2793,6 +2819,9 @@ function safePostMessage(message: unknown) {
 
       timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
       timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
+
+      // Update cursor state based on live stream status
+      updateTimeDisplayInteractivity();
     }
 
     function updateTime() {
