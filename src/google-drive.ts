@@ -43,7 +43,7 @@ export const googleAuthState: any = {
   get accessToken() { return AppState.getGoogleAuthState().accessToken; },
   get userName() { return AppState.getGoogleAuthState().userName; },
   get email() { return AppState.getGoogleAuthState().email; },
-  set isSignedIn(value: boolean) { 
+  set isSignedIn(value: boolean) {
     const current = AppState.getGoogleAuthState();
     AppState.setGoogleAuthState({ ...current, isSignedIn: value });
   },
@@ -525,10 +525,12 @@ export async function signInToGoogle() {
         const userInfo = userInfoParsed.data;
 
         // Update auth state
-        googleAuthState.accessToken = accessToken;
-        googleAuthState.isSignedIn = true;
-        googleAuthState.userName = userInfo.name || null;
-        googleAuthState.email = userInfo.email || null;
+        AppState.setGoogleAuthState({
+          isSignedIn: true,
+          accessToken,
+          userName: userInfo.name || null,
+          email: userInfo.email || null,
+        });
 
         // Save auth state
         await saveGoogleAuthState();
@@ -893,8 +895,12 @@ async function handleAuthExpiration(opts?: { silent?: boolean }): Promise<void> 
   log('Auth expired, clearing token', null, 'warn');
 
   // Clear expired auth state immediately
-  googleAuthState.isSignedIn = false;
-  googleAuthState.accessToken = null;
+  AppState.setGoogleAuthState({
+    isSignedIn: false,
+    accessToken: null,
+    userName: null,
+    email: null,
+  });
   await saveGoogleAuthState();
   updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
   updateBackupStatusDisplay();
@@ -960,9 +966,9 @@ export async function saveAutoBackupSettings() {
   try {
     // Validate settings before saving
     const settings = {
-      autoBackupEnabled,
-      autoBackupIntervalMinutes,
-      lastAutoBackupAt: lastAutoBackupAt ?? 0,
+      autoBackupEnabled: getAutoBackupEnabled(),
+      autoBackupIntervalMinutes: getAutoBackupIntervalMinutes(),
+      lastAutoBackupAt: getLastAutoBackupAt() ?? 0,
     };
 
     const validationResult = AutoBackupSettingsSchema.safeParse(settings);
@@ -971,9 +977,9 @@ export async function saveAutoBackupSettings() {
       return;
     }
 
-    await saveGlobalSettings('autoBackupEnabled', autoBackupEnabled);
-    await saveGlobalSettings('autoBackupIntervalMinutes', autoBackupIntervalMinutes);
-    await saveGlobalSettings('lastAutoBackupAt', lastAutoBackupAt ?? 0);
+    await saveGlobalSettings('autoBackupEnabled', getAutoBackupEnabled());
+    await saveGlobalSettings('autoBackupIntervalMinutes', getAutoBackupIntervalMinutes());
+    await saveGlobalSettings('lastAutoBackupAt', getLastAutoBackupAt() ?? 0);
   } catch (err) {
     log('Failed to save auto backup settings:', err, 'error');
   }
@@ -1051,7 +1057,7 @@ export function updateBackupStatusDisplay() {
     };
   } else {
     text = '🗄️ Last backup: never';
-    const nextBackupAt = Date.now() + (Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
+    const nextBackupAt = Date.now() + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
     const nextBackupTime = formatBackupTime(nextBackupAt);
     hoverText = `🗄️ Next backup: ${nextBackupTime}`;
 
@@ -1096,9 +1102,9 @@ export function updateBackupStatusIndicator() {
     } else if (getGoogleAuthState().isSignedIn && getLastAutoBackupAt()) {
       const nextBackupAt = getLastAutoBackupAt()! + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
       const nextBackupTime = formatBackupTime(nextBackupAt);
-      tooltipText = `Last backup: ${formatBackupTime(lastAutoBackupAt)}\nNext backup: ${nextBackupTime}`;
-    } else if (googleAuthState.isSignedIn) {
-      const nextBackupAt = Date.now() + (Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
+      tooltipText = `Last backup: ${formatBackupTime(getLastAutoBackupAt()!)}\nNext backup: ${nextBackupTime}`;
+    } else if (getGoogleAuthState().isSignedIn) {
+      const nextBackupAt = Date.now() + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
       const nextBackupTime = formatBackupTime(nextBackupAt);
       tooltipText = `No backup yet\nNext backup: ${nextBackupTime}`;
     } else {
@@ -1188,7 +1194,7 @@ export async function scheduleAutoBackup(skipImmediateCheck = false) {
 
   autoBackupIntervalId = setInterval(() => {
     runAutoBackupOnce(true);
-  }, Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
+  }, Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
 
   // Only run immediate backup if not skipped and interval has elapsed
   if (!skipImmediateCheck) {
@@ -1210,7 +1216,8 @@ export async function toggleAutoBackup() {
 }
 
 export async function setAutoBackupIntervalPrompt() {
-  const input = prompt('Set Auto Backup interval (minutes):', String(autoBackupIntervalMinutes));
+  const currentInterval = getAutoBackupIntervalMinutes();
+  const input = prompt('Set Auto Backup interval (minutes):', String(currentInterval));
   if (input === null) return;
   const minutes = Math.floor(Number(input));
   if (!Number.isFinite(minutes) || minutes < 5 || minutes > 1440) {

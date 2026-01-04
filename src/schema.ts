@@ -68,7 +68,7 @@ export type GoogleAuthStateParsed = z.infer<typeof GoogleAuthStateObjectSchema>;
 
 export const AutoBackupSettingsSchema = z.object({
   autoBackupEnabled: z.boolean(),
-  autoBackupIntervalMinutes: z.number().positive(),
+  autoBackupIntervalMinutes: z.number().int().min(5).max(1440),
   lastAutoBackupAt: z.number().int().positive().nullable().optional(),
 });
 export type AutoBackupSettings = z.infer<typeof AutoBackupSettingsSchema>;

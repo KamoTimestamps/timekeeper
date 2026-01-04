@@ -148,6 +148,42 @@ if (hash && hash.length > 1) {
   let lastHandledUrl: string | null = null;
   let urlChangeHandlersSetup = false;
 
+  // ============================================================================
+  // UI State Getters/Setters (using centralized AppState)
+  // ============================================================================
+
+  function getMinPaneHeight(): number {
+    return AppState.getState().ui.minPaneHeight;
+  }
+
+  function setMinPaneHeight(height: number): void {
+    AppState.setMinPaneHeight(height);
+  }
+
+  function getLastHandledUrl(): string | null {
+    return AppState.getState().ui.lastHandledUrl;
+  }
+
+  function setLastHandledUrl(url: string | null): void {
+    AppState.setLastHandledUrl(url);
+  }
+
+  function getUrlChangeHandlersSetup(): boolean {
+    return AppState.getState().ui.urlChangeHandlersSetup;
+  }
+
+  function setUrlChangeHandlersSetup(setup: boolean): void {
+    AppState.setUrlChangeHandlersSetup(setup);
+  }
+
+  function getPanePositionState(): { x?: number; y?: number; width?: number; height?: number } | null {
+    return AppState.getState().ui.panePosition as any;
+  }
+
+  function setPanePositionState(position: { x?: number; y?: number; width?: number; height?: number } | null): void {
+    AppState.setPanePosition(position as any);
+  }
+
   // --- Pane sizing helpers (available across module) ---
   function getPaneRect() {
     if (!pane) return null;
@@ -156,12 +192,12 @@ if (hash && hash.length > 1) {
 
   function updateLastSavedPanePositionFromRect(rect: DOMRect | null, xOverride?: number, yOverride?: number) {
     if (!rect) return;
-    lastSavedPanePosition = {
+    setPanePositionState({
       x: typeof xOverride === 'number' ? Math.round(xOverride) : Math.round(rect.left),
       y: typeof yOverride === 'number' ? Math.round(yOverride) : Math.round(rect.top),
       width: Math.round(rect.width),
       height: Math.round(rect.height)
-    };
+    });
   }
 
   function clampAndSavePanePosition(save = true) {
@@ -171,8 +207,9 @@ if (hash && hash.length > 1) {
     if (rect && (rect.width || rect.height)) {
       updateLastSavedPanePositionFromRect(rect);
       if (save) {
-        saveGlobalSettings('windowPosition', lastSavedPanePosition);
-        safePostMessage({ type: 'window_position_updated', position: lastSavedPanePosition, timestamp: Date.now() });
+        const position = getPanePositionState();
+        saveGlobalSettings('windowPosition', position);
+        safePostMessage({ type: 'window_position_updated', position: position, timestamp: Date.now() });
       }
     }
   }
@@ -194,7 +231,8 @@ if (hash && hash.length > 1) {
       list.removeChild(tempLi);
     }
     minPaneHeight = header.offsetHeight + btns.offsetHeight + liH;
-    pane.style.minHeight = minPaneHeight + 'px';
+    setMinPaneHeight(minPaneHeight);
+    pane.style.minHeight = getMinPaneHeight() + 'px';
   }
 
   // Append any timestamps that were built while the pane was animating open.
@@ -514,12 +552,12 @@ function safePostMessage(message: unknown) {
             pane.style.height = `${pos.height}px`;
           }
           const rect = pane.getBoundingClientRect();
-          lastSavedPanePosition = {
+          setPanePositionState({
             x: Math.round(pos.x),
             y: Math.round(pos.y),
             width: Math.round(rect.width),
             height: Math.round(rect.height)
-          };
+          });
           // Only clamp if pane is outside viewport
           const viewportWidth = document.documentElement.clientWidth;
           const viewportHeight = document.documentElement.clientHeight;
@@ -1952,7 +1990,7 @@ function safePostMessage(message: unknown) {
     }
     headerButtonImage = null;
     isHeaderButtonHovered = false;
-    lastSavedPanePosition = null;
+    setPanePositionState(null);
 
     clearTimestampsDisplay();
     pane = null;
@@ -3311,11 +3349,11 @@ function safePostMessage(message: unknown) {
       driveSection.appendChild(signButton);
 
       const autoToggleButton = createButton(
-        GoogleDrive.autoBackupEnabled ? "🔁 Auto Backup: On" : "🔁 Auto Backup: Off",
+        GoogleDrive.getAutoBackupEnabled() ? "🔁 Auto Backup: On" : "🔁 Auto Backup: Off",
         "Toggle Auto Backup",
         async () => {
           await GoogleDrive.toggleAutoBackup();
-          autoToggleButton.textContent = GoogleDrive.autoBackupEnabled ? "🔁 Auto Backup: On" : "🔁 Auto Backup: Off";
+          autoToggleButton.textContent = GoogleDrive.getAutoBackupEnabled() ? "🔁 Auto Backup: On" : "🔁 Auto Backup: Off";
           // Sync main indicator/text immediately
           if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
             (GoogleDrive as any).updateBackupStatusDisplay();
@@ -3325,11 +3363,11 @@ function safePostMessage(message: unknown) {
       driveSection.appendChild(autoToggleButton);
 
       const intervalButton = createButton(
-        `⏱️ Backup Interval: ${GoogleDrive.autoBackupIntervalMinutes}min`,
+        `⏱️ Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`,
         "Set periodic backup interval (minutes)",
         async () => {
           await GoogleDrive.setAutoBackupIntervalPrompt();
-          intervalButton.textContent = `⏱️ Backup Interval: ${GoogleDrive.autoBackupIntervalMinutes}min`;
+          intervalButton.textContent = `⏱️ Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`;
           // Ensure status is synced immediately
           if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
             (GoogleDrive as any).updateBackupStatusDisplay();
@@ -3769,7 +3807,7 @@ function safePostMessage(message: unknown) {
           // Get rect after applying position and size
           const rect = getPaneRect();
           updateLastSavedPanePositionFromRect(rect, pos.x, pos.y);
-          log('Restored window position from IndexedDB:', lastSavedPanePosition);
+          log('Restored window position from IndexedDB:', getPanePositionState());
         } else {
           if (!parsed.success) {
             log('Window position in IndexedDB failed validation:', parsed.error.format(), 'warn');
@@ -3779,7 +3817,7 @@ function safePostMessage(message: unknown) {
           // Ensure default size is applied when no stored position exists
           pane.style.width = `${DEFAULT_PANE_WIDTH}px`;
           pane.style.height = `${DEFAULT_PANE_HEIGHT}px`;
-          lastSavedPanePosition = null;
+          setPanePositionState(null);
         }
         clampPaneToViewport();
         const rect = getPaneRect();
@@ -3793,12 +3831,12 @@ function safePostMessage(message: unknown) {
         clampPaneToViewport();
         const rect = getPaneRect();
         if (rect && (rect.width || rect.height)) {
-          lastSavedPanePosition = {
+          setPanePositionState({
             x: Math.max(0, Math.round(rect.left)),
             y: 0, // Fixed at bottom
             width: Math.round(rect.width),
             height: Math.round(rect.height)
-          };
+          });
         }
         if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
       });
@@ -3817,16 +3855,17 @@ function safePostMessage(message: unknown) {
         height: Math.round(rect.height)
       };
 
-      if (lastSavedPanePosition &&
-        lastSavedPanePosition.x === positionData.x &&
-        lastSavedPanePosition.y === positionData.y &&
-        lastSavedPanePosition.width === positionData.width &&
-        lastSavedPanePosition.height === positionData.height) {
+      const savedPos = getPanePositionState();
+      if (savedPos &&
+        savedPos.x === positionData.x &&
+        savedPos.y === positionData.y &&
+        savedPos.width === positionData.width &&
+        savedPos.height === positionData.height) {
         log('Skipping window position save; position and size unchanged');
         return;
       }
 
-      lastSavedPanePosition = { ...positionData };
+      setPanePositionState({ ...positionData });
       log(`Saving window position and size to IndexedDB: x=${positionData.x}, y=${positionData.y}, width=${positionData.width}, height=${positionData.height}`);
       saveGlobalSettings('windowPosition', positionData);
 
@@ -4113,8 +4152,8 @@ function safePostMessage(message: unknown) {
           liH = tempLi.offsetHeight;
           list.removeChild(tempLi);
         }
-        minPaneHeight = header.offsetHeight + btns.offsetHeight + liH;
-        pane.style.minHeight = minPaneHeight + 'px';
+        setMinPaneHeight(header.offsetHeight + btns.offsetHeight + liH);
+        pane.style.minHeight = getMinPaneHeight() + 'px';
       }
     }, 0);
 
@@ -4298,8 +4337,8 @@ function safePostMessage(message: unknown) {
 
 
   function setupUrlChangeHandlers() {
-    if (urlChangeHandlersSetup) return;
-    urlChangeHandlersSetup = true;
+    if (getUrlChangeHandlersSetup()) return;
+    setUrlChangeHandlersSetup(true);
 
     const origPush = history.pushState;
     const origReplace = history.replaceState;
@@ -4342,7 +4381,7 @@ function safePostMessage(message: unknown) {
     }
 
     // Track last handled URL so repeated history events don't trigger duplicate work
-    lastHandledUrl = window.location.href;
+    setLastHandledUrl(window.location.href);
 
     // Remove any duplicate panes BEFORE initialization
     document.querySelectorAll("#ytls-pane").forEach((el, idx) => {

@@ -34,7 +34,7 @@ export const autoBackupBackoffMs: number | null = undefined as any;
    if (getAutoBackupEnabled()) { }
    const attempts = getAutoBackupRetryAttempts();
    if (getAutoBackupBackoffMs() && getAutoBackupBackoffMs()! > 0) { }
-   
+
    // ✗ WRONG (will error at runtime)
    if (autoBackupEnabled) { }  // undefined as any
    ```
