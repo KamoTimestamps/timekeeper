@@ -1922,7 +1922,7 @@ function safePostMessage(message: unknown) {
       }
 
       if (finalTimestampsToDisplay.length > 0) {
-        finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
+        finalTimestampsToDisplay = finalTimestampsToDisplay.sort((a, b) => a.start - b.start); // Sort by start time
         clearTimestampsDisplay();
         clearListPlaceholder();
 

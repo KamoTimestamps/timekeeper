@@ -1,5 +1,6 @@
 import { log, getTimestampSuffix } from './util';
 import { openDB, IDBPDatabase, DBSchema } from 'idb';
+// Using native JavaScript methods instead of lodash
 
 export const DB_NAME = 'ytls-timestamps-db';
 export const DB_VERSION = 3;
@@ -153,7 +154,7 @@ export async function getAllFromIndexedDB(storeName: string): Promise<unknown[]>
     const db = await getDB();
     // Dynamic store name requires casting since it's not in our static schema
     const items = await (db as any).getAll(storeName);
-    return Array.isArray(items) ? items : [];
+    return items.length === 0 ? [] : items;
   } catch (err) {
     log('Failed to getAll from IndexedDB:', err, 'error');
     return [];
@@ -207,7 +208,9 @@ export async function loadFromIndexedDB(videoId: string): Promise<TimestampRecor
     const db = await getDB();
     const recs = await db.getAllFromIndex(STORE_NAME_V2, 'video_id', videoId);
     if (!recs || recs.length === 0) return null;
-    const timestamps = recs.map(r => ({ guid: r.guid, start: r.start, comment: r.comment })).sort((a, b) => a.start - b.start);
+    const timestamps = recs
+      .map(r => ({ guid: r.guid, start: r.start, comment: r.comment }))
+      .sort((a, b) => a.start - b.start);
     return timestamps;
   } catch (err) {
     log('Failed to load timestamps from IndexedDB:', err, 'warn');
