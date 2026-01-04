@@ -8,6 +8,7 @@ import { log } from './util';
 import { addTooltip } from './tooltip';
 import { zipSync, strToU8 } from 'fflate';
 import { AutoBackupSettingsSchema, GoogleAuthStateSchema } from './schema';
+import * as AppState from './services/state';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
@@ -15,13 +16,6 @@ declare const GM: {
 };
 
 // Types
-export interface GoogleAuthState {
-  isSignedIn: boolean;
-  accessToken: string | null;
-  userName: string | null;
-  email: string | null;
-}
-
 export interface ExportPayload {
   json: string;
   filename: string;
@@ -29,20 +23,109 @@ export interface ExportPayload {
   totalTimestamps: number;
 }
 
-// State
-export let googleAuthState: GoogleAuthState = {
-  isSignedIn: false,
-  accessToken: null,
-  userName: null,
-  email: null
+// ============================================================================
+// State Management - Using Centralized AppState
+// ============================================================================
+// These getters/setters provide backward compatibility while routing through
+// the centralized state management in services/state.ts
+
+export function getGoogleAuthState() {
+  return AppState.getGoogleAuthState();
+}
+
+export function setGoogleAuthStateInternal(state: any) {
+  AppState.setGoogleAuthState(state);
+}
+
+// For backwards compatibility, export as a getter object
+export const googleAuthState: any = {
+  get isSignedIn() { return AppState.getGoogleAuthState().isSignedIn; },
+  get accessToken() { return AppState.getGoogleAuthState().accessToken; },
+  get userName() { return AppState.getGoogleAuthState().userName; },
+  get email() { return AppState.getGoogleAuthState().email; },
+  set isSignedIn(value: boolean) { 
+    const current = AppState.getGoogleAuthState();
+    AppState.setGoogleAuthState({ ...current, isSignedIn: value });
+  },
+  set accessToken(value: string | null) {
+    const current = AppState.getGoogleAuthState();
+    AppState.setGoogleAuthState({ ...current, accessToken: value });
+  },
+  set userName(value: string | null) {
+    const current = AppState.getGoogleAuthState();
+    AppState.setGoogleAuthState({ ...current, userName: value });
+  },
+  set email(value: string | null) {
+    const current = AppState.getGoogleAuthState();
+    AppState.setGoogleAuthState({ ...current, email: value });
+  },
 };
 
-export let autoBackupEnabled = true;
-export let autoBackupIntervalMinutes = 30;
-export let lastAutoBackupAt: number | null = null;
-export let isAutoBackupRunning = false;
-export let autoBackupRetryAttempts = 0;
-export let autoBackupBackoffMs: number | null = null;
+export function getAutoBackupEnabled() {
+  return AppState.getState().auth.autoBackupEnabled;
+}
+
+export function setAutoBackupEnabledInternal(enabled: boolean) {
+  AppState.setAutoBackupEnabled(enabled);
+}
+
+// Note: Use getAutoBackupEnabled() getter for reading, not this export
+export const autoBackupEnabled: boolean = undefined as any;
+
+export function getAutoBackupIntervalMinutes() {
+  return AppState.getState().auth.autoBackupIntervalMinutes;
+}
+
+export function setAutoBackupIntervalMinutesInternal(minutes: number) {
+  AppState.setAutoBackupIntervalMinutes(minutes);
+}
+
+// Note: Use getAutoBackupIntervalMinutes() getter for reading, not this export
+export const autoBackupIntervalMinutes: number = undefined as any;
+
+export function getLastAutoBackupAt() {
+  return AppState.getState().auth.lastAutoBackupAt;
+}
+
+export function setLastAutoBackupAtInternal(timestamp: number | null) {
+  AppState.setLastAutoBackupAt(timestamp);
+}
+
+// Note: Use getLastAutoBackupAt() getter for reading, not this export
+export const lastAutoBackupAt: number | null = undefined as any;
+
+export function getIsAutoBackupRunning() {
+  return AppState.getState().auth.isAutoBackupRunning;
+}
+
+export function setIsAutoBackupRunningInternal(running: boolean) {
+  AppState.setAutoBackupRunning(running);
+}
+
+// Note: Use getIsAutoBackupRunning() getter for reading, not this export
+export const isAutoBackupRunning: boolean = undefined as any;
+
+export function getAutoBackupRetryAttempts() {
+  return AppState.getState().auth.autoBackupRetryAttempts;
+}
+
+export function setAutoBackupRetryAttemptsInternal(attempts: number) {
+  AppState.setAutoBackupRetryAttempts(attempts);
+}
+
+// Note: Use getAutoBackupRetryAttempts() getter for reading, not this export
+export const autoBackupRetryAttempts: number = undefined as any;
+
+export function getAutoBackupBackoffMs() {
+  return AppState.getState().auth.autoBackupBackoffMs;
+}
+
+export function setAutoBackupBackoffMsInternal(backoff: number | null) {
+  AppState.setAutoBackupBackoffMs(backoff);
+}
+
+// Note: Use getAutoBackupBackoffMs() getter for reading, not this export
+export const autoBackupBackoffMs: number | null = undefined as any;
 
 // Display elements (set from main script)
 export let googleUserDisplay: any = null;
@@ -121,17 +204,20 @@ export async function loadGoogleAuthState() {
     log('Loading Google auth state from IndexedDB:', storedRedacted);
     const parsed = GoogleAuthStateSchema.safeParse(stored);
     if (parsed.success) {
-      googleAuthState = { ...googleAuthState, ...parsed.data };
+      const currentState = getGoogleAuthState();
+      setGoogleAuthStateInternal({ ...currentState, ...parsed.data });
 
       // Log when reusing stored auth token
-      if (googleAuthState.isSignedIn && googleAuthState.accessToken) {
-        log(`Reusing stored Google auth token for ${googleAuthState.userName || googleAuthState.email || 'user'}`);
+      const updatedState = getGoogleAuthState();
+      if (updatedState.isSignedIn && updatedState.accessToken) {
+        log(`Reusing stored Google auth token for ${updatedState.userName || updatedState.email || 'user'}`);
       }
 
       updateGoogleUserDisplay();
 
       // If user is signed in, schedule auto-backup (skip immediate check on init)
-      if (googleAuthState.isSignedIn && googleAuthState.accessToken) {
+      const state = getGoogleAuthState();
+      if (state.isSignedIn && state.accessToken) {
         await scheduleAutoBackup(true);
       }
     } else if (stored !== undefined) {
@@ -192,7 +278,8 @@ export function updateAuthStatusDisplay(status?: 'authenticating' | 'error', mes
     updateBackupStatusDisplay();
     return;
   }
-  if (!googleAuthState.isSignedIn) {
+  const state = getGoogleAuthState();
+  if (!state.isSignedIn) {
     authStatusDisplay.textContent = '❌ Not signed in';
     authStatusDisplay.style.color = '#ff4d4f';
     authStatusDisplay.removeAttribute('title');
@@ -204,9 +291,9 @@ export function updateAuthStatusDisplay(status?: 'authenticating' | 'error', mes
     authStatusDisplay.removeAttribute('title');
 
     // Change text on hover to show username
-    if (googleAuthState.userName) {
+    if (state.userName) {
       authStatusDisplay.onmouseenter = () => {
-        authStatusDisplay.textContent = `✅ Signed in as ${googleAuthState.userName}`;
+        authStatusDisplay.textContent = `✅ Signed in as ${state.userName}`;
       };
       authStatusDisplay.onmouseleave = () => {
         authStatusDisplay.textContent = `✅ Signed in`;
@@ -609,12 +696,12 @@ export async function handleOAuthRedirect() {
 }
 // Sign out from Google Drive
 export async function signOutFromGoogle() {
-  googleAuthState = {
+  setGoogleAuthStateInternal({
     isSignedIn: false,
     accessToken: null,
     userName: null,
     email: null
-  };
+  });
   await saveGoogleAuthState();
   updateGoogleUserDisplay();
   updateAuthStatusDisplay();
@@ -858,9 +945,9 @@ export async function loadAutoBackupSettings() {
     });
 
     if (parsed.success) {
-      if (typeof parsed.data.autoBackupEnabled === 'boolean') autoBackupEnabled = parsed.data.autoBackupEnabled;
-      if (typeof parsed.data.autoBackupIntervalMinutes === 'number') autoBackupIntervalMinutes = parsed.data.autoBackupIntervalMinutes;
-      if (typeof parsed.data.lastAutoBackupAt === 'number') lastAutoBackupAt = parsed.data.lastAutoBackupAt;
+      if (typeof parsed.data.autoBackupEnabled === 'boolean') setAutoBackupEnabledInternal(parsed.data.autoBackupEnabled);
+      if (typeof parsed.data.autoBackupIntervalMinutes === 'number') setAutoBackupIntervalMinutesInternal(parsed.data.autoBackupIntervalMinutes);
+      if (typeof parsed.data.lastAutoBackupAt === 'number') setLastAutoBackupAtInternal(parsed.data.lastAutoBackupAt);
     } else {
       log('Failed to validate auto backup settings:', parsed.error.format(), 'warn');
     }
@@ -917,15 +1004,15 @@ export function formatBackupTime(ts: number): string {
 
 function getBackupStatusColor(): string {
   // Determine color consistent with updateBackupStatusIndicator logic
-  if (!autoBackupEnabled) {
+  if (!getAutoBackupEnabled()) {
     return '#ff4d4f'; // Red - off
-  } else if (isAutoBackupRunning) {
+  } else if (getIsAutoBackupRunning()) {
     return '#4285f4'; // Blue - in progress
-  } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
+  } else if (getAutoBackupBackoffMs() && getAutoBackupBackoffMs()! > 0) {
     return '#ffa500'; // Yellow - retrying
-  } else if (googleAuthState.isSignedIn && lastAutoBackupAt) {
+  } else if (getGoogleAuthState().isSignedIn && getLastAutoBackupAt()) {
     return '#52c41a'; // Green - healthy
-  } else if (googleAuthState.isSignedIn) {
+  } else if (getGoogleAuthState().isSignedIn) {
     return '#ffa500'; // Yellow - no backup yet
   } else {
     return '#ff4d4f'; // Red - not signed in
@@ -937,22 +1024,22 @@ export function updateBackupStatusDisplay() {
   let text = '';
   let hoverText = '';
 
-  if (!autoBackupEnabled) {
+  if (!getAutoBackupEnabled()) {
     text = '🔁 Backup: Off';
     backupStatusDisplay.onmouseenter = null;
     backupStatusDisplay.onmouseleave = null;
-  } else if (isAutoBackupRunning) {
+  } else if (getIsAutoBackupRunning()) {
     text = '🔁 Backing up…';
     backupStatusDisplay.onmouseenter = null;
     backupStatusDisplay.onmouseleave = null;
-  } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
-    const mins = Math.ceil(autoBackupBackoffMs / 60000);
+  } else if (getAutoBackupBackoffMs() && getAutoBackupBackoffMs()! > 0) {
+    const mins = Math.ceil(getAutoBackupBackoffMs()! / 60000);
     text = `⚠️ Retry in ${mins}m`;
     backupStatusDisplay.onmouseenter = null;
     backupStatusDisplay.onmouseleave = null;
-  } else if (lastAutoBackupAt) {
-    text = `🗄️ Last backup: ${formatBackupTime(lastAutoBackupAt)}`;
-    const nextBackupAt = lastAutoBackupAt + (Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
+  } else if (getLastAutoBackupAt()) {
+    text = `🗄️ Last backup: ${formatBackupTime(getLastAutoBackupAt()!)}`;
+    const nextBackupAt = getLastAutoBackupAt()! + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
     const nextBackupTime = formatBackupTime(nextBackupAt);
     hoverText = `🗄️ Next backup: ${nextBackupTime}`;
 
@@ -999,15 +1086,15 @@ export function updateBackupStatusIndicator() {
   addTooltip(backupStatusIndicator, () => {
     // Recalculate tooltip text dynamically
     let tooltipText = '';
-    if (!autoBackupEnabled) {
+    if (!getAutoBackupEnabled()) {
       tooltipText = 'Auto backup is disabled';
-    } else if (isAutoBackupRunning) {
+    } else if (getIsAutoBackupRunning()) {
       tooltipText = 'Backup in progress';
-    } else if (autoBackupBackoffMs && autoBackupBackoffMs > 0) {
-      const mins = Math.ceil(autoBackupBackoffMs / 60000);
+    } else if (getAutoBackupBackoffMs() && getAutoBackupBackoffMs()! > 0) {
+      const mins = Math.ceil(getAutoBackupBackoffMs()! / 60000);
       tooltipText = `Retrying backup in ${mins}m`;
-    } else if (googleAuthState.isSignedIn && lastAutoBackupAt) {
-      const nextBackupAt = lastAutoBackupAt + (Math.max(1, autoBackupIntervalMinutes) * 60 * 1000);
+    } else if (getGoogleAuthState().isSignedIn && getLastAutoBackupAt()) {
+      const nextBackupAt = getLastAutoBackupAt()! + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
       const nextBackupTime = formatBackupTime(nextBackupAt);
       tooltipText = `Last backup: ${formatBackupTime(lastAutoBackupAt)}\nNext backup: ${nextBackupTime}`;
     } else if (googleAuthState.isSignedIn) {
@@ -1035,15 +1122,15 @@ export async function runAutoBackupOnce(silent = true) {
     return;
   }
 
-  if (isAutoBackupRunning) return;
-  isAutoBackupRunning = true;
+  if (getIsAutoBackupRunning()) return;
+  setIsAutoBackupRunningInternal(true);
   updateBackupStatusDisplay();
   try {
     await exportAllTimestampsToGoogleDrive({ silent });
     // Only update last backup time if the backup succeeded
-    lastAutoBackupAt = Date.now();
-    autoBackupRetryAttempts = 0;
-    autoBackupBackoffMs = null;
+    setLastAutoBackupAtInternal(Date.now());
+    setAutoBackupRetryAttemptsInternal(0);
+    setAutoBackupBackoffMsInternal(null);
     if (autoBackupBackoffTimeoutId) {
       clearTimeout(autoBackupBackoffTimeoutId);
       autoBackupBackoffTimeoutId = null;
@@ -1059,35 +1146,37 @@ export async function runAutoBackupOnce(silent = true) {
       // Auth error - clear token immediately and don't retry
       log('Auth error detected, clearing token and stopping retries', null, 'warn');
       googleAuthState.isSignedIn = false;
-      googleAuthState.accessToken = null;
+      const currentAuth = getGoogleAuthState();
+      setGoogleAuthStateInternal({ ...currentAuth, accessToken: null });
       await saveGoogleAuthState();
       updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
       updateBackupStatusDisplay(); // Update backup status indicator immediately
       // Reset retry state
-      autoBackupRetryAttempts = 0;
-      autoBackupBackoffMs = null;
+      setAutoBackupRetryAttemptsInternal(0);
+      setAutoBackupBackoffMsInternal(null);
       if (autoBackupBackoffTimeoutId) {
         clearTimeout(autoBackupBackoffTimeoutId);
         autoBackupBackoffTimeoutId = null;
       }
-    } else if (autoBackupRetryAttempts < AUTO_BACKUP_MAX_RETRY_ATTEMPTS) {
+    } else if (getAutoBackupRetryAttempts() < AUTO_BACKUP_MAX_RETRY_ATTEMPTS) {
       // Non-auth error - retry with exponential backoff
-      autoBackupRetryAttempts += 1;
+      const nextAttempts = getAutoBackupRetryAttempts() + 1;
+      setAutoBackupRetryAttemptsInternal(nextAttempts);
       const base = AUTO_BACKUP_INITIAL_BACKOFF_MS;
-      const next = Math.min(base * Math.pow(2, autoBackupRetryAttempts - 1), AUTO_BACKUP_MAX_BACKOFF_MS);
-      autoBackupBackoffMs = next;
+      const next = Math.min(base * Math.pow(2, nextAttempts - 1), AUTO_BACKUP_MAX_BACKOFF_MS);
+      setAutoBackupBackoffMsInternal(next);
       if (autoBackupBackoffTimeoutId) clearTimeout(autoBackupBackoffTimeoutId);
       autoBackupBackoffTimeoutId = setTimeout(() => {
         runAutoBackupOnce(true);
       }, next);
-      log(`Scheduling backup retry ${autoBackupRetryAttempts}/${AUTO_BACKUP_MAX_RETRY_ATTEMPTS} in ${Math.round(next/1000)}s`);
+      log(`Scheduling backup retry ${nextAttempts}/${AUTO_BACKUP_MAX_RETRY_ATTEMPTS} in ${Math.round(next/1000)}s`);
       updateBackupStatusDisplay(); // Update backup status indicator to show retry state
     } else {
       // All retries exhausted for non-auth errors
-      autoBackupBackoffMs = null;
+      setAutoBackupBackoffMsInternal(null);
     }
   } finally {
-    isAutoBackupRunning = false;
+    setIsAutoBackupRunningInternal(false);
     updateBackupStatusDisplay();
   }
 }
@@ -1113,7 +1202,8 @@ export async function scheduleAutoBackup(skipImmediateCheck = false) {
 }
 
 export async function toggleAutoBackup() {
-  autoBackupEnabled = !autoBackupEnabled;
+  const current = getAutoBackupEnabled();
+  setAutoBackupEnabledInternal(!current);
   await saveAutoBackupSettings();
   await scheduleAutoBackup();
   updateBackupStatusDisplay();
@@ -1127,7 +1217,7 @@ export async function setAutoBackupIntervalPrompt() {
     alert('Please enter a number between 5 and 1440 minutes.');
     return;
   }
-  autoBackupIntervalMinutes = minutes;
+  setAutoBackupIntervalMinutesInternal(minutes);
   await saveAutoBackupSettings();
   await scheduleAutoBackup();
   updateBackupStatusDisplay();
