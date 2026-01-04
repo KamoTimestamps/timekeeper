@@ -247,6 +247,16 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
   element.addEventListener('mousemove', handleMouseMove);
   element.addEventListener('mouseleave', handleMouseLeave);
 
+  // Hide tooltip when the element is clicked, even if the mouse remains over it
+  const handleClick = (e: Event) => {
+    // Prevent default hide-suppression by mouse hover
+    elementHovered = false;
+    if (activeTarget === element) {
+      hideTooltip();
+    }
+  };
+  element.addEventListener('click', handleClick, true);
+
   // Also observe for element being removed or hidden so we can hide tooltip
   const observer = new MutationObserver(() => {
     // If element is removed from the document or becomes hidden, hide tooltip
@@ -276,6 +286,7 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
     element.removeEventListener('mouseenter', handleMouseEnter);
     element.removeEventListener('mousemove', handleMouseMove);
     element.removeEventListener('mouseleave', handleMouseLeave);
+    element.removeEventListener('click', handleClick, true);
     try { observer.disconnect(); } catch (_) {}
     delete (element as any).__tooltipObserver;
   };
