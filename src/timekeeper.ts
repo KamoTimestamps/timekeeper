@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { getHolidayEmoji } from './holidays';
 import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix } from './util';
-import { addTooltip } from './tooltip';
+import { addTooltip, hideActiveTooltip } from './tooltip';
 import * as TimestampModel from './timestamp-model';
 import * as TimestampView from './timestamp-view';
 import * as AppState from './services/state';
@@ -2701,6 +2701,8 @@ function safePostMessage(message: unknown) {
     list.addEventListener("mouseleave", () => {
       isMouseOverTimestamps = false;
       TimestampView.setMouseOverTimestamps(false);
+      // Hide any visible tooltips when leaving the list
+      try { hideActiveTooltip(); } catch (_) {}
       if (suppressSortUntilRefocus) {
         return;
       }
@@ -4151,6 +4153,8 @@ function safePostMessage(message: unknown) {
       if (!isResizing && !isDragging) document.body.style.cursor = '';
       isMouseOverTimestamps = false;
       TimestampView.setMouseOverTimestamps(false);
+      // Hide any visible tooltips when leaving the pane
+      try { hideActiveTooltip(); } catch (_) {}
       // Restore highlight when leaving the pane
       try {
         autoHighlightNearest(false);

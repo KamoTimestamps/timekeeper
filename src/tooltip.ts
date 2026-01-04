@@ -201,6 +201,10 @@ function hideTooltip() {
   elementHovered = false;
 }
 
+export function hideActiveTooltip() {
+  hideTooltip();
+}
+
 /**
  * Add tooltip to an element
  * @param element - The element to add tooltip to
