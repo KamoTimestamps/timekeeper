@@ -2166,17 +2166,76 @@ function safePostMessage(message: unknown) {
 
 
 
+  // Helper function to update time display with current video time
+  function updateTimeDisplay(currentSeconds: number | null = null, playerInstance: any = null) {
+    if (!timeDisplay) return;
+
+    const video = getVideoElement();
+    const player = playerInstance || getActivePlayer();
+
+    if (!video && !player) {
+      return;
+    }
+
+    // Get current time from parameter or player
+    const rawTime = currentSeconds !== null ? currentSeconds : (player ? player.getCurrentTime() : 0);
+    const seconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor(seconds / 60) % 60;
+    const s = seconds % 60;
+
+    const { isLive } = player ? (player.getVideoData() || { isLive: false }) : { isLive: false };
+    const behindLive = player ? isBehindLiveEdge(player) : false;
+
+    const timestamps = list ? getTimestampItems().map(li => {
+      const timeLink = li.querySelector('a[data-time]');
+      return timeLink ? parseFloat(timeLink.getAttribute('data-time') ?? "0") : 0;
+    }) : [];
+
+    let timestampDisplay = "";
+    if (timestamps.length > 0) {
+      if (isLive) {
+        const currentTimeMinutes = Math.max(1, seconds / 60);
+        const liveTimestamps = timestamps.filter(time => time <= seconds);
+        if (liveTimestamps.length > 0) {
+          const timestampsPerMin = (liveTimestamps.length / currentTimeMinutes).toFixed(2);
+          if (parseFloat(timestampsPerMin) > 0) {
+            timestampDisplay = ` (${timestampsPerMin}/min)`;
+          }
+        }
+      } else {
+        const durationSeconds = player ? player.getDuration() : 0;
+        const validDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
+          ? durationSeconds
+          : (video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0);
+        const totalMinutes = Math.max(1, validDuration / 60);
+        const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(1);
+        if (parseFloat(timestampsPerMin) > 0) {
+          timestampDisplay = ` (${timestampsPerMin}/min)`;
+        }
+      }
+    }
+
+    timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+    timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
+  }
+
   function setupVideoEventListeners() {
     const video = getVideoElement();
     if (!video) return;
 
-    // Handler for timeupdate: always highlight the nearest timestamp
+    // Handler for timeupdate: always highlight the nearest timestamp and update time display
     const handleTimeUpdate = () => {
       if (!list) return;
 
       const player = getActivePlayer();
       const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
       if (!Number.isFinite(currentTime)) return;
+
+      // Update time display to stay in sync with video
+      if (timeDisplay && !isLoadingTimestamps && !isSeeking) {
+        updateTimeDisplay(currentTime, player);
+      }
 
       const nearestLi = findNearestTimestamp(currentTime);
       highlightTimestamp(nearestLi, false);
@@ -2682,26 +2741,26 @@ function safePostMessage(message: unknown) {
       setTimeout(() => { isSeeking = false; }, 500);
     };
 
-    function updateTime() {
-      // Skip updates during loading or seeking
-      if (isLoadingTimestamps || isSeeking) {
-        return;
-      }
+    // Helper function to update time display with current video time
+    function updateTimeDisplay(currentSeconds: number | null = null, playerInstance: any = null) {
+      if (!timeDisplay) return;
 
       const video = getVideoElement();
-      const playerInstance = getActivePlayer();
-      if (!video && !playerInstance) {
+      const player = playerInstance || getActivePlayer();
+
+      if (!video && !player) {
         return;
       }
 
-      const rawTime = playerInstance ? playerInstance.getCurrentTime() : 0;
-      const currentSeconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
-      const h = Math.floor(currentSeconds / 3600);
-      const m = Math.floor(currentSeconds / 60) % 60;
-      const s = currentSeconds % 60;
+      // Get current time from parameter or player
+      const rawTime = currentSeconds !== null ? currentSeconds : (player ? player.getCurrentTime() : 0);
+      const seconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor(seconds / 60) % 60;
+      const s = seconds % 60;
 
-      const { isLive } = playerInstance ? (playerInstance.getVideoData() || { isLive: false }) : { isLive: false };
-      const behindLive = playerInstance ? isBehindLiveEdge(playerInstance) : false;
+      const { isLive } = player ? (player.getVideoData() || { isLive: false }) : { isLive: false };
+      const behindLive = player ? isBehindLiveEdge(player) : false;
 
       const timestamps = list ? getTimestampItems().map(li => {
         const timeLink = li.querySelector('a[data-time]');
@@ -2711,8 +2770,8 @@ function safePostMessage(message: unknown) {
       let timestampDisplay = "";
       if (timestamps.length > 0) {
         if (isLive) {
-          const currentTimeMinutes = Math.max(1, currentSeconds / 60);
-          const liveTimestamps = timestamps.filter(time => time <= currentSeconds);
+          const currentTimeMinutes = Math.max(1, seconds / 60);
+          const liveTimestamps = timestamps.filter(time => time <= seconds);
           if (liveTimestamps.length > 0) {
             const timestampsPerMin = (liveTimestamps.length / currentTimeMinutes).toFixed(2);
             if (parseFloat(timestampsPerMin) > 0) {
@@ -2720,7 +2779,7 @@ function safePostMessage(message: unknown) {
             }
           }
         } else {
-          const durationSeconds = playerInstance ? playerInstance.getDuration() : 0;
+          const durationSeconds = player ? player.getDuration() : 0;
           const validDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
             ? durationSeconds
             : (video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0);
@@ -2734,8 +2793,26 @@ function safePostMessage(message: unknown) {
 
       timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
       timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
+    }
+
+    function updateTime() {
+      // Skip updates during loading or seeking
+      if (isLoadingTimestamps || isSeeking) {
+        return;
+      }
+
+      const playerInstance = getActivePlayer();
+      if (!playerInstance) {
+        return;
+      }
+
+      const rawTime = playerInstance.getCurrentTime();
+      const currentSeconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
+
+      updateTimeDisplay(currentSeconds, playerInstance);
 
       // Always highlight the nearest timestamp; defer scrolling to mouse leave
+      const timestamps = list ? getTimestampItems() : [];
       if (timestamps.length > 0) {
         highlightNearestTimestampAtTime(currentSeconds, false);
       }
