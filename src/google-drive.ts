@@ -117,9 +117,17 @@ let autoBackupBackoffTimeoutId: ReturnType<typeof setTimeout> | null = null;
 export async function loadGoogleAuthState() {
   try {
     const stored = await loadGlobalSettings('googleAuthState');
+    const storedRedacted = stored && typeof stored === 'object' ? { ...stored, accessToken: stored.accessToken ? '[REDACTED]' : null } : stored;
+    log('Loading Google auth state from IndexedDB:', storedRedacted);
     const parsed = GoogleAuthStateSchema.safeParse(stored);
     if (parsed.success) {
       googleAuthState = { ...googleAuthState, ...parsed.data };
+
+      // Log when reusing stored auth token
+      if (googleAuthState.isSignedIn && googleAuthState.accessToken) {
+        log(`Reusing stored Google auth token for ${googleAuthState.userName || googleAuthState.email || 'user'}`);
+      }
+
       updateGoogleUserDisplay();
 
       // If user is signed in, schedule auto-backup (skip immediate check on init)
@@ -127,7 +135,8 @@ export async function loadGoogleAuthState() {
         await scheduleAutoBackup(true);
       }
     } else if (stored !== undefined) {
-      log('Google auth state failed validation, ignoring stored value', parsed.error.format(), 'warn');
+      const storedRedacted = stored && typeof stored === 'object' ? { ...stored, accessToken: stored.accessToken ? '[REDACTED]' : null } : stored;
+      log('Google auth state failed validation:', { stored: storedRedacted, errors: parsed.error.format() }, 'warn');
     }
   } catch (err) {
     log('Failed to load Google auth state:', err, 'error');
@@ -137,7 +146,20 @@ export async function loadGoogleAuthState() {
 // Save Google auth state to storage
 export async function saveGoogleAuthState() {
   try {
+    // Validate state before saving
+    const validationResult = GoogleAuthStateSchema.safeParse(googleAuthState);
+    if (!validationResult.success) {
+      const stateRedacted = { ...googleAuthState, accessToken: googleAuthState.accessToken ? '[REDACTED]' : null };
+      log('Invalid auth state, cannot save', { state: stateRedacted, errors: validationResult.error.format() }, 'error');
+      return;
+    }
+
     await saveGlobalSettings('googleAuthState', googleAuthState);
+    if (googleAuthState.isSignedIn && googleAuthState.accessToken) {
+      log(`Saved Google auth state to IndexedDB for ${googleAuthState.userName || googleAuthState.email || 'user'}`);
+    } else {
+      log('Cleared Google auth state in IndexedDB (signed out)');
+    }
   } catch (err) {
     log('Failed to save Google auth state:', err, 'error');
   }
@@ -246,17 +268,31 @@ function monitorOAuthPopup(popup: Window | null): Promise<string> {
       channel = new BroadcastChannel(channelName);
       if (log) log('OAuth monitor: BroadcastChannel created successfully');
       channel.onmessage = (event) => {
-        if (log) log('OAuth monitor: received BroadcastChannel message', event.data);
-        if (event.data?.type === 'timekeeper_oauth_token' && event.data?.token) {
+        const dataRedacted = event.data?.token ? { ...event.data, token: '[REDACTED]' } : event.data;
+        if (log) log('OAuth monitor: received BroadcastChannel message', dataRedacted);
+
+        // Validate message structure
+        const parsed = z.object({
+          type: z.string(),
+          token: z.string().optional(),
+          error: z.string().optional(),
+        }).safeParse(event.data);
+
+        if (!parsed.success) {
+          if (log) log('OAuth monitor: invalid message format', parsed.error, 'warn');
+          return;
+        }
+
+        if (parsed.data.type === 'timekeeper_oauth_token' && parsed.data.token) {
           if (log) log('OAuth monitor: token received via BroadcastChannel');
           cleanup();
           try { popup.close(); } catch (_) {}
-          resolve(event.data.token);
-        } else if (event.data?.type === 'timekeeper_oauth_error') {
-          if (log) log('OAuth monitor: error received via BroadcastChannel', event.data.error, 'error');
+          resolve(parsed.data.token);
+        } else if (parsed.data.type === 'timekeeper_oauth_error') {
+          if (log) log('OAuth monitor: error received via BroadcastChannel', parsed.data.error, 'error');
           cleanup();
           try { popup.close(); } catch (_) {}
-          reject(new Error(event.data.error || 'OAuth failed'));
+          reject(new Error(parsed.data.error || 'OAuth failed'));
         }
       };
     } catch (err) {
@@ -278,26 +314,41 @@ function monitorOAuthPopup(popup: Window | null): Promise<string> {
             const result = getReq.result;
             if (result && result.value) {
               const data = result.value;
-              if (data.timestamp && data.timestamp > lastCheckedTimestamp) {
-                if (log) log('OAuth monitor: received IndexedDB message', data);
-                if (data.type === 'timekeeper_oauth_token' && data.token) {
+
+              // Validate message structure
+              const parsed = z.object({
+                type: z.string(),
+                token: z.string().optional(),
+                error: z.string().optional(),
+                timestamp: z.number().optional(),
+              }).safeParse(data);
+
+              if (!parsed.success) {
+                if (log) log('OAuth monitor: invalid IndexedDB message format', parsed.error, 'warn');
+                return;
+              }
+
+              if (parsed.data.timestamp && parsed.data.timestamp > lastCheckedTimestamp) {
+                const dataRedacted = parsed.data.token ? { ...parsed.data, token: '[REDACTED]' } : parsed.data;
+                if (log) log('OAuth monitor: received IndexedDB message', dataRedacted);
+                if (parsed.data.type === 'timekeeper_oauth_token' && parsed.data.token) {
                   if (log) log('OAuth monitor: token received via IndexedDB');
                   cleanup();
                   try { popup.close(); } catch (_) {}
                   // Delete the message
                   const delTx = db.transaction('settings', 'readwrite');
                   delTx.objectStore('settings').delete('oauth_message');
-                  resolve(data.token);
-                } else if (data.type === 'timekeeper_oauth_error') {
-                  if (log) log('OAuth monitor: error received via IndexedDB', data.error, 'error');
+                  resolve(parsed.data.token);
+                } else if (parsed.data.type === 'timekeeper_oauth_error') {
+                  if (log) log('OAuth monitor: error received via IndexedDB', parsed.data.error, 'error');
                   cleanup();
                   try { popup.close(); } catch (_) {}
                   // Delete the message
                   const delTx = db.transaction('settings', 'readwrite');
                   delTx.objectStore('settings').delete('oauth_message');
-                  reject(new Error(data.error || 'OAuth failed'));
+                  reject(new Error(parsed.data.error || 'OAuth failed'));
                 }
-                lastCheckedTimestamp = data.timestamp;
+                lastCheckedTimestamp = parsed.data.timestamp || Date.now();
               }
             }
             db.close();
@@ -371,13 +422,26 @@ export async function signInToGoogle() {
       });
 
       if (userInfoResponse.ok) {
-        const userInfo = await userInfoResponse.json();
+        const userInfoJson = await userInfoResponse.json();
+
+        // Validate user info response
+        const userInfoParsed = z.object({
+          name: z.string().optional(),
+          email: z.string().optional(),
+        }).safeParse(userInfoJson);
+
+        if (!userInfoParsed.success) {
+          if (log) log('Failed to validate user info response', userInfoParsed.error, 'error');
+          throw new Error('Invalid user info response');
+        }
+
+        const userInfo = userInfoParsed.data;
 
         // Update auth state
         googleAuthState.accessToken = accessToken;
         googleAuthState.isSignedIn = true;
-        googleAuthState.userName = userInfo.name;
-        googleAuthState.email = userInfo.email;
+        googleAuthState.userName = userInfo.name || null;
+        googleAuthState.email = userInfo.email || null;
 
         // Save auth state
         await saveGoogleAuthState();
@@ -456,6 +520,7 @@ export async function handleOAuthPopup() {
         error: params.get('error_description') || error
       });
       channel.close();
+      if (log) log('OAuth popup: error broadcast via BroadcastChannel');
     } catch (_) {
       // Fallback to IndexedDB
       const message = {
@@ -463,12 +528,22 @@ export async function handleOAuthPopup() {
         error: params.get('error_description') || error,
         timestamp: Date.now()
       };
+      if (log) log('OAuth popup: writing error to IndexedDB', message);
       const openReq = indexedDB.open('ytls-timestamps-db', 3);
       openReq.onsuccess = () => {
         const db = openReq.result;
         const tx = db.transaction('settings', 'readwrite');
-        tx.objectStore('settings').put({ key: 'oauth_message', value: message });
+        const putReq = tx.objectStore('settings').put({ key: 'oauth_message', value: message });
+        putReq.onsuccess = () => {
+          if (log) log('OAuth popup: error written to IndexedDB successfully');
+        };
+        putReq.onerror = () => {
+          if (log) log('OAuth popup: failed to write error to IndexedDB', putReq.error, 'error');
+        };
         db.close();
+      };
+      openReq.onerror = () => {
+        if (log) log('OAuth popup: failed to open IndexedDB', openReq.error, 'error');
       };
     }
 
@@ -498,14 +573,24 @@ export async function handleOAuthPopup() {
         token: token,
         timestamp: Date.now()
       };
+      const messageRedacted = { ...message, token: '[REDACTED]' };
+      if (log) log('OAuth popup: writing token to IndexedDB', messageRedacted);
       const openReq = indexedDB.open('ytls-timestamps-db', 3);
       openReq.onsuccess = () => {
         const db = openReq.result;
         const tx = db.transaction('settings', 'readwrite');
-        tx.objectStore('settings').put({ key: 'oauth_message', value: message });
+        const putReq = tx.objectStore('settings').put({ key: 'oauth_message', value: message });
+        putReq.onsuccess = () => {
+          if (log) log('OAuth popup: token written to IndexedDB successfully');
+        };
+        putReq.onerror = () => {
+          if (log) log('OAuth popup: failed to write token to IndexedDB', putReq.error, 'error');
+        };
         db.close();
       };
-      if (log) log('OAuth popup: token broadcast via IndexedDB');
+      openReq.onerror = () => {
+        if (log) log('OAuth popup: failed to open IndexedDB', openReq.error, 'error');
+      };
     }
 
     // Close popup after a brief delay
@@ -786,6 +871,19 @@ export async function loadAutoBackupSettings() {
 
 export async function saveAutoBackupSettings() {
   try {
+    // Validate settings before saving
+    const settings = {
+      autoBackupEnabled,
+      autoBackupIntervalMinutes,
+      lastAutoBackupAt: lastAutoBackupAt ?? 0,
+    };
+
+    const validationResult = AutoBackupSettingsSchema.safeParse(settings);
+    if (!validationResult.success) {
+      log('Invalid auto backup settings, cannot save', { settings, errors: validationResult.error.format() }, 'error');
+      return;
+    }
+
     await saveGlobalSettings('autoBackupEnabled', autoBackupEnabled);
     await saveGlobalSettings('autoBackupIntervalMinutes', autoBackupIntervalMinutes);
     await saveGlobalSettings('lastAutoBackupAt', lastAutoBackupAt ?? 0);
