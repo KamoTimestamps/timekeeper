@@ -1,6 +1,6 @@
 {
   "name": "timekeeper",
-  "version": "4.4.39",
+  "version": "4.4.46",
   "private": true,
   "description": "Timekeeper userscript TypeScript project",
   "scripts": {
@@ -8,6 +8,7 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
+    "clean-css-cli": "^5.6.3",
     "esbuild": "^0.27.2",
     "typescript": "^5.4.0"
   },
