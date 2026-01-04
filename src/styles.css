@@ -135,7 +135,7 @@
   border-top: none;
 }
 #ytls-pane li.ytls-timestamp-highlight {
-  background: rgb(31, 37, 29);
+  background: rgba(66, 79, 66, 0.8);
 }
 #ytls-pane li.ytls-timestamp-pending-delete {
   background: rgba(128, 0, 0, 0.8);
