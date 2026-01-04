@@ -4,6 +4,7 @@ import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix
 import { addTooltip } from './tooltip';
 import * as TimestampModel from './timestamp-model';
 import * as TimestampView from './timestamp-view';
+import * as AppState from './services/state';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
