@@ -350,18 +350,6 @@ if (hash && hash.length > 1) {
     "getDuration"
   ];
   const PLAYER_METHOD_CHECK_TIMEOUT_MS = 5000;
-  const PLAYER_METHODS_WITH_FALLBACK = new Set([
-    "getCurrentTime",
-    "seekTo",
-    "getPlayerState",
-    "seekToLiveHead",
-    "getVideoData",
-    "getDuration"
-  ]);
-
-  function methodHasFallback(method) {
-    return PLAYER_METHODS_WITH_FALLBACK.has(method);
-  }
 
   function getVideoElement() {
     return document.querySelector("video");
@@ -382,25 +370,13 @@ if (hash && hash.length > 1) {
 
   function hasRequiredPlayerMethods(playerInstance) {
     return REQUIRED_PLAYER_METHODS.every(method => {
-      if (typeof playerInstance?.[method] === "function") {
-        return true;
-      }
-      if (!methodHasFallback(method)) {
-        return false;
-      }
-      return !!getVideoElement();
+      return typeof playerInstance?.[method] === "function";
     });
   }
 
   function missingPlayerMethods(playerInstance) {
     return REQUIRED_PLAYER_METHODS.filter(method => {
-      if (typeof playerInstance?.[method] === "function") {
-        return false;
-      }
-      if (!methodHasFallback(method)) {
-        return true;
-      }
-      return !getVideoElement();
+      return typeof playerInstance?.[method] !== "function";
     });
   }
 
@@ -413,11 +389,7 @@ if (hash && hash.length > 1) {
       }
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    const fallbackPlayer = getActivePlayer();
-    if (hasRequiredPlayerMethods(fallbackPlayer)) {
-      return fallbackPlayer;
-    }
-    return fallbackPlayer;
+    return getActivePlayer();
   }
 
 
