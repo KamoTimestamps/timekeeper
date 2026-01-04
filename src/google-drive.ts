@@ -5,6 +5,7 @@
 
 import { log } from './util';
 import { addTooltip } from './tooltip';
+import { renderAuthStatus } from './components';
 import { zipSync, strToU8 } from 'fflate';
 
 declare const GM: {
@@ -151,38 +152,33 @@ export function updateAuthStatusDisplay(status?: 'authenticating' | 'error', mes
   if (status === 'authenticating') {
     ensureAuthSpinnerStyles();
     authStatusDisplay.style.color = '#ffa500';
-    while (authStatusDisplay.firstChild) authStatusDisplay.removeChild(authStatusDisplay.firstChild);
-    const spinner = document.createElement('span');
-    spinner.className = 'tk-auth-spinner';
-    const text = document.createTextNode(` ${message || 'Authorizing with Google…'}`);
-    authStatusDisplay.appendChild(spinner);
-    authStatusDisplay.appendChild(text);
+    renderAuthStatus(authStatusDisplay, 'authenticating', message);
     return;
   }
   if (status === 'error') {
-    authStatusDisplay.textContent = `❌ ${message || 'Authorization failed'}`;
     authStatusDisplay.style.color = '#ff4d4f';
+    renderAuthStatus(authStatusDisplay, 'error', message);
     updateBackupStatusDisplay();
     return;
   }
   if (!googleAuthState.isSignedIn) {
-    authStatusDisplay.textContent = '❌ Not signed in';
     authStatusDisplay.style.color = '#ff4d4f';
+    renderAuthStatus(authStatusDisplay, 'none');
     authStatusDisplay.removeAttribute('title');
     authStatusDisplay.onmouseenter = null;
     authStatusDisplay.onmouseleave = null;
   } else {
-    authStatusDisplay.textContent = `✅ Signed in`;
     authStatusDisplay.style.color = '#52c41a';
+    renderAuthStatus(authStatusDisplay, 'success', 'Signed in');
     authStatusDisplay.removeAttribute('title');
 
     // Change text on hover to show username
     if (googleAuthState.userName) {
       authStatusDisplay.onmouseenter = () => {
-        authStatusDisplay.textContent = `✅ Signed in as ${googleAuthState.userName}`;
+        renderAuthStatus(authStatusDisplay, 'success', `Signed in as ${googleAuthState.userName}`);
       };
       authStatusDisplay.onmouseleave = () => {
-        authStatusDisplay.textContent = `✅ Signed in`;
+        renderAuthStatus(authStatusDisplay, 'success', 'Signed in');
       };
     } else {
       authStatusDisplay.onmouseenter = null;

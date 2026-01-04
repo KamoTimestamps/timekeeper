@@ -1,6 +1,7 @@
 import { getHolidayEmoji } from './holidays';
 import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix } from './util';
 import { addTooltip } from './tooltip';
+import { renderTimestampDOM, renderErrorElement, renderEmptyPlaceholder } from './components';
 import delegate from 'delegate-it';
 import {
   saveToIndexedDB,
@@ -768,9 +769,7 @@ function safePostMessage(message: unknown) {
   function showListPlaceholder(message: string) {
     if (!list) return;
     clearTimestampsDisplay();
-    const li = document.createElement('li');
-    li.className = 'ytls-placeholder';
-    li.textContent = message;
+    const li = renderEmptyPlaceholder(message);
     list.appendChild(li);
     // Disable scrolling while showing placeholder
     list.style.overflowY = 'hidden';
@@ -1170,74 +1169,18 @@ function safePostMessage(message: unknown) {
     const sanitizedStart = Math.max(0, start);
     const timestampGuid = guid ?? crypto.randomUUID();
 
-    const li = document.createElement("li");
-    const timeRow = document.createElement("div");
-    const minus = document.createElement("span");
-    const record = document.createElement("span");
-    const plus = document.createElement("span");
-    const anchor = document.createElement("a");
-    const timeDiff = document.createElement("span");
-    const commentInput = document.createElement("input");
-    const del = document.createElement("button");
+    // Use Preact component to render the DOM structure
+    const li = renderTimestampDOM(timestampGuid, sanitizedStart, comment, formatTime);
 
-    li.dataset.guid = timestampGuid;
+    // Get references to important elements for later manipulation
+    const commentInput = li.querySelector<HTMLInputElement>('input[data-action="comment"]')!;
+    const anchor = li.querySelector<HTMLAnchorElement>('a[data-time]')!;
+    const del = li.querySelector<HTMLButtonElement>('.ts-delete')!;
+    const timeDiff = li.querySelector<HTMLSpanElement>('.time-diff')!;
 
-    timeRow.className = "time-row";
-
-    // Setup indent gutter - displays in left margin without affecting layout
-    const indentGutter = document.createElement("div");
-    indentGutter.style.cssText = "position:absolute;left:0;top:0;width:20px;height:100%;display:flex;align-items:center;justify-content:center;cursor:pointer;";
-    indentGutter.dataset.action = "toggle-indent";
-    addTooltip(indentGutter, "Click to toggle indent");
-
-    const indentToggle = document.createElement("span");
-    indentToggle.style.cssText = "color:#999;font-size:12px;pointer-events:none;display:none;";
-    indentToggle.className = "indent-toggle";
-
-    indentGutter.append(indentToggle);
-
-    // Add padding to li for gutter space
-    li.style.cssText = "position:relative;padding-left:20px;";
-
-    // Mouseenter/mouseleave now handled via delegation
-
-    commentInput.value = comment || "";
-    commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
-    commentInput.type = "text";
-    commentInput.setAttribute("inputmode", "text");
-    commentInput.autocapitalize = "off" as any;
-    commentInput.autocomplete = "off";
-    commentInput.spellcheck = false;
-    commentInput.dataset.action = "comment";
-    // Event handlers now managed via delegation
-
-    minus.textContent = "➖";
-    minus.dataset.increment = "-1";
-    minus.style.cursor = "pointer";
-    minus.style.margin = "0px";
-    minus.className = "ts-button ts-minus";
-
-    plus.textContent = "➕";
-    plus.dataset.increment = "1";
-    plus.style.cursor = "pointer";
-    plus.style.margin = "0px";
-    plus.className = "ts-button ts-plus";
-
-    record.textContent = "⏺️";
-    record.style.cursor = "pointer";
-    record.style.margin = "0px";
-    record.className = "ts-button ts-record";
-    record.dataset.action = "record";
-    addTooltip(record, "Set to current playback time");
-
-    formatTime(anchor, sanitizedStart);
     invalidateLatestTimestampValue();
 
-    del.textContent = "🗑️";
-    del.style.cssText = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
-    del.className = "ts-button ts-delete";
-    del.dataset.action = "delete";
-    // Delete handler logic now in delegated handler
+    // Attach delete handler logic to the delete button
     (del as any).__deleteHandler = () => {
       // Track the timeout so we can cancel it if the timestamp is removed early
       let cancelTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -1338,13 +1281,7 @@ function safePostMessage(message: unknown) {
       }
     };
 
-    timeDiff.className = "time-diff";
-    timeDiff.style.color = "#888";
-    timeDiff.style.marginLeft = "5px";
-
-    timeRow.append(minus, record, plus, anchor, timeDiff, del);
-    li.append(indentGutter, timeRow, commentInput);
-
+    // DOM structure is already created by renderTimestampDOM, no need to append elements
     const newTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
     if (appendToList) {
       // If a placeholder is present (e.g., "No timestamps for this video"), remove it
@@ -1731,14 +1668,7 @@ function safePostMessage(message: unknown) {
 
     clearTimestampsDisplay();
 
-    const errorItem = document.createElement("li");
-    errorItem.textContent = message;
-    errorItem.classList.add("ytls-error-message");
-    errorItem.style.color = "#ff6b6b";
-    errorItem.style.fontWeight = "bold";
-    errorItem.style.padding = "8px";
-    errorItem.style.background = "rgba(255, 0, 0, 0.1)";
-
+    const errorItem = renderErrorElement(message);
     list.appendChild(errorItem);
     updateSeekbarMarkers();
   }

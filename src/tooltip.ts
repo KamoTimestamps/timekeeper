@@ -5,7 +5,7 @@
 
 let tooltipElement: HTMLDivElement | null = null;
 let tooltipTimeout: ReturnType<typeof setTimeout> | null = null;
-const TOOLTIP_DELAY = 500; // milliseconds
+const TOOLTIP_DELAY = 250; // milliseconds
 
 // Active tooltip state
 let activeTarget: HTMLElement | null = null;
