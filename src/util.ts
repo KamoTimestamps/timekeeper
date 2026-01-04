@@ -6,6 +6,11 @@ declare const GM_info: {
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+
+dayjs.extend(utc);
+
 export function log(message: string, ...args: any[]) {
   let logLevel: LogLevel = 'debug';
   const consoleArgs = [...args];
@@ -27,17 +32,10 @@ export function log(message: string, ...args: any[]) {
  * @param videoDuration - The total video duration (used to determine format)
  */
 export function formatTimeString(seconds: number, videoDuration: number = seconds): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = String(seconds % 60).padStart(2, "0");
-
-  // For times under 1 hour, show M:SS or MM:SS
-  if (videoDuration < 3600) {
-    return `${m < 10 ? m : String(m).padStart(2, "0")}:${s}`;
-  }
-
-  // For times with hours, show H:MM:SS or HH:MM:SS
-  return `${videoDuration >= 36000 ? String(h).padStart(2, "0") : h}:${String(m).padStart(2, "0")}:${s}`;
+  // Use 'mm:ss' for videos shorter than 1 hour, 'H:mm:ss' for 1–9:59:59, and 'HH:mm:ss' for 10+ hours
+  const ms = Math.max(0, Math.floor(seconds) * 1000);
+  const fmt = videoDuration < 3600 ? 'mm:ss' : (videoDuration >= 36000 ? 'HH:mm:ss' : 'H:mm:ss');
+  return dayjs.utc(ms).format(fmt);
 }
 
 /**
@@ -64,11 +62,6 @@ export function buildYouTubeUrlWithTimestamp(timeInSeconds: number, currentUrl: 
  * Generate a UTC timestamp suffix in format: YYYY-MM-DD--HH-MM-SS
  */
 export function getTimestampSuffix(): string {
-  const now = new Date();
-  return now.getUTCFullYear() +
-    '-' + String(now.getUTCMonth() + 1).padStart(2, '0') +
-    '-' + String(now.getUTCDate()).padStart(2, '0') +
-    '--' + String(now.getUTCHours()).padStart(2, '0') +
-    '-' + String(now.getUTCMinutes()).padStart(2, '0') +
-    '-' + String(now.getUTCSeconds()).padStart(2, '0');
+  // Use dayjs UTC formatting to generate suffix like: YYYY-MM-DD--HH-mm-ss
+  return dayjs().utc().format('YYYY-MM-DD--HH-mm-ss');
 }
