@@ -134,6 +134,7 @@ if (hash && hash.length > 1) {
   let list: HTMLUListElement | null = null;
   let btns: HTMLDivElement | null = null;
   let timeDisplay: HTMLSpanElement | null = null;
+  let playbackSpeedDisplay: HTMLSpanElement | null = null;
   let style: HTMLStyleElement | null = null;
   let versionDisplay: HTMLSpanElement | null = null;
   let backupStatusIndicator: HTMLSpanElement | null = null;
@@ -2032,6 +2033,7 @@ function safePostMessage(message: unknown) {
     list = null;
     btns = null;
     timeDisplay = null;
+    playbackSpeedDisplay = null;
     style = null;
     versionDisplay = null;
 
@@ -2282,6 +2284,16 @@ function safePostMessage(message: unknown) {
       if (timeDisplay && !isLoadingTimestamps && !isSeeking) {
         updateTimeDisplay(currentTime, player);
       }
+
+      // Update playback speed display to stay in sync with player
+      try {
+        if (playbackSpeedDisplay) {
+          const rate = player ? (Number(player.getPlaybackRate()) || 1) : 1;
+          const rateFormatted = Math.round(rate * 100) / 100;
+          const display = rateFormatted.toFixed(2).replace(/\.0+?$|(?<=\.[0-9])0+$/g, '');
+          playbackSpeedDisplay.textContent = `${display}x`;
+        }
+      } catch (_) {}
 
       // Use centralized helper to perform highlight (respects hover and forces scroll when requested)
       autoHighlightNearest(false, currentTime);
@@ -2736,7 +2748,7 @@ function safePostMessage(message: unknown) {
 
   header.addEventListener("dblclick", (event) => {
     const target = event.target instanceof HTMLElement ? event.target : null;
-    if (target && (target.closest("a") || target.closest("button") || target.closest("#ytls-current-time") || target.closest(".ytls-version-display") || target.closest(".ytls-backup-indicator"))) {
+    if (target && (target.closest("a") || target.closest("button") || target.closest("#ytls-current-time") || target.closest("#ytls-playback-speed") || target.closest(".ytls-version-display") || target.closest(".ytls-backup-indicator"))) {
       return;
     }
     event.preventDefault();
@@ -2786,6 +2798,27 @@ function safePostMessage(message: unknown) {
     // Add tooltip to timeDisplay with dynamic text
     addTooltip(timeDisplay, getTimeDisplayTooltip);
 
+    // Create playback speed display that shows current speed and sets to 2x on click
+    playbackSpeedDisplay = document.createElement("span");
+    playbackSpeedDisplay.id = "ytls-playback-speed";
+    playbackSpeedDisplay.textContent = "1x"; // initial display
+    playbackSpeedDisplay.style.cursor = "pointer";
+    playbackSpeedDisplay.style.userSelect = "none";
+    addTooltip(playbackSpeedDisplay, () => `Current playback speed. Click to set to 2x.`);
+    playbackSpeedDisplay.onclick = () => {
+      const player = getActivePlayer();
+      if (player) {
+        try {
+          player.setPlaybackRate(2);
+          updatePlaybackSpeedUI();
+        } catch (_) {}
+      }
+    };
+    // Prevent dragging and double-click from the clickable text itself
+    playbackSpeedDisplay.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+    playbackSpeedDisplay.addEventListener('dblclick', (e) => { e.stopPropagation(); });
+    playbackSpeedDisplay.addEventListener('click', (e) => { e.stopPropagation(); });
+
     // Enable clicking on the current timestamp to jump to the latest point in the live stream (only for live streams)
     timeDisplay.onclick = () => {
       const player = getActivePlayer();
@@ -2808,6 +2841,22 @@ function safePostMessage(message: unknown) {
       const { isLive } = player.getVideoData() || { isLive: false };
       timeDisplay.style.cursor = isLive ? "pointer" : "default";
     };
+
+    // Sync playback speed display with current player rate
+    function updatePlaybackSpeedUI() {
+      if (!playbackSpeedDisplay) return;
+      const player = getActivePlayer();
+      const rate = player ? (Number(player.getPlaybackRate()) || 1) : 1;
+      const display = formatSpeed(rate);
+      playbackSpeedDisplay.textContent = `${display}x`;
+      playbackSpeedDisplay.setAttribute('aria-label', `Playback speed ${display}x`);
+    }
+
+    // Format a speed value to the minimal necessary digits: 2 -> "2", 2.5 -> "2.5", 2.25 -> "2.25"
+    function formatSpeed(n: number): string {
+      const r = Math.round(n * 100) / 100;
+      return r.toFixed(2).replace(/\.0+?$|(?<=\.[0-9])0+$/g, '');
+    }
 
     // Helper function to update time display with current video time
     function updateTimeDisplay(currentSeconds: number | null = null, playerInstance: any = null) {
@@ -2864,6 +2913,8 @@ function safePostMessage(message: unknown) {
 
       // Update cursor state based on live stream status
       updateTimeDisplayInteractivity();
+      // Update playback speed UI to reflect actual video rate
+      try { updatePlaybackSpeedUI(); } catch (_) {}
     }
 
     function updateTime() {
@@ -3927,6 +3978,11 @@ function safePostMessage(message: unknown) {
         return;
       }
 
+      // Prevent starting a drag when clicking inside the playback speed controls (they should not move the pane)
+      if (target instanceof Element && (target.closest('#ytls-playback-speed-group') || target.closest('#ytls-playback-speed'))) {
+        return;
+      }
+
       // Allow dragging from the header region
       if (target !== header && !header.contains(target) && window.getComputedStyle(target).cursor === 'pointer') {
         return;
@@ -4112,6 +4168,16 @@ function safePostMessage(message: unknown) {
 
 
     header.appendChild(timeDisplay); // Add timeDisplay
+    // Add playback speed display
+    const playbackGroup = document.createElement('span');
+    playbackGroup.id = 'ytls-playback-speed-group';
+    playbackGroup.style.display = 'inline-flex';
+    playbackGroup.style.alignItems = 'center';
+    playbackGroup.style.marginLeft = '4px'; // spacing from timeDisplay
+    if (playbackSpeedDisplay) playbackGroup.appendChild(playbackSpeedDisplay);
+
+    header.appendChild(playbackGroup);
+
     header.appendChild(versionWrapper); // Add version wrapper with indicator to header
 
     const content = document.createElement("div");
