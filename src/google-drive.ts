@@ -538,6 +538,7 @@ export async function signInToGoogle() {
         updateGoogleUserDisplay();
         updateAuthStatusDisplay();
         updateBackupStatusDisplay(); // Update backup status indicator immediately
+        updateBackupStatusIndicator(); // Update main window indicator
 
         // Check if backup is needed and schedule auto-backup
         await scheduleAutoBackup();
@@ -709,6 +710,7 @@ export async function signOutFromGoogle() {
   updateGoogleUserDisplay();
   updateAuthStatusDisplay();
   updateBackupStatusDisplay(); // Update backup status indicator immediately
+  updateBackupStatusIndicator(); // Update main window indicator
 }
 
 // Verify that the user is still signed in by making a lightweight API call
@@ -906,6 +908,7 @@ async function handleAuthExpiration(opts?: { silent?: boolean }): Promise<void> 
   await saveGoogleAuthState();
   updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
   updateBackupStatusDisplay();
+  updateBackupStatusIndicator(); // Update main window indicator
 }
 
 // Export all timestamps to Google Drive
@@ -1158,6 +1161,7 @@ export async function runAutoBackupOnce(silent = true) {
       await saveGoogleAuthState();
       updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
       updateBackupStatusDisplay(); // Update backup status indicator immediately
+      updateBackupStatusIndicator(); // Update main window indicator
       // Reset retry state
       setAutoBackupRetryAttemptsInternal(0);
       setAutoBackupBackoffMsInternal(null);
