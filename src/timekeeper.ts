@@ -2798,18 +2798,20 @@ function safePostMessage(message: unknown) {
     // Add tooltip to timeDisplay with dynamic text
     addTooltip(timeDisplay, getTimeDisplayTooltip);
 
-    // Create playback speed display that shows current speed and sets to 2x on click
+    // Create playback speed display that shows current speed and toggles between 1x and 2x on click
     playbackSpeedDisplay = document.createElement("span");
     playbackSpeedDisplay.id = "ytls-playback-speed";
     playbackSpeedDisplay.textContent = "1x"; // initial display
     playbackSpeedDisplay.style.cursor = "pointer";
     playbackSpeedDisplay.style.userSelect = "none";
-    addTooltip(playbackSpeedDisplay, () => `Current playback speed. Click to set to 2x.`);
+    addTooltip(playbackSpeedDisplay, () => `Current playback speed. Click to toggle between 1x and 2x.`);
     playbackSpeedDisplay.onclick = () => {
       const player = getActivePlayer();
       if (player) {
         try {
-          player.setPlaybackRate(2);
+          const currentRate = Number(player.getPlaybackRate()) || 1;
+          const newRate = currentRate === 1 ? 2 : 1;
+          player.setPlaybackRate(newRate);
           updatePlaybackSpeedUI();
         } catch (_) {}
       }
