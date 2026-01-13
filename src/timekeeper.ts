@@ -5,6 +5,7 @@ import { addTooltip, hideActiveTooltip } from './tooltip';
 import * as TimestampModel from './timestamp-model';
 import * as TimestampView from './timestamp-view';
 import * as AppState from './services/state';
+import { initializeDvrEnablement } from './dvr-enablement';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
@@ -81,6 +82,9 @@ if (hash && hash.length > 1) {
     }
   }
 }
+
+// Initialize DVR/Rewind enablement for live streams
+initializeDvrEnablement();
 
 (async function () {
   'use strict';

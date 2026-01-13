@@ -2,10 +2,10 @@
 // @name         Timekeeper
 // @namespace    https://violentmonkey.github.io/
 // @version      ${TIMEKEEPER_VERSION}
-// @description  Enhanced timestamp tool for YouTube videos
+// @description  Enhanced timestamp tool for YouTube videos with DVR/rewind enablement for live streams
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
-// @run-at       document-idle
+// @run-at       document-start
 // @noframes
 // @icon         https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_64px_Indexed.png
 // @grant        GM.getValue
