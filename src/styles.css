@@ -76,16 +76,59 @@
   position: relative;
 }
 #ytls-content ul {
+  --ytls-scrollbar-size: 10px;
   flex: 1 1 auto;
   overflow-y: auto;
-  margin: 0 !important;
+  overflow-x: hidden;
+  margin: 0 calc(-1 * var(--ytls-scrollbar-size)) 0 0 !important;
   padding: 0 !important;
   border: none !important;
   box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
+  width: calc(100% + var(--ytls-scrollbar-size));
+  max-width: none;
   min-height: 0;
   z-index: 1;
+  scrollbar-gutter: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+/* Keep scroll behavior active, but only reveal scrollbar visuals over the timestamp list */
+#ytls-content ul:hover,
+#ytls-content ul:focus-within {
+  scrollbar-color: rgba(255, 255, 255, 0.45) transparent;
+}
+
+#ytls-content ul::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+#ytls-content ul:hover::-webkit-scrollbar,
+#ytls-content ul:focus-within::-webkit-scrollbar {
+  width: var(--ytls-scrollbar-size);
+  height: var(--ytls-scrollbar-size);
+}
+
+#ytls-content ul::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#ytls-content ul::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+#ytls-content ul:hover::-webkit-scrollbar-thumb,
+#ytls-content ul:focus-within::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.42);
+}
+
+#ytls-content ul:hover::-webkit-scrollbar-thumb:hover,
+#ytls-content ul:focus-within::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.62);
 }
 
 /* Placeholder message shown centered in the list area while loading or when empty */
@@ -114,7 +157,7 @@
   gap: 8px;
   justify-content: flex-end;
   padding: 10px 18px 10px 16px;
-  background: linear-gradient(0deg, #23272b 0%, #212121 100%);
+  background: #131313;
   border-radius: 0 0 12px 12px;
   border-top: 1px solid #23272b;
   margin-top: auto;
@@ -135,7 +178,7 @@
   border-top: none;
 }
 #ytls-pane li.ytls-timestamp-highlight {
-  background: rgba(66, 79, 66, 0.8);
+  background: rgba(35, 48, 36, 0.8);
 }
 #ytls-pane li.ytls-timestamp-pending-delete {
   background: rgba(128, 0, 0, 0.8);
@@ -146,17 +189,34 @@
   align-items: center;
 }
 #ytls-pane .time-row a {
-  flex-grow: 0; /* Don't allow the timestamp anchor to grow and fill empty space */
-  flex-shrink: 0; /* Prevent shrinking */
-  max-width: 100%; /* Constrain the width to the parent container */
+  flex: 0 0 8ch; /* Reserve fixed hh:mm:ss width so controls don't shift */
+  width: 8ch;
+  min-width: 8ch;
+  max-width: 8ch;
+  display: inline-block;
   text-align: left; /* Align the text to the left */
   overflow: hidden; /* Prevent overflow */
   text-overflow: ellipsis; /* Add ellipsis for long text */
   white-space: nowrap; /* Prevent wrapping */
+  font-variant-numeric: tabular-nums;
 }
 #ytls-pane .time-row .time-diff {
   flex-grow: 1; /* Allow time-diff to fill remaining space */
   text-align: right; /* Align time diff text to the right, next to trash icon */
+}
+#ytls-pane .time-row .ytls-row-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 5px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+#ytls-pane li:hover .time-row .ytls-row-controls {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 #ytls-pane .ytls-marker {
   position: absolute;
@@ -191,7 +251,7 @@
   gap: 5px;
   justify-content: space-between;
   padding: 8px 12px;
-  background: rgb(33, 33, 33);
+  background: #131313;
   border-radius: 0 0 12px 12px;
   border-top: 1px solid rgba(85, 85, 85, 0.8);
   z-index: 2;
@@ -205,15 +265,26 @@
 .ytls-main-button {
   background: rgb(39, 39, 39);
   color: white;
-  font-size: 24px;
   border: none;
   border-radius: 5px;
-  padding: 5px;
+  padding: 8px;
+  min-width: 36px;
+  min-height: 36px;
   cursor: pointer;
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  touch-action: manipulation;
 }
 .ytls-main-button:hover {
   background: rgb(63, 63, 63);
+}
+.ytls-main-button svg {
+  display: block;
+  width: 24px;
+  height: 24px;
 }
 .ytls-holiday-emoji {
   position: absolute;
@@ -378,19 +449,16 @@
   position:absolute;
   top:8px;
   right:8px;
-  width:16px;
-  height:16px;
+  width:20px;
+  height:20px;
   background:#ff4444;
   color:white;
   border:none;
   border-radius:3px;
-  font-size:14px;
-  font-weight:bold;
   cursor:pointer;
   display:flex;
   align-items:center;
   justify-content:center;
-  line-height:1;
   padding:0;
   flex-shrink:0;
   z-index:1;
@@ -487,9 +555,39 @@
   align-items: center;
   margin-bottom: 5px;
   padding: 0 8px;
+  gap: 4px;
 }
 .ytls-settings-modal-button:hover {
   background: #777; /* Example hover effect */
+}
+
+/* Tabler icon sizing in pane controls */
+#ytls-pane .time-row span svg,
+#ytls-pane .time-row button svg {
+  display: block;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+/* Route SVG clicks to their parent controls for consistent interaction */
+.ytls-main-button svg,
+.ytls-settings-modal-button svg,
+.ytls-save-modal-button svg,
+.ytls-save-modal-cancel-button svg,
+.ytls-modal-close-button svg,
+#ytls-header-button svg {
+  pointer-events: none;
+}
+
+/* Reduce mobile tap delay for button-like controls */
+.ytls-row-control,
+.ytls-settings-modal-button,
+.ytls-save-modal-button,
+.ytls-save-modal-cancel-button,
+.ytls-modal-close-button,
+#ytls-header-button,
+#ytls-buttons button {
+  touch-action: manipulation;
 }
 
 /* Shared styles for modal copy */

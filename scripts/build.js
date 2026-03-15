@@ -88,6 +88,9 @@ async function buildUserscript() {
     external: ['GM', 'GM_info'],
     minify: true,
     plugins: [injectCSSPlugin],
+    loader: {
+      '.svg': 'text',
+    },
   });
 
   const headerTemplate = readHeaderTemplate();

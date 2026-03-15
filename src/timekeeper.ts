@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { getHolidayEmoji } from './holidays';
+import { createIcon, setIcon, setIconLabel, TablerIconName } from './icons';
 import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix } from './util';
 import { addTooltip, hideActiveTooltip } from './tooltip';
 import * as TimestampModel from './timestamp-model';
@@ -827,7 +828,7 @@ function safePostMessage(message: unknown) {
             }
           }
 
-          timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+          timeDisplay.textContent = `${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
         }
       }
     }
@@ -1073,21 +1074,25 @@ function safePostMessage(message: unknown) {
       return;
     }
 
-    const target = event.target instanceof HTMLElement ? event.target : null;
+    const target = event.target instanceof Element ? event.target : null;
     if (!target) {
       return;
     }
 
-    if (target.dataset.time) {
+    const timeTarget = target.closest<HTMLElement>('[data-time]');
+    const incrementTarget = target.closest<HTMLElement>('[data-increment]');
+    const actionTarget = target.closest<HTMLElement>('[data-action]');
+
+    if (timeTarget?.dataset.time) {
       event.preventDefault();
-      const newTime = Number(target.dataset.time);
+      const newTime = Number(timeTarget.dataset.time);
       if (Number.isFinite(newTime)) {
         isSeeking = true;
         const player = getActivePlayer();
         if (player) player.seekTo(newTime);
         setTimeout(() => { isSeeking = false; }, 500);
       }
-      const clickedLi = target.closest('li') as HTMLLIElement | null;
+      const clickedLi = timeTarget.closest('li') as HTMLLIElement | null;
       if (clickedLi) {
         getTimestampItems().forEach(item => {
           if (!item.classList.contains(TIMESTAMP_DELETE_CLASS)) {
@@ -1099,17 +1104,17 @@ function safePostMessage(message: unknown) {
           clickedLi.scrollIntoView({ behavior: "smooth", block: "center" });
         }
       }
-    } else if (target.dataset.increment) {
+    } else if (incrementTarget?.dataset.increment) {
       event.preventDefault();
 
-      const linkContainer = target.parentElement;
-      const timeLink = linkContainer?.querySelector<HTMLAnchorElement>('a[data-time]');
+      const timestampLi = incrementTarget.closest('li');
+      const timeLink = timestampLi?.querySelector<HTMLAnchorElement>('a[data-time]');
       if (!timeLink || !timeLink.dataset.time) {
         return;
       }
 
       const currTime = parseInt(timeLink.dataset.time, 10);
-      let increment = parseInt(target.dataset.increment, 10);
+      let increment = parseInt(incrementTarget.dataset.increment, 10);
 
       const shiftPressed = 'shiftKey' in event ? event.shiftKey : false;
       if (shiftPressed) {
@@ -1126,9 +1131,6 @@ function safePostMessage(message: unknown) {
       log(`Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`);
       formatTime(timeLink, newTime);
       invalidateLatestTimestampValue();
-
-      // Keep the timestamp highlighted while adjusting its time
-      const timestampLi = target.closest('li');
 
       pendingSeekTime = newTime;
       if (seekTimeoutId) {
@@ -1158,7 +1160,7 @@ function safePostMessage(message: unknown) {
           mostRecentlyModifiedTimestampGuid = tsGuid;
         }
       }
-    } else if (target.dataset.action === "clear") {
+    } else if (actionTarget?.dataset.action === "clear") {
       event.preventDefault();
       log('Timestamps changed: All timestamps cleared from UI');
       list.textContent = "";
@@ -1185,6 +1187,7 @@ function safePostMessage(message: unknown) {
     const minus = document.createElement("span");
     const record = document.createElement("span");
     const plus = document.createElement("span");
+    const controlsWrap = document.createElement("div");
     const anchor = document.createElement("a");
     const timeDiff = document.createElement("span");
     const commentInput = document.createElement("input");
@@ -1193,18 +1196,35 @@ function safePostMessage(message: unknown) {
     li.dataset.guid = timestampGuid;
 
     timeRow.className = "time-row";
+    controlsWrap.className = "ytls-row-controls";
 
     // Setup indent gutter - displays in left margin without affecting layout
     const indentGutter = document.createElement("div");
-    indentGutter.style.cssText = "position:absolute;left:0;top:0;width:20px;height:100%;display:flex;align-items:center;justify-content:center;cursor:pointer;";
+    indentGutter.style.cssText = "position:absolute;left:0;top:0;width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;";
     addTooltip(indentGutter, "Click to toggle indent");
 
     const indentToggle = document.createElement("span");
-    indentToggle.style.cssText = "color:#999;font-size:12px;pointer-events:none;display:none;";
+    indentToggle.style.cssText = "color:#f4ba78;pointer-events:none;display:none;line-height:0;";
+
+    const syncIndentGutterPosition = () => {
+      const inputTop = commentInput.offsetTop;
+      const inputHeight = commentInput.offsetHeight || 20;
+      indentGutter.style.top = `${inputTop}px`;
+      indentGutter.style.height = `${inputHeight}px`;
+    };
 
     // Helper function to update arrow icon based on current indent state
     const updateArrowIcon = () => {
-      indentToggle.textContent = isIndented(commentInput.value) ? "◀" : "▶";
+      setIcon(indentToggle, isIndented(commentInput.value) ? 'indent-decrease' : 'indent-increase', 18);
+    };
+
+    const indentIconGlow = "drop-shadow(0 0 4px #eee8cf) drop-shadow(0 0 8px #eee8cf)";
+    const setIndentIconGlow = (enabled: boolean) => {
+      const icon = indentToggle.querySelector<SVGElement>("svg");
+      if (icon) {
+        icon.style.transition = "filter 0.15s ease";
+        icon.style.filter = enabled ? indentIconGlow : "none";
+      }
     };
 
     // Handle indent toggle on entire gutter click
@@ -1232,17 +1252,25 @@ function safePostMessage(message: unknown) {
 
     indentGutter.onclick = handleIndentToggle;
     indentGutter.append(indentToggle);
+    indentGutter.addEventListener("mouseenter", () => {
+      setIndentIconGlow(true);
+    });
+    indentGutter.addEventListener("mouseleave", () => {
+      setIndentIconGlow(false);
+    });
 
     // Add padding to li for gutter space
     li.style.cssText = "position:relative;padding-left:20px;";
 
     li.addEventListener("mouseenter", () => {
       // Update arrow direction based on current indent state
+      syncIndentGutterPosition();
       updateArrowIcon();
       indentToggle.style.display = "inline";
     });
 
     li.addEventListener("mouseleave", () => {
+      setIndentIconGlow(false);
       indentToggle.style.display = "none";
     });
 
@@ -1261,6 +1289,7 @@ function safePostMessage(message: unknown) {
     commentInput.autocapitalize = "off" as any;
     commentInput.autocomplete = "off";
     commentInput.spellcheck = false;
+    requestAnimationFrame(syncIndentGutterPosition);
     commentInput.addEventListener("focusin", () => {
       suppressSortUntilRefocus = false;
     });
@@ -1309,38 +1338,48 @@ function safePostMessage(message: unknown) {
       }, 50);
     });
 
-    minus.textContent = "➖";
+    const rowIconColor = "#f4ba78";
+    const rowIconGlow = "drop-shadow(0 0 4px #eee8cf) drop-shadow(0 0 8px #eee8cf)";
+    const trashIconColor = "#c8452d";
+    const trashIconGlow = "drop-shadow(0 0 4px #e36a52) drop-shadow(0 0 8px #e36a52)";
+    const applyRowIconInteraction = (element: HTMLElement, color = rowIconColor, glow = rowIconGlow) => {
+      element.style.color = color;
+      const icon = element.querySelector<SVGElement>("svg");
+      if (icon) {
+        icon.style.transition = "filter 0.15s ease";
+      }
+      element.addEventListener("mouseenter", () => {
+        if (icon) {
+          icon.style.filter = glow;
+        }
+      });
+      element.addEventListener("mouseleave", () => {
+        if (icon) {
+          icon.style.filter = "none";
+        }
+      });
+    };
+
+    setIcon(minus, 'circle-minus', 18);
+    minus.classList.add("ytls-row-control");
     minus.dataset.increment = "-1";
     minus.style.cursor = "pointer";
     minus.style.margin = "0px";
-    minus.addEventListener("mouseenter", () => {
-      minus.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
-    });
-    minus.addEventListener("mouseleave", () => {
-      minus.style.textShadow = "none";
-    });
+    applyRowIconInteraction(minus);
 
-    plus.textContent = "➕";
+    setIcon(plus, 'circle-plus', 18);
+    plus.classList.add("ytls-row-control");
     plus.dataset.increment = "1";
     plus.style.cursor = "pointer";
     plus.style.margin = "0px";
-    plus.addEventListener("mouseenter", () => {
-      plus.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
-    });
-    plus.addEventListener("mouseleave", () => {
-      plus.style.textShadow = "none";
-    });
+    applyRowIconInteraction(plus);
 
-    record.textContent = "⏺️";
+    setIcon(record, 'current-location', 18);
+    record.classList.add("ytls-row-control");
     record.style.cursor = "pointer";
     record.style.margin = "0px";
     addTooltip(record, "Set to current playback time");
-    record.addEventListener("mouseenter", () => {
-      record.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(100, 200, 255, 0.6)";
-    });
-    record.addEventListener("mouseleave", () => {
-      record.style.textShadow = "none";
-    });
+    applyRowIconInteraction(record);
     record.onclick = () => {
       const player = getActivePlayer();
       const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
@@ -1357,14 +1396,10 @@ function safePostMessage(message: unknown) {
     formatTime(anchor, sanitizedStart);
     invalidateLatestTimestampValue();
 
-    del.textContent = "🗑️";
-    del.style.cssText = "background:transparent;border:none;color:white;cursor:pointer;margin-left:5px;";
-    del.addEventListener("mouseenter", () => {
-      del.style.textShadow = "0 0 8px rgba(255, 255, 255, 0.8), 0 0 12px rgba(255, 100, 100, 0.6)";
-    });
-    del.addEventListener("mouseleave", () => {
-      del.style.textShadow = "none";
-    });
+    setIcon(del, 'trash', 16);
+    del.classList.add("ytls-row-control");
+    del.style.cssText = "background:transparent;border:none;cursor:pointer;margin-left:5px;display:inline-flex;align-items:center;";
+    applyRowIconInteraction(del, trashIconColor, trashIconGlow);
     del.onclick = () => {
       // Track the timeout so we can cancel it if the timestamp is removed early
       let cancelTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -1469,7 +1504,8 @@ function safePostMessage(message: unknown) {
     timeDiff.style.color = "#888";
     timeDiff.style.marginLeft = "5px";
 
-    timeRow.append(minus, record, plus, anchor, timeDiff, del);
+    controlsWrap.append(minus, record, plus, del);
+    timeRow.append(anchor, controlsWrap, timeDiff);
     li.append(indentGutter, timeRow, commentInput);
 
     const newTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
@@ -2268,7 +2304,7 @@ function safePostMessage(message: unknown) {
       }
     }
 
-    timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+    timeDisplay.textContent = `${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
     timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
   }
 
@@ -2789,7 +2825,7 @@ function safePostMessage(message: unknown) {
     versionWrapper.appendChild(backupStatusIndicator);
 
     timeDisplay.id = "ytls-current-time";
-    timeDisplay.textContent = "⏳";
+    timeDisplay.textContent = "—";
     timeDisplay.style.cursor = "default";
 
     // Dynamic tooltip getter for timeDisplay - shows tooltip only during live streams
@@ -2914,7 +2950,7 @@ function safePostMessage(message: unknown) {
         }
       }
 
-      timeDisplay.textContent = `⏳${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+      timeDisplay.textContent = `${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
       timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
 
       // Update cursor state based on live stream status
@@ -3019,15 +3055,15 @@ function safePostMessage(message: unknown) {
 
     const handleCopyTimestamps = function (e) {
       if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
-        this.textContent = "❌";
-        setTimeout(() => { this.textContent = "📋"; }, 2000);
+        setIcon(this as Element, 'circle-x', 20);
+        setTimeout(() => { setIcon(this as Element, 'clipboard', 20); }, 2000);
         return;
       }
       const timestamps = extractTimestampRecords();
       const videoDuration = Math.max(getLatestTimestampValue(), 0);
       if (timestamps.length === 0) {
-        this.textContent = "❌";
-        setTimeout(() => { this.textContent = "📋"; }, 2000);
+        setIcon(this as Element, 'circle-x', 20);
+        setTimeout(() => { setIcon(this as Element, 'clipboard', 20); }, 2000);
         return;
       }
       const includeGuids = e.ctrlKey;
@@ -3038,12 +3074,12 @@ function safePostMessage(message: unknown) {
           : `${timeString} ${ts.comment}`;
       }).join("\n");
       navigator.clipboard.writeText(plainText).then(() => {
-        this.textContent = "✅";
-        setTimeout(() => { this.textContent = "📋"; }, 2000);
+        setIcon(this as Element, 'circle-check', 20);
+        setTimeout(() => { setIcon(this as Element, 'clipboard', 20); }, 2000);
       }).catch(err => {
         log("Failed to copy timestamps: ", err, 'error');
-        this.textContent = "❌";
-        setTimeout(() => { this.textContent = "📋"; }, 2000);
+        setIcon(this as Element, 'circle-x', 20);
+        setTimeout(() => { setIcon(this as Element, 'clipboard', 20); }, 2000);
       });
     };
 
@@ -3222,12 +3258,12 @@ function safePostMessage(message: unknown) {
       };
 
     // Configuration for main buttons
-    const mainButtonConfigs = [
-      { label: "🐣", title: "Add timestamp", action: handleAddTimestamp },
-      { label: "⚙️", title: "Settings", action: () => toggleSettingsModal() }, // Changed action
-      { label: "📋", title: "Copy timestamps to clipboard", action: handleCopyTimestamps },
-        { label: "⏱️", title: "Offset all timestamps", action: handleBulkOffset },
-      { label: "🗑️", title: "Delete all timestamps for current video", action: handleDeleteAll }
+    const mainButtonConfigs: { id: string; icon: TablerIconName; title: string; action: (...args: any[]) => any }[] = [
+      { id: "add",      icon: 'alarm-plus', title: "Add timestamp",                          action: handleAddTimestamp },
+      { id: "settings", icon: 'settings',   title: "Settings",                               action: () => toggleSettingsModal() },
+      { id: "copy",     icon: 'clipboard',  title: "Copy timestamps to clipboard",           action: handleCopyTimestamps },
+      { id: "offset",   icon: 'clock-plus', title: "Offset all timestamps",                  action: handleBulkOffset },
+      { id: "delete",   icon: 'trash',      title: "Delete all timestamps for current video", action: handleDeleteAll },
     ];
 
     // Check for holiday emoji on load
@@ -3236,34 +3272,38 @@ function safePostMessage(message: unknown) {
     // Create and append main buttons
     mainButtonConfigs.forEach(config => {
       const button = document.createElement("button");
-      button.textContent = config.label;
+      setIcon(button, config.icon, 20);
       addTooltip(button, config.title);
       button.classList.add("ytls-main-button");
 
-      // Add holiday emoji to the 🐣 button if available
-      if (config.label === "🐣" && holidayEmoji) {
+      // Add holiday emoji overlay to the add-timestamp button if available
+      if (config.id === "add" && holidayEmoji) {
         const holidayEmojiSpan = document.createElement("span");
         holidayEmojiSpan.textContent = holidayEmoji;
         holidayEmojiSpan.classList.add("ytls-holiday-emoji");
         button.appendChild(holidayEmojiSpan);
       }
 
-      if (config.label === "📋") {
+      if (config.id === "copy") {
         // For copy button, bind to an event handler that includes the event object
         button.onclick = function (e) { config.action.call(this, e); };
       } else {
         button.onclick = config.action;
       }
-      if (config.label === "⚙️") { // Store a reference to the settings cog button
+      if (config.id === "settings") { // Store a reference to the settings cog button
         settingsCogButtonElement = button;
       }
       btns.appendChild(button);
     });
 
     // Helper function to create a button with common styles and actions (for settings modal)
-    function createButton(label, title, onClick) {
+    function createButton(label: string, title: string, onClick: (...args: any[]) => any, icon?: TablerIconName) {
       const button = document.createElement("button");
-      button.textContent = label;
+      if (icon) {
+        setIconLabel(button, icon, label);
+      } else {
+        button.textContent = label;
+      }
       addTooltip(button, title);
       button.classList.add("ytls-settings-modal-button");
       button.onclick = onClick;
@@ -3316,7 +3356,7 @@ function safePostMessage(message: unknown) {
 
       const closeButton = document.createElement("button");
       closeButton.className = "ytls-modal-close-button";
-      closeButton.textContent = "✕";
+      setIcon(closeButton, 'x', 14);
       closeButton.onclick = () => {
         if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
           // Close all subdialogs first
@@ -3367,7 +3407,7 @@ function safePostMessage(message: unknown) {
       }
 
       const generalTab = document.createElement("button");
-      generalTab.textContent = '🛠️';
+      generalTab.appendChild(createIcon('adjustments-horizontal', 16));
       const generalTabText = document.createElement("span");
       generalTabText.className = "ytls-tab-text";
       generalTabText.textContent = " General";
@@ -3377,7 +3417,7 @@ function safePostMessage(message: unknown) {
       generalTab.onclick = () => showSection('general');
 
       const driveTab = document.createElement("button");
-      driveTab.textContent = '☁️';
+      driveTab.appendChild(createIcon('cloud', 16));
       const driveTabText = document.createElement("span");
       driveTabText.className = "ytls-tab-text";
       driveTabText.textContent = " Backup";
@@ -3400,22 +3440,22 @@ function safePostMessage(message: unknown) {
 
       // Build General section
       generalSection.className = "ytls-button-grid";
-      generalSection.appendChild(createButton("💾 Save", "Save As...", saveBtn.onclick));
-      generalSection.appendChild(createButton("📂 Load", "Load", loadBtn.onclick));
-      generalSection.appendChild(createButton("📤 Export All", "Export All Data", exportBtn.onclick));
-      generalSection.appendChild(createButton("📥 Import All", "Import All Data", importBtn.onclick));
+      generalSection.appendChild(createButton("Save", "Save As...", saveBtn.onclick, 'device-floppy'));
+      generalSection.appendChild(createButton("Load", "Load", loadBtn.onclick, 'folder-open'));
+      generalSection.appendChild(createButton("Export All", "Export All Data", exportBtn.onclick, 'file-export'));
+      generalSection.appendChild(createButton("Import All", "Import All Data", importBtn.onclick, 'file-import'));
       // Export all timestamps as CSV (Tag,Timestamp,URL)
-      generalSection.appendChild(createButton("📄 Export All (CSV)", "Export All Timestamps to CSV", async () => {
+      generalSection.appendChild(createButton("Export All (CSV)", "Export All Timestamps to CSV", async () => {
         try {
           await exportAllTimestampsCsv();
         } catch (err) {
           alert("Failed to export CSV: Could not read from database.");
         }
-      }));
+      }, 'file-spreadsheet'));
 
       // Build Google Drive section
       const signButton = createButton(
-        GoogleDrive.googleAuthState.isSignedIn ? "🔓 Sign Out" : "🔐 Sign In",
+        GoogleDrive.googleAuthState.isSignedIn ? "Sign Out" : "Sign In",
         GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive",
         async () => {
           if (GoogleDrive.googleAuthState.isSignedIn) {
@@ -3424,51 +3464,54 @@ function safePostMessage(message: unknown) {
             await GoogleDrive.signInToGoogle();
           }
           // Update label after action
-          signButton.textContent = GoogleDrive.googleAuthState.isSignedIn ? "🔓 Sign Out" : "🔐 Sign In";
+          setIconLabel(signButton, GoogleDrive.googleAuthState.isSignedIn ? 'logout' : 'login', GoogleDrive.googleAuthState.isSignedIn ? "Sign Out" : "Sign In");
           addTooltip(signButton, GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive");
           // Ensure main backup status indicator updates immediately
           if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
             (GoogleDrive as any).updateBackupStatusDisplay();
           }
-        }
+        },
+        GoogleDrive.googleAuthState.isSignedIn ? 'logout' : 'login'
       );
       driveSection.appendChild(signButton);
 
       const autoToggleButton = createButton(
-        GoogleDrive.getAutoBackupEnabled() ? "🔁 Auto Backup: On" : "🔁 Auto Backup: Off",
+        GoogleDrive.getAutoBackupEnabled() ? "Auto Backup: On" : "Auto Backup: Off",
         "Toggle Auto Backup",
         async () => {
           await GoogleDrive.toggleAutoBackup();
-          autoToggleButton.textContent = GoogleDrive.getAutoBackupEnabled() ? "🔁 Auto Backup: On" : "🔁 Auto Backup: Off";
+          setIconLabel(autoToggleButton, 'refresh', GoogleDrive.getAutoBackupEnabled() ? 'Auto Backup: On' : 'Auto Backup: Off');
           // Sync main indicator/text immediately
           if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
             (GoogleDrive as any).updateBackupStatusDisplay();
           }
-        }
+        },
+        'refresh'
       );
       driveSection.appendChild(autoToggleButton);
 
       const intervalButton = createButton(
-        `⏱️ Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`,
+        `Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`,
         "Set periodic backup interval (minutes)",
         async () => {
           await GoogleDrive.setAutoBackupIntervalPrompt();
-          intervalButton.textContent = `⏱️ Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`;
+          setIconLabel(intervalButton, 'clock-plus', `Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`);
           // Ensure status is synced immediately
           if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
             (GoogleDrive as any).updateBackupStatusDisplay();
           }
-        }
+        },
+        'clock-plus'
       );
       driveSection.appendChild(intervalButton);
 
-      driveSection.appendChild(createButton("🗄️ Backup Now", "Run a backup immediately", async () => {
+      driveSection.appendChild(createButton("Backup Now", "Run a backup immediately", async () => {
         await GoogleDrive.runAutoBackupOnce(false);
         // Update status display right away after initiating manual backup
         if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
           (GoogleDrive as any).updateBackupStatusDisplay();
         }
-      }));
+      }, 'database'));
 
       // Add status info displays at the bottom
       const infoContainer = document.createElement("div");
@@ -3612,7 +3655,7 @@ function safePostMessage(message: unknown) {
 
     // Add a save button to the buttons section
     const saveBtn = document.createElement("button");
-    saveBtn.textContent = "💾 Save";
+    setIconLabel(saveBtn, 'device-floppy', 'Save');
     saveBtn.classList.add("ytls-file-operation-button");
     saveBtn.onclick = () => {
 
@@ -3682,7 +3725,7 @@ function safePostMessage(message: unknown) {
 
     // Add a load button to the buttons section
     const loadBtn = document.createElement("button");
-    loadBtn.textContent = "📂 Load";
+    setIconLabel(loadBtn, 'folder-open', 'Load');
     loadBtn.classList.add("ytls-file-operation-button");
     loadBtn.onclick = () => {
       // Create a modal for choosing load source
@@ -3783,7 +3826,7 @@ function safePostMessage(message: unknown) {
 
     // Add export button to the buttons section
     const exportBtn = document.createElement("button");
-    exportBtn.textContent = "📤 Export";
+    setIconLabel(exportBtn, 'file-export', 'Export');
     exportBtn.classList.add("ytls-file-operation-button");
     exportBtn.onclick = async () => {
       try {
@@ -3795,7 +3838,7 @@ function safePostMessage(message: unknown) {
 
     // Add import button to the buttons section
     const importBtn = document.createElement("button");
-    importBtn.textContent = "📥 Import";
+    setIconLabel(importBtn, 'file-import', 'Import');
     importBtn.classList.add("ytls-file-operation-button");
     importBtn.onclick = () => {
       const fileInput = document.createElement("input");
