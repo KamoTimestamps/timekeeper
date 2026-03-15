@@ -8,6 +8,7 @@ import { log } from './util';
 import { addTooltip } from './tooltip';
 import { zipSync, strToU8 } from 'fflate';
 import { AutoBackupSettingsSchema, GoogleAuthStateSchema } from './schema';
+import { createIcon, setIcon, setIconLabel } from './icons';
 import * as AppState from './services/state';
 
 declare const GM: {
@@ -274,30 +275,30 @@ export function updateAuthStatusDisplay(status?: 'authenticating' | 'error', mes
     return;
   }
   if (status === 'error') {
-    authStatusDisplay.textContent = `❌ ${message || 'Authorization failed'}`;
+    setIconLabel(authStatusDisplay, 'circle-x', message || 'Authorization failed');
     authStatusDisplay.style.color = '#ff4d4f';
     updateBackupStatusDisplay();
     return;
   }
   const state = getGoogleAuthState();
   if (!state.isSignedIn) {
-    authStatusDisplay.textContent = '❌ Not signed in';
+    setIconLabel(authStatusDisplay, 'circle-x', 'Not signed in');
     authStatusDisplay.style.color = '#ff4d4f';
     authStatusDisplay.removeAttribute('title');
     authStatusDisplay.onmouseenter = null;
     authStatusDisplay.onmouseleave = null;
   } else {
-    authStatusDisplay.textContent = `✅ Signed in`;
+    setIconLabel(authStatusDisplay, 'circle-check', 'Signed in');
     authStatusDisplay.style.color = '#52c41a';
     authStatusDisplay.removeAttribute('title');
 
     // Change text on hover to show username
     if (state.userName) {
       authStatusDisplay.onmouseenter = () => {
-        authStatusDisplay.textContent = `✅ Signed in as ${state.userName}`;
+        setIconLabel(authStatusDisplay, 'circle-check', `Signed in as ${state.userName}`);
       };
       authStatusDisplay.onmouseleave = () => {
-        authStatusDisplay.textContent = `✅ Signed in`;
+        setIconLabel(authStatusDisplay, 'circle-check', 'Signed in');
       };
     } else {
       authStatusDisplay.onmouseenter = null;
@@ -1032,50 +1033,45 @@ function getBackupStatusColor(): string {
 
 export function updateBackupStatusDisplay() {
   if (!backupStatusDisplay) return;
-  let text = '';
-  let hoverText = '';
 
   if (!getAutoBackupEnabled()) {
-    text = '🔁 Backup: Off';
+    setIconLabel(backupStatusDisplay, 'refresh', 'Backup: Off');
     backupStatusDisplay.onmouseenter = null;
     backupStatusDisplay.onmouseleave = null;
   } else if (getIsAutoBackupRunning()) {
-    text = '🔁 Backing up…';
+    setIconLabel(backupStatusDisplay, 'refresh', 'Backing up…');
     backupStatusDisplay.onmouseenter = null;
     backupStatusDisplay.onmouseleave = null;
   } else if (getAutoBackupBackoffMs() && getAutoBackupBackoffMs()! > 0) {
     const mins = Math.ceil(getAutoBackupBackoffMs()! / 60000);
-    text = `⚠️ Retry in ${mins}m`;
+    setIconLabel(backupStatusDisplay, 'alert-triangle', `Retry in ${mins}m`);
     backupStatusDisplay.onmouseenter = null;
     backupStatusDisplay.onmouseleave = null;
   } else if (getLastAutoBackupAt()) {
-    text = `🗄️ Last backup: ${formatBackupTime(getLastAutoBackupAt()!)}`;
     const nextBackupAt = getLastAutoBackupAt()! + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
     const nextBackupTime = formatBackupTime(nextBackupAt);
-    hoverText = `🗄️ Next backup: ${nextBackupTime}`;
 
     backupStatusDisplay.onmouseenter = () => {
-      backupStatusDisplay.textContent = hoverText;
+      setIconLabel(backupStatusDisplay, 'database', `Next backup: ${nextBackupTime}`);
     };
     backupStatusDisplay.onmouseleave = () => {
-      backupStatusDisplay.textContent = text;
+      setIconLabel(backupStatusDisplay, 'database', `Last backup: ${formatBackupTime(getLastAutoBackupAt()!)}`);
     };
+    setIconLabel(backupStatusDisplay, 'database', `Last backup: ${formatBackupTime(getLastAutoBackupAt()!)}`);
   } else {
-    text = '🗄️ Last backup: never';
     const nextBackupAt = Date.now() + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
     const nextBackupTime = formatBackupTime(nextBackupAt);
-    hoverText = `🗄️ Next backup: ${nextBackupTime}`;
 
     backupStatusDisplay.onmouseenter = () => {
-      backupStatusDisplay.textContent = hoverText;
+      setIconLabel(backupStatusDisplay, 'database', `Next backup: ${nextBackupTime}`);
     };
     backupStatusDisplay.onmouseleave = () => {
-      backupStatusDisplay.textContent = text;
+      setIconLabel(backupStatusDisplay, 'database', 'Last backup: never');
     };
+    setIconLabel(backupStatusDisplay, 'database', 'Last backup: never');
   }
 
-  backupStatusDisplay.textContent = text;
-  backupStatusDisplay.style.display = text ? 'inline' : 'none';
+  backupStatusDisplay.style.display = 'inline';
 
   // Apply matching color to settings display so it matches main UI indicator
   try {
