@@ -27,6 +27,12 @@ declare const GM: {
   }) => void;
 };
 
+declare const GM_info: {
+  script?: {
+    version?: string;
+  };
+};
+
 // Types
 export interface ExportPayload {
   json: string;
@@ -859,10 +865,14 @@ function sendUserscriptRequest(details: {
       return;
     }
 
+    const version = GM_info?.script?.version || 'unknown';
     GM.xmlHttpRequest({
       method: details.method,
       url: details.url,
-      headers: details.headers,
+      headers: {
+        'User-Agent': `Timekeeper/${version}`,
+        ...(details.headers || {}),
+      },
       data: details.data,
       timeout: details.timeout ?? 30000,
       responseType: 'text',
