@@ -18,6 +18,10 @@ export interface AppState {
     autoBackupBackoffMs: number | null;
     lastAutoBackupAt: number | null;
     isAutoBackupRunning: boolean;
+    timekeeperBackendBackupEnabled: boolean;
+    timekeeperBackendHost: string;
+    timekeeperBackendPort: number;
+    timekeeperBackendBearerToken: string | null;
   };
 
   // UI state
@@ -53,6 +57,10 @@ const DEFAULT_STATE: AppState = {
     autoBackupBackoffMs: null,
     lastAutoBackupAt: null,
     isAutoBackupRunning: false,
+    timekeeperBackendBackupEnabled: false,
+    timekeeperBackendHost: 'localhost',
+    timekeeperBackendPort: 8443,
+    timekeeperBackendBearerToken: null,
   },
   ui: {
     panePosition: null,
@@ -168,6 +176,42 @@ export function setLastAutoBackupAt(timestamp: number | null): void {
     auth: {
       ...appState.auth,
       lastAutoBackupAt: timestamp,
+    },
+  });
+}
+
+export function setTimekeeperBackendBackupEnabled(enabled: boolean): void {
+  setState({
+    auth: {
+      ...appState.auth,
+      timekeeperBackendBackupEnabled: enabled,
+    },
+  });
+}
+
+export function setTimekeeperBackendHost(host: string): void {
+  setState({
+    auth: {
+      ...appState.auth,
+      timekeeperBackendHost: host,
+    },
+  });
+}
+
+export function setTimekeeperBackendPort(port: number): void {
+  setState({
+    auth: {
+      ...appState.auth,
+      timekeeperBackendPort: port,
+    },
+  });
+}
+
+export function setTimekeeperBackendBearerToken(token: string | null): void {
+  setState({
+    auth: {
+      ...appState.auth,
+      timekeeperBackendBearerToken: token,
     },
   });
 }

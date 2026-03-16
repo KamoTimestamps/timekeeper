@@ -3403,7 +3403,7 @@ function safePostMessage(message: unknown) {
         driveSection.style.display = section === 'drive' ? 'block' : 'none';
         generalTab.classList.toggle('active', section === 'general');
         driveTab.classList.toggle('active', section === 'drive');
-        sectionHeading.textContent = section === 'general' ? 'General' : 'Google Drive';
+        sectionHeading.textContent = section === 'general' ? 'General' : 'Backup';
       }
 
       const generalTab = document.createElement("button");
@@ -3422,7 +3422,7 @@ function safePostMessage(message: unknown) {
       driveTabText.className = "ytls-tab-text";
       driveTabText.textContent = " Backup";
       driveTab.appendChild(driveTabText);
-      addTooltip(driveTab, "Google Drive sign-in and backup");
+      addTooltip(driveTab, "Google Drive and Timekeeper backend backup");
       driveTab.classList.add("ytls-settings-modal-button");
       driveTab.onclick = async () => {
         // Verify auth state when opening backup settings
@@ -3473,44 +3473,98 @@ function safePostMessage(message: unknown) {
         },
         GoogleDrive.googleAuthState.isSignedIn ? 'logout' : 'login'
       );
-      driveSection.appendChild(signButton);
 
       const autoToggleButton = createButton(
         GoogleDrive.getAutoBackupEnabled() ? "Auto Backup: On" : "Auto Backup: Off",
         "Toggle Auto Backup",
         async () => {
           await GoogleDrive.toggleAutoBackup();
-          setIconLabel(autoToggleButton, 'refresh', GoogleDrive.getAutoBackupEnabled() ? 'Auto Backup: On' : 'Auto Backup: Off');
-          // Sync main indicator/text immediately
+          refreshBackupButtons();
           if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
             (GoogleDrive as any).updateBackupStatusDisplay();
           }
         },
         'refresh'
       );
-      driveSection.appendChild(autoToggleButton);
 
       const intervalButton = createButton(
         `Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`,
         "Set periodic backup interval (minutes)",
         async () => {
           await GoogleDrive.setAutoBackupIntervalPrompt();
-          setIconLabel(intervalButton, 'clock-plus', `Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`);
-          // Ensure status is synced immediately
+          refreshBackupButtons();
           if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
             (GoogleDrive as any).updateBackupStatusDisplay();
           }
         },
         'clock-plus'
       );
-      driveSection.appendChild(intervalButton);
 
-      driveSection.appendChild(createButton("Backup Now", "Run a backup immediately", async () => {
-        await GoogleDrive.runAutoBackupOnce(false);
-        // Update status display right away after initiating manual backup
+      const backendToggleButton = createButton(
+        GoogleDrive.getTimekeeperBackendBackupEnabled() ? 'Backend: On' : 'Backend: Off',
+        'Toggle Timekeeper backend backup',
+        async () => {
+          await GoogleDrive.toggleTimekeeperBackendBackup();
+          refreshBackupButtons();
+        },
+        'server'
+      );
+
+      const backendHostButton = createButton(
+        `Backend Host: ${GoogleDrive.getTimekeeperBackendHost()}`,
+        'Set the Timekeeper backend host',
+        async () => {
+          await GoogleDrive.setTimekeeperBackendHostPrompt();
+          refreshBackupButtons();
+        },
+        'world'
+      );
+
+      const backendPortButton = createButton(
+        `Backend Port: ${GoogleDrive.getTimekeeperBackendPort()}`,
+        'Set the Timekeeper backend port',
+        async () => {
+          await GoogleDrive.setTimekeeperBackendPortPrompt();
+          refreshBackupButtons();
+        },
+        'plug-connected'
+      );
+
+      const backendTokenButton = createButton(
+        GoogleDrive.getTimekeeperBackendBearerToken() ? 'Backend Token: Set' : 'Backend Token: Missing',
+        'Set or clear the Timekeeper backend bearer token',
+        async () => {
+          await GoogleDrive.setTimekeeperBackendBearerTokenPrompt();
+          refreshBackupButtons();
+        },
+        'key'
+      );
+
+      const refreshBackupButtons = () => {
+        setIconLabel(signButton, GoogleDrive.googleAuthState.isSignedIn ? 'logout' : 'login', GoogleDrive.googleAuthState.isSignedIn ? 'Sign Out' : 'Sign In');
+        addTooltip(signButton, GoogleDrive.googleAuthState.isSignedIn ? 'Sign out from Google Drive' : 'Sign in to Google Drive');
+        setIconLabel(autoToggleButton, 'refresh', GoogleDrive.getAutoBackupEnabled() ? 'Auto Backup: On' : 'Auto Backup: Off');
+        setIconLabel(intervalButton, 'clock-plus', `Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`);
+        setIconLabel(backendToggleButton, 'server', GoogleDrive.getTimekeeperBackendBackupEnabled() ? 'Backend: On' : 'Backend: Off');
+        setIconLabel(backendHostButton, 'world', `Backend Host: ${GoogleDrive.getTimekeeperBackendHost()}`);
+        setIconLabel(backendPortButton, 'plug-connected', `Backend Port: ${GoogleDrive.getTimekeeperBackendPort()}`);
+        setIconLabel(backendTokenButton, 'key', GoogleDrive.getTimekeeperBackendBearerToken() ? 'Backend Token: Set' : 'Backend Token: Missing');
         if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
           (GoogleDrive as any).updateBackupStatusDisplay();
         }
+      };
+
+      driveSection.appendChild(signButton);
+      driveSection.appendChild(autoToggleButton);
+      driveSection.appendChild(intervalButton);
+      driveSection.appendChild(backendToggleButton);
+      driveSection.appendChild(backendHostButton);
+      driveSection.appendChild(backendPortButton);
+      driveSection.appendChild(backendTokenButton);
+
+      driveSection.appendChild(createButton("Backup Now", "Run a backup immediately", async () => {
+        await GoogleDrive.runAutoBackupOnce({ silent: false, skipBackoff: true });
+        refreshBackupButtons();
       }, 'database'));
 
       // Add status info displays at the bottom
@@ -3545,6 +3599,7 @@ function safePostMessage(message: unknown) {
       GoogleDrive.updateAuthStatusDisplay();
       GoogleDrive.updateGoogleUserDisplay();
       GoogleDrive.updateBackupStatusDisplay();
+      refreshBackupButtons();
 
       // Append sections
       settingsContent.appendChild(sectionHeading);

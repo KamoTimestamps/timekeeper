@@ -23,6 +23,10 @@ import logoutSvg from '@tabler/icons/outline/logout.svg';
 import refreshSvg from '@tabler/icons/outline/refresh.svg';
 import alertTriangleSvg from '@tabler/icons/outline/alert-triangle.svg';
 import databaseSvg from '@tabler/icons/outline/database.svg';
+import serverSvg from '@tabler/icons/outline/server.svg';
+import worldSvg from '@tabler/icons/outline/world.svg';
+import plugConnectedSvg from '@tabler/icons/outline/plug-connected.svg';
+import keySvg from '@tabler/icons/outline/key.svg';
 import xSvg from '@tabler/icons/outline/x.svg';
 import indentIncreaseSvg from '@tabler/icons/outline/indent-increase.svg';
 import indentDecreaseSvg from '@tabler/icons/outline/indent-decrease.svg';
@@ -58,6 +62,10 @@ export type TablerIconName =
   | 'refresh'
   | 'alert-triangle'
   | 'database'
+  | 'server'
+  | 'world'
+  | 'plug-connected'
+  | 'key'
   | 'x'
   | 'indent-increase'
   | 'indent-decrease';
@@ -88,6 +96,10 @@ const ICON_SVGS: Record<TablerIconName, string> = {
   'refresh': refreshSvg,
   'alert-triangle': alertTriangleSvg,
   'database': databaseSvg,
+  'server': serverSvg,
+  'world': worldSvg,
+  'plug-connected': plugConnectedSvg,
+  'key': keySvg,
   'x': xSvg,
   'indent-increase': indentIncreaseSvg,
   'indent-decrease': indentDecreaseSvg,
