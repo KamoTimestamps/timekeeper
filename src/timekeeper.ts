@@ -3311,7 +3311,7 @@ function safePostMessage(message: unknown) {
     }
 
     // Function to create and toggle the settings modal
-    function toggleSettingsModal(initialTab: 'general' | 'drive' = 'general') {
+    function toggleSettingsModal(initialTab: 'general' | 'google' | 'backend' | 'drive' = 'general') {
       if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
         // Close all subdialogs first
         const saveModal = document.getElementById('ytls-save-modal');
@@ -3395,15 +3395,19 @@ function safePostMessage(message: unknown) {
       sectionHeading.style.display = "none";
 
       const generalSection = document.createElement("div");
-      const driveSection = document.createElement("div");
-      driveSection.className = "ytls-button-grid";
+      const googleSection = document.createElement("div");
+      googleSection.className = "ytls-button-grid";
+      const backendSection = document.createElement("div");
+      backendSection.className = "ytls-button-grid";
 
-      function showSection(section: 'general' | 'drive') {
+      function showSection(section: 'general' | 'google' | 'backend') {
         generalSection.style.display = section === 'general' ? 'block' : 'none';
-        driveSection.style.display = section === 'drive' ? 'block' : 'none';
+        googleSection.style.display = section === 'google' ? 'block' : 'none';
+        backendSection.style.display = section === 'backend' ? 'block' : 'none';
         generalTab.classList.toggle('active', section === 'general');
-        driveTab.classList.toggle('active', section === 'drive');
-        sectionHeading.textContent = section === 'general' ? 'General' : 'Backup';
+        googleTab.classList.toggle('active', section === 'google');
+        backendTab.classList.toggle('active', section === 'backend');
+        sectionHeading.textContent = section === 'general' ? 'General' : section === 'google' ? 'Google' : 'Timekeeper Backend';
       }
 
       const generalTab = document.createElement("button");
@@ -3416,23 +3420,33 @@ function safePostMessage(message: unknown) {
       generalTab.classList.add("ytls-settings-modal-button");
       generalTab.onclick = () => showSection('general');
 
-      const driveTab = document.createElement("button");
-      driveTab.appendChild(createIcon('cloud', 16));
-      const driveTabText = document.createElement("span");
-      driveTabText.className = "ytls-tab-text";
-      driveTabText.textContent = " Backup";
-      driveTab.appendChild(driveTabText);
-      addTooltip(driveTab, "Google Drive and Timekeeper backend backup");
-      driveTab.classList.add("ytls-settings-modal-button");
-      driveTab.onclick = async () => {
-        // Verify auth state when opening backup settings
+      const googleTab = document.createElement("button");
+      googleTab.appendChild(createIcon('cloud', 16));
+      const googleTabText = document.createElement("span");
+      googleTabText.className = "ytls-tab-text";
+      googleTabText.textContent = " Google";
+      googleTab.appendChild(googleTabText);
+      addTooltip(googleTab, "Google Drive backup settings");
+      googleTab.classList.add("ytls-settings-modal-button");
+      googleTab.onclick = async () => {
+        // Verify auth state when opening Google settings
         if (GoogleDrive.googleAuthState.isSignedIn) {
           await GoogleDrive.verifySignedIn();
         }
-        showSection('drive');
+        showSection('google');
       };
+      const backendTab = document.createElement("button");
+      backendTab.appendChild(createIcon('server', 16));
+      const backendTabText = document.createElement("span");
+      backendTabText.className = "ytls-tab-text";
+      backendTabText.textContent = " TKB";
+      backendTab.appendChild(backendTabText);
+      addTooltip(backendTab, "Timekeeper backend backup settings");
+      backendTab.classList.add("ytls-settings-modal-button");
+      backendTab.onclick = () => showSection('backend');
       nav.appendChild(generalTab);
-      nav.appendChild(driveTab);
+      nav.appendChild(googleTab);
+      nav.appendChild(backendTab);
 
       header.appendChild(nav);
       header.appendChild(closeButton);
@@ -3554,15 +3568,16 @@ function safePostMessage(message: unknown) {
         }
       };
 
-      driveSection.appendChild(signButton);
-      driveSection.appendChild(autoToggleButton);
-      driveSection.appendChild(intervalButton);
-      driveSection.appendChild(backendToggleButton);
-      driveSection.appendChild(backendHostButton);
-      driveSection.appendChild(backendPortButton);
-      driveSection.appendChild(backendTokenButton);
+      googleSection.appendChild(signButton);
+      googleSection.appendChild(autoToggleButton);
+      googleSection.appendChild(intervalButton);
 
-      driveSection.appendChild(createButton("Backup Now", "Run a backup immediately", async () => {
+      backendSection.appendChild(backendToggleButton);
+      backendSection.appendChild(backendHostButton);
+      backendSection.appendChild(backendPortButton);
+      backendSection.appendChild(backendTokenButton);
+
+      googleSection.appendChild(createButton("Backup Now", "Run a backup immediately", async () => {
         await GoogleDrive.runAutoBackupOnce({ silent: false, skipBackoff: true });
         refreshBackupButtons();
       }, 'database'));
@@ -3593,7 +3608,7 @@ function safePostMessage(message: unknown) {
       GoogleDrive.setBackupStatusDisplay(backupInfoDiv);
       infoContainer.appendChild(backupInfoDiv);
 
-      driveSection.appendChild(infoContainer);
+      googleSection.appendChild(infoContainer);
 
       // Update status display based on sign-in state
       GoogleDrive.updateAuthStatusDisplay();
@@ -3604,8 +3619,10 @@ function safePostMessage(message: unknown) {
       // Append sections
       settingsContent.appendChild(sectionHeading);
       settingsContent.appendChild(generalSection)
-      settingsContent.appendChild(driveSection);
-      showSection(initialTab);
+      settingsContent.appendChild(googleSection);
+      settingsContent.appendChild(backendSection);
+      const normalizedInitialTab = initialTab === 'drive' ? 'google' : initialTab;
+      showSection(normalizedInitialTab);
 
       settingsModalInstance.appendChild(settingsContent);
       document.body.appendChild(settingsModalInstance);
