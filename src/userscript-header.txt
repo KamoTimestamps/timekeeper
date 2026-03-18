@@ -11,6 +11,8 @@
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        GM.setClipboard
+// @grant        GM.xmlHttpRequest
+// @connect      *
 // @homepageURL  https://github.com/KamoTimestamps/timekeeper
 // @supportURL   https://github.com/KamoTimestamps/timekeeper/issues
 // @downloadURL  https://raw.githubusercontent.com/KamoTimestamps/timekeeper/main/timekeeper.user.js

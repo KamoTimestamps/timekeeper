@@ -7,13 +7,30 @@ import { z } from 'zod';
 import { log } from './util';
 import { addTooltip } from './tooltip';
 import { zipSync, strToU8 } from 'fflate';
-import { AutoBackupSettingsSchema, GoogleAuthStateSchema } from './schema';
+import { BackupSettingsSchema, GoogleAuthStateSchema } from './schema';
 import { createIcon, setIcon, setIconLabel } from './icons';
 import * as AppState from './services/state';
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
   setValue<T = unknown>(key: string, value: T): Promise<void>;
+  xmlHttpRequest?: (details: {
+    method: string;
+    url: string;
+    headers?: Record<string, string>;
+    data?: string | ArrayBuffer | Blob | FormData;
+    timeout?: number;
+    responseType?: 'text';
+    onload: (response: { status: number; responseText?: string }) => void;
+    onerror: (response: { status?: number; statusText?: string; error?: unknown }) => void;
+    ontimeout?: () => void;
+  }) => void;
+};
+
+declare const GM_info: {
+  script?: {
+    version?: string;
+  };
 };
 
 // Types
@@ -128,6 +145,38 @@ export function setAutoBackupBackoffMsInternal(backoff: number | null) {
 // Note: Use getAutoBackupBackoffMs() getter for reading, not this export
 export const autoBackupBackoffMs: number | null = undefined as any;
 
+export function getTimekeeperBackendBackupEnabled() {
+  return AppState.getState().auth.timekeeperBackendBackupEnabled;
+}
+
+export function setTimekeeperBackendBackupEnabledInternal(enabled: boolean) {
+  AppState.setTimekeeperBackendBackupEnabled(enabled);
+}
+
+export function getTimekeeperBackendHost() {
+  return AppState.getState().auth.timekeeperBackendHost;
+}
+
+export function setTimekeeperBackendHostInternal(host: string) {
+  AppState.setTimekeeperBackendHost(host);
+}
+
+export function getTimekeeperBackendPort() {
+  return AppState.getState().auth.timekeeperBackendPort;
+}
+
+export function setTimekeeperBackendPortInternal(port: number) {
+  AppState.setTimekeeperBackendPort(port);
+}
+
+export function getTimekeeperBackendBearerToken() {
+  return AppState.getState().auth.timekeeperBackendBearerToken;
+}
+
+export function setTimekeeperBackendBearerTokenInternal(token: string | null) {
+  AppState.setTimekeeperBackendBearerToken(token);
+}
+
 // Display elements (set from main script)
 export let googleUserDisplay: any = null;
 export let backupStatusDisplay: any = null;
@@ -189,6 +238,9 @@ export function setLoadGlobalSettings(fn: any) {
 const GOOGLE_CLIENT_ID = '1023528652072-45cu3dr7o5j79vsdn8643bhle9ee8kds.apps.googleusercontent.com';
 const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile';
 const GOOGLE_REDIRECT_URI = 'https://www.youtube.com/';
+const DEFAULT_TIMEKEEPER_BACKEND_HOST = 'localhost';
+const DEFAULT_TIMEKEEPER_BACKEND_PORT = 8443;
+const DETERMINISTIC_ZIP_MTIME = new Date(Date.UTC(2000, 0, 1, 0, 0, 0));
 
 // Auto-backup constants
 const AUTO_BACKUP_INITIAL_BACKOFF_MS = 30 * 1000; // 30s
@@ -196,6 +248,18 @@ const AUTO_BACKUP_MAX_BACKOFF_MS = 30 * 60 * 1000; // 30m
 const AUTO_BACKUP_MAX_RETRY_ATTEMPTS = 5;
 let autoBackupIntervalId: ReturnType<typeof setInterval> | null = null;
 let autoBackupBackoffTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+type BackupDestinationErrorKind = 'auth' | 'other';
+
+interface BackupDestination {
+  label: string;
+  exportPayload: (payload: ExportPayload) => Promise<void>;
+}
+
+interface RunAutoBackupOptions {
+  silent?: boolean;
+  skipBackoff?: boolean;
+}
 
 // Load Google auth state from storage
 export async function loadGoogleAuthState() {
@@ -708,6 +772,7 @@ export async function signOutFromGoogle() {
     email: null
   });
   await saveGoogleAuthState();
+  await scheduleAutoBackup();
   updateGoogleUserDisplay();
   updateAuthStatusDisplay();
   updateBackupStatusDisplay(); // Update backup status indicator immediately
@@ -736,6 +801,123 @@ export async function verifySignedIn(): Promise<boolean> {
   } catch (err) {
     log('Failed to verify auth state:', err, 'error');
     return false;
+  }
+}
+
+function getTimekeeperBackendHostNormalized(): string {
+  return getTimekeeperBackendHost().trim() || DEFAULT_TIMEKEEPER_BACKEND_HOST;
+}
+
+function getTimekeeperBackendBearerTokenNormalized(): string | null {
+  const token = getTimekeeperBackendBearerToken();
+  if (typeof token !== 'string') {
+    return null;
+  }
+  const trimmed = token.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function hasGoogleDriveBackupDestination(): boolean {
+  const authState = getGoogleAuthState();
+  return authState.isSignedIn && !!authState.accessToken;
+}
+
+function hasTimekeeperBackendBackupConfiguration(): boolean {
+  const port = getTimekeeperBackendPort();
+  return !!getTimekeeperBackendHostNormalized() && Number.isInteger(port) && port >= 1 && port <= 65535 && !!getTimekeeperBackendBearerTokenNormalized();
+}
+
+function hasTimekeeperBackendBackupDestination(): boolean {
+  return getTimekeeperBackendBackupEnabled() && hasTimekeeperBackendBackupConfiguration();
+}
+
+function hasAnyBackupDestination(): boolean {
+  return hasGoogleDriveBackupDestination() || hasTimekeeperBackendBackupDestination();
+}
+
+function getConfiguredDestinationLabels(): string[] {
+  const labels: string[] = [];
+  if (hasGoogleDriveBackupDestination()) {
+    labels.push('Google Drive');
+  }
+  if (hasTimekeeperBackendBackupDestination()) {
+    labels.push(`Timekeeper Backend (${getTimekeeperBackendHostNormalized()}:${getTimekeeperBackendPort()})`);
+  }
+  return labels;
+}
+
+function getTimekeeperBackendBaseUrl(): string {
+  const rawHost = getTimekeeperBackendHostNormalized();
+  const host = rawHost.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  return `https://${host}:${getTimekeeperBackendPort()}`;
+}
+
+function sendUserscriptRequest(details: {
+  method: string;
+  url: string;
+  headers?: Record<string, string>;
+  data?: string | ArrayBuffer | Blob | FormData;
+  timeout?: number;
+}): Promise<{ status: number; responseText: string }> {
+  return new Promise((resolve, reject) => {
+    if (!GM.xmlHttpRequest) {
+      reject(new Error('GM.xmlHttpRequest is unavailable'));
+      return;
+    }
+
+    const version = GM_info?.script?.version || 'unknown';
+    GM.xmlHttpRequest({
+      method: details.method,
+      url: details.url,
+      headers: {
+        'User-Agent': `Timekeeper/${version}`,
+        ...(details.headers || {}),
+      },
+      data: details.data,
+      timeout: details.timeout ?? 30000,
+      responseType: 'text',
+      onload: (response) => {
+        resolve({
+          status: response.status,
+          responseText: response.responseText ?? '',
+        });
+      },
+      onerror: (response) => {
+        reject(new Error(response.statusText || 'request failed'));
+      },
+      ontimeout: () => {
+        reject(new Error('request timed out'));
+      },
+    });
+  });
+}
+
+async function uploadJsonToTimekeeperBackend(filename: string, json: string): Promise<void> {
+  const bearerToken = getTimekeeperBackendBearerTokenNormalized();
+  if (!bearerToken) {
+    throw new Error('unauthorized');
+  }
+
+  const zipFilename = filename.replace(/\.json$/, '.zip');
+  const zipData = createZipFromJson(json, filename);
+  const zipBytes = Uint8Array.from(zipData);
+  const formData = new FormData();
+  formData.append('file', new Blob([zipBytes], { type: 'application/zip' }), zipFilename);
+
+  const response = await sendUserscriptRequest({
+    method: 'POST',
+    url: `${getTimekeeperBackendBaseUrl()}/api/v1/backups`,
+    headers: {
+      Authorization: `Bearer ${bearerToken}`,
+    },
+    data: formData,
+  });
+
+  if (response.status === 401 || response.status === 403) {
+    throw new Error('unauthorized');
+  }
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`timekeeper backend upload failed: ${response.status} ${response.responseText}`.trim());
   }
 }
 
@@ -811,7 +993,7 @@ function createZipFromJson(json: string, filename: string): Uint8Array {
   const zipData = zipSync({
     [normalizedFilename]: [jsonBytes, {
       level: 6,           // Standard deflate compression level (method 8)
-      mtime: new Date(),  // DOS timestamp for file metadata
+      mtime: DETERMINISTIC_ZIP_MTIME, // Keep archive output stable across runs
       os: 0               // OS flag: 0 = FAT/NTFS (most compatible with Windows/Google Drive)
     }]
   });
@@ -907,6 +1089,7 @@ async function handleAuthExpiration(opts?: { silent?: boolean }): Promise<void> 
     email: null,
   });
   await saveGoogleAuthState();
+  await scheduleAutoBackup();
   updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
   updateBackupStatusDisplay();
   updateBackupStatusIndicator(); // Update main window indicator
@@ -914,52 +1097,123 @@ async function handleAuthExpiration(opts?: { silent?: boolean }): Promise<void> 
 
 // Export all timestamps to Google Drive
 export async function exportAllTimestampsToGoogleDrive(opts?: { silent?: boolean; isRetry?: boolean }): Promise<void> {
-  if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
+  void opts;
+
+  const authState = getGoogleAuthState();
+  if (!authState.isSignedIn || !authState.accessToken) {
+    throw new Error('unauthorized');
+  }
+
+  const payload = await buildExportPayload();
+  if (payload.totalTimestamps === 0) {
+    return;
+  }
+
+  const folderId = await ensureDriveFolder(authState.accessToken);
+  await uploadJsonToDrive(payload.filename, payload.json, folderId, authState.accessToken);
+  log(`Exported to Google Drive (${payload.filename}) with ${payload.totalVideos} videos / ${payload.totalTimestamps} timestamps.`);
+}
+
+async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boolean }): Promise<void> {
+  const destinations: BackupDestination[] = [];
+
+  if (hasGoogleDriveBackupDestination()) {
+    destinations.push({
+      label: 'Google Drive',
+      exportPayload: async (payload) => {
+        const authState = getGoogleAuthState();
+        if (!authState.accessToken) {
+          throw new Error('unauthorized');
+        }
+        const folderId = await ensureDriveFolder(authState.accessToken);
+        await uploadJsonToDrive(payload.filename, payload.json, folderId, authState.accessToken);
+      },
+    });
+  }
+
+  if (hasTimekeeperBackendBackupDestination()) {
+    destinations.push({
+      label: 'Timekeeper backend',
+      exportPayload: async (payload) => {
+        await uploadJsonToTimekeeperBackend(payload.filename, payload.json);
+      },
+    });
+  }
+
+  if (destinations.length === 0) {
     if (!opts?.silent) {
-      updateAuthStatusDisplay('error', 'Please sign in to Google Drive first');
+      updateAuthStatusDisplay('error', 'Configure a backup destination first');
+    }
+    throw new Error('no-backup-destination');
+  }
+
+  const payload = await buildExportPayload();
+  if (payload.totalTimestamps === 0) {
+    if (!opts?.silent) {
+      log('Skipping export: no timestamps to back up');
     }
     return;
   }
-  try {
-    const { json, filename, totalVideos, totalTimestamps } = await buildExportPayload();
 
-    // Don't export if there are no entries
-    if (totalTimestamps === 0) {
-      if (!opts?.silent) {
-        log('Skipping export: no timestamps to back up');
+  const failures: Array<{ label: string; kind: BackupDestinationErrorKind; error: unknown }> = [];
+  const successes: string[] = [];
+
+  for (const destination of destinations) {
+    try {
+      await destination.exportPayload(payload);
+      log(`Exported backup to ${destination.label} (${payload.filename}) with ${payload.totalVideos} videos / ${payload.totalTimestamps} timestamps.`);
+      successes.push(destination.label);
+    } catch (err) {
+      const error = err as Error;
+      const kind: BackupDestinationErrorKind = error.message === 'unauthorized' ? 'auth' : 'other';
+      failures.push({ label: destination.label, kind, error: err });
+
+      if (destination.label === 'Google Drive' && kind === 'auth') {
+        await handleAuthExpiration({ silent: opts?.silent });
+      } else {
+        log(`${destination.label} export failed:`, err, 'error');
       }
-      return;
-    }
-
-    const folderId = await ensureDriveFolder(googleAuthState.accessToken);
-    await uploadJsonToDrive(filename, json, folderId, googleAuthState.accessToken);
-    log(`Exported to Google Drive (${filename}) with ${totalVideos} videos / ${totalTimestamps} timestamps.`);
-  } catch (err) {
-    if ((err as Error).message === 'unauthorized') {
-      // Auth expired - clear state without prompting user
-      await handleAuthExpiration({ silent: opts?.silent });
-      throw err; // Re-throw to trigger retry logic in runAutoBackupOnce
-    } else {
-      log('Drive export failed:', err, 'error');
-      if (!opts?.silent) updateAuthStatusDisplay('error', 'Failed to export to Google Drive.');
-      throw err;
     }
   }
+
+  if (successes.length > 0) {
+    if (failures.length > 0) {
+      log(`Backup partially succeeded. Successful destinations: ${successes.join(', ')}. Failed destinations: ${failures.map(failure => failure.label).join(', ')}`, null, 'warn');
+    }
+    return;
+  }
+
+  if (failures.every(failure => failure.kind === 'auth')) {
+    throw new Error('unauthorized');
+  }
+
+  throw new Error('backup failed');
 }
 
 // Auto-backup settings
 export async function loadAutoBackupSettings() {
   try {
-    const parsed = AutoBackupSettingsSchema.partial().safeParse({
+    const storedLastAutoBackupAt = await loadGlobalSettings('lastAutoBackupAt');
+    const parsed = BackupSettingsSchema.partial().safeParse({
       autoBackupEnabled: await loadGlobalSettings('autoBackupEnabled'),
       autoBackupIntervalMinutes: await loadGlobalSettings('autoBackupIntervalMinutes'),
-      lastAutoBackupAt: await loadGlobalSettings('lastAutoBackupAt')
+      lastAutoBackupAt: typeof storedLastAutoBackupAt === 'number' && storedLastAutoBackupAt > 0 ? storedLastAutoBackupAt : null,
+      timekeeperBackendBackupEnabled: await loadGlobalSettings('timekeeperBackendBackupEnabled'),
+      timekeeperBackendHost: await loadGlobalSettings('timekeeperBackendHost'),
+      timekeeperBackendPort: await loadGlobalSettings('timekeeperBackendPort'),
+      timekeeperBackendBearerToken: await loadGlobalSettings('timekeeperBackendBearerToken'),
     });
 
     if (parsed.success) {
       if (typeof parsed.data.autoBackupEnabled === 'boolean') setAutoBackupEnabledInternal(parsed.data.autoBackupEnabled);
       if (typeof parsed.data.autoBackupIntervalMinutes === 'number') setAutoBackupIntervalMinutesInternal(parsed.data.autoBackupIntervalMinutes);
       if (typeof parsed.data.lastAutoBackupAt === 'number') setLastAutoBackupAtInternal(parsed.data.lastAutoBackupAt);
+      if (typeof parsed.data.timekeeperBackendBackupEnabled === 'boolean') setTimekeeperBackendBackupEnabledInternal(parsed.data.timekeeperBackendBackupEnabled);
+      if (typeof parsed.data.timekeeperBackendHost === 'string') setTimekeeperBackendHostInternal(parsed.data.timekeeperBackendHost);
+      if (typeof parsed.data.timekeeperBackendPort === 'number') setTimekeeperBackendPortInternal(parsed.data.timekeeperBackendPort);
+      if (typeof parsed.data.timekeeperBackendBearerToken === 'string' || parsed.data.timekeeperBackendBearerToken === null) {
+        setTimekeeperBackendBearerTokenInternal(parsed.data.timekeeperBackendBearerToken);
+      }
     } else {
       log('Failed to validate auto backup settings:', parsed.error.format(), 'warn');
     }
@@ -974,10 +1228,14 @@ export async function saveAutoBackupSettings() {
     const settings = {
       autoBackupEnabled: getAutoBackupEnabled(),
       autoBackupIntervalMinutes: getAutoBackupIntervalMinutes(),
-      lastAutoBackupAt: getLastAutoBackupAt() ?? 0,
+      lastAutoBackupAt: getLastAutoBackupAt(),
+      timekeeperBackendBackupEnabled: getTimekeeperBackendBackupEnabled(),
+      timekeeperBackendHost: getTimekeeperBackendHostNormalized(),
+      timekeeperBackendPort: getTimekeeperBackendPort(),
+      timekeeperBackendBearerToken: getTimekeeperBackendBearerTokenNormalized(),
     };
 
-    const validationResult = AutoBackupSettingsSchema.safeParse(settings);
+    const validationResult = BackupSettingsSchema.safeParse(settings);
     if (!validationResult.success) {
       log('Invalid auto backup settings, cannot save', { settings, errors: validationResult.error.format() }, 'error');
       return;
@@ -985,7 +1243,11 @@ export async function saveAutoBackupSettings() {
 
     await saveGlobalSettings('autoBackupEnabled', getAutoBackupEnabled());
     await saveGlobalSettings('autoBackupIntervalMinutes', getAutoBackupIntervalMinutes());
-    await saveGlobalSettings('lastAutoBackupAt', getLastAutoBackupAt() ?? 0);
+    await saveGlobalSettings('lastAutoBackupAt', getLastAutoBackupAt());
+    await saveGlobalSettings('timekeeperBackendBackupEnabled', getTimekeeperBackendBackupEnabled());
+    await saveGlobalSettings('timekeeperBackendHost', getTimekeeperBackendHostNormalized());
+    await saveGlobalSettings('timekeeperBackendPort', getTimekeeperBackendPort());
+    await saveGlobalSettings('timekeeperBackendBearerToken', getTimekeeperBackendBearerTokenNormalized());
   } catch (err) {
     log('Failed to save auto backup settings:', err, 'error');
   }
@@ -1014,6 +1276,19 @@ export function formatBackupTime(ts: number): string {
   }
 }
 
+function getDestinationSummaryText(): string {
+  const configured = getConfiguredDestinationLabels();
+  if (configured.length > 0) {
+    return `Destinations: ${configured.join(', ')}`;
+  }
+
+  if (getTimekeeperBackendBackupEnabled() && !hasTimekeeperBackendBackupConfiguration()) {
+    return 'Timekeeper backend is enabled but incomplete';
+  }
+
+  return 'No backup destination configured';
+}
+
 function getBackupStatusColor(): string {
   // Determine color consistent with updateBackupStatusIndicator logic
   if (!getAutoBackupEnabled()) {
@@ -1022,9 +1297,9 @@ function getBackupStatusColor(): string {
     return '#4285f4'; // Blue - in progress
   } else if (getAutoBackupBackoffMs() && getAutoBackupBackoffMs()! > 0) {
     return '#ffa500'; // Yellow - retrying
-  } else if (getGoogleAuthState().isSignedIn && getLastAutoBackupAt()) {
+  } else if (hasAnyBackupDestination() && getLastAutoBackupAt()) {
     return '#52c41a'; // Green - healthy
-  } else if (getGoogleAuthState().isSignedIn) {
+  } else if (hasAnyBackupDestination()) {
     return '#ffa500'; // Yellow - no backup yet
   } else {
     return '#ff4d4f'; // Red - not signed in
@@ -1045,6 +1320,10 @@ export function updateBackupStatusDisplay() {
   } else if (getAutoBackupBackoffMs() && getAutoBackupBackoffMs()! > 0) {
     const mins = Math.ceil(getAutoBackupBackoffMs()! / 60000);
     setIconLabel(backupStatusDisplay, 'alert-triangle', `Retry in ${mins}m`);
+    backupStatusDisplay.onmouseenter = null;
+    backupStatusDisplay.onmouseleave = null;
+  } else if (!hasAnyBackupDestination()) {
+    setIconLabel(backupStatusDisplay, 'alert-triangle', 'Backup target missing');
     backupStatusDisplay.onmouseenter = null;
     backupStatusDisplay.onmouseleave = null;
   } else if (getLastAutoBackupAt()) {
@@ -1100,40 +1379,52 @@ export function updateBackupStatusIndicator() {
     } else if (getAutoBackupBackoffMs() && getAutoBackupBackoffMs()! > 0) {
       const mins = Math.ceil(getAutoBackupBackoffMs()! / 60000);
       tooltipText = `Retrying backup in ${mins}m`;
-    } else if (getGoogleAuthState().isSignedIn && getLastAutoBackupAt()) {
+    } else if (!hasAnyBackupDestination()) {
+      tooltipText = getDestinationSummaryText();
+    } else if (getLastAutoBackupAt()) {
       const nextBackupAt = getLastAutoBackupAt()! + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
       const nextBackupTime = formatBackupTime(nextBackupAt);
-      tooltipText = `Last backup: ${formatBackupTime(getLastAutoBackupAt()!)}\nNext backup: ${nextBackupTime}`;
-    } else if (getGoogleAuthState().isSignedIn) {
+      tooltipText = `Last backup: ${formatBackupTime(getLastAutoBackupAt()!)}\nNext backup: ${nextBackupTime}\n${getDestinationSummaryText()}`;
+    } else {
       const nextBackupAt = Date.now() + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
       const nextBackupTime = formatBackupTime(nextBackupAt);
-      tooltipText = `No backup yet\nNext backup: ${nextBackupTime}`;
-    } else {
-      tooltipText = 'Not signed in to Google Drive';
+      tooltipText = `No backup yet\nNext backup: ${nextBackupTime}\n${getDestinationSummaryText()}`;
     }
     return tooltipText;
   });
 }
 
-export async function runAutoBackupOnce(silent = true) {
-  if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) {
+export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
+  const { silent = true, skipBackoff = false } = options;
+
+  if (!hasAnyBackupDestination()) {
     if (!silent) {
-      blinkAuthStatusDisplay();
+      updateBackupStatusDisplay();
+      if (!hasGoogleDriveBackupDestination()) {
+        blinkAuthStatusDisplay();
+      }
     }
     return;
   }
 
-  // If a backoff retry is scheduled, skip immediate runs to avoid retry storms and overlapping attempts
+  // Scheduled runs should respect backoff; manual runs may explicitly clear it.
   if (autoBackupBackoffTimeoutId) {
-    log('Auto backup: backoff in progress, skipping scheduled run');
-    return;
+    if (!skipBackoff) {
+      log('Auto backup: backoff in progress, skipping scheduled run');
+      return;
+    }
+
+    clearTimeout(autoBackupBackoffTimeoutId);
+    autoBackupBackoffTimeoutId = null;
+    setAutoBackupBackoffMsInternal(null);
+    log('Auto backup: manual run cleared backoff and will proceed immediately');
   }
 
   if (getIsAutoBackupRunning()) return;
   setIsAutoBackupRunningInternal(true);
   updateBackupStatusDisplay();
   try {
-    await exportAllTimestampsToGoogleDrive({ silent });
+    await exportAllTimestampsToConfiguredDestinations({ silent });
     // Only update last backup time if the backup succeeded
     setLastAutoBackupAtInternal(Date.now());
     setAutoBackupRetryAttemptsInternal(0);
@@ -1174,7 +1465,7 @@ export async function runAutoBackupOnce(silent = true) {
       setAutoBackupBackoffMsInternal(next);
       if (autoBackupBackoffTimeoutId) clearTimeout(autoBackupBackoffTimeoutId);
       autoBackupBackoffTimeoutId = setTimeout(() => {
-        runAutoBackupOnce(true);
+        runAutoBackupOnce({ silent: true });
       }, next);
       log(`Scheduling backup retry ${nextAttempts}/${AUTO_BACKUP_MAX_RETRY_ATTEMPTS} in ${Math.round(next/1000)}s`);
       updateBackupStatusDisplay(); // Update backup status indicator to show retry state
@@ -1191,10 +1482,10 @@ export async function runAutoBackupOnce(silent = true) {
 export async function scheduleAutoBackup(skipImmediateCheck = false) {
   clearAutoBackupSchedule();
   if (!getAutoBackupEnabled()) return;
-  if (!googleAuthState.isSignedIn || !googleAuthState.accessToken) return;
+  if (!hasAnyBackupDestination()) return;
 
   autoBackupIntervalId = setInterval(() => {
-    runAutoBackupOnce(true);
+    runAutoBackupOnce({ silent: true });
   }, Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
 
   // Only run immediate backup if not skipped and interval has elapsed
@@ -1203,7 +1494,7 @@ export async function scheduleAutoBackup(skipImmediateCheck = false) {
     const intervalMs = Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000;
     const last = getLastAutoBackupAt();
     if (!last || now - last >= intervalMs) {
-      runAutoBackupOnce(true);
+      runAutoBackupOnce({ silent: true });
     }
   }
   updateBackupStatusDisplay();
@@ -1227,6 +1518,60 @@ export async function setAutoBackupIntervalPrompt() {
     return;
   }
   setAutoBackupIntervalMinutesInternal(minutes);
+  await saveAutoBackupSettings();
+  await scheduleAutoBackup();
+  updateBackupStatusDisplay();
+}
+
+export async function toggleTimekeeperBackendBackup() {
+  setTimekeeperBackendBackupEnabledInternal(!getTimekeeperBackendBackupEnabled());
+  await saveAutoBackupSettings();
+  await scheduleAutoBackup();
+  updateBackupStatusDisplay();
+}
+
+export async function setTimekeeperBackendHostPrompt() {
+  const input = prompt('Set the Timekeeper backend host:', getTimekeeperBackendHostNormalized());
+  if (input === null) return;
+
+  const host = input.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if (!host) {
+    alert('Please enter a host name or IP address.');
+    return;
+  }
+
+  setTimekeeperBackendHostInternal(host);
+  await saveAutoBackupSettings();
+  await scheduleAutoBackup();
+  updateBackupStatusDisplay();
+}
+
+export async function setTimekeeperBackendPortPrompt() {
+  const input = prompt('Set the Timekeeper backend port:', String(getTimekeeperBackendPort()));
+  if (input === null) return;
+
+  const port = Number.parseInt(input.trim(), 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    alert('Please enter a valid port between 1 and 65535.');
+    return;
+  }
+
+  setTimekeeperBackendPortInternal(port);
+  await saveAutoBackupSettings();
+  await scheduleAutoBackup();
+  updateBackupStatusDisplay();
+}
+
+export async function setTimekeeperBackendBearerTokenPrompt() {
+  const currentToken = getTimekeeperBackendBearerTokenNormalized();
+  const promptMessage = currentToken
+    ? 'Set the Timekeeper backend bearer token (leave blank to clear it):'
+    : 'Set the Timekeeper backend bearer token:';
+  const input = prompt(promptMessage, currentToken ?? '');
+  if (input === null) return;
+
+  const token = input.trim();
+  setTimekeeperBackendBearerTokenInternal(token.length > 0 ? token : null);
   await saveAutoBackupSettings();
   await scheduleAutoBackup();
   updateBackupStatusDisplay();

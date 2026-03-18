@@ -33,9 +33,17 @@ export async function buildExportPayload(): Promise<{
     return { json: '{}', filename: 'timekeeper-data.json', totalVideos: 0, totalTimestamps: 0 };
   }
 
+  const sortedRows = [...parsedRows.data].sort((a, b) => {
+    const videoCompare = a.video_id.localeCompare(b.video_id);
+    if (videoCompare !== 0) return videoCompare;
+    const startCompare = a.start - b.start;
+    if (startCompare !== 0) return startCompare;
+    return a.guid.localeCompare(b.guid);
+  });
+
   // Group timestamps by video_id
   const videoGroups = new Map<string, TimestampRecord[]>();
-  for (const ts of parsedRows.data) {
+  for (const ts of sortedRows) {
     if (!videoGroups.has(ts.video_id)) {
       videoGroups.set(ts.video_id, []);
     }
@@ -47,16 +55,22 @@ export async function buildExportPayload(): Promise<{
   }
 
   // Populate exportData with all timestamps in v1 format for compatibility
-  for (const [videoId, timestamps] of videoGroups) {
+  const videoIds = Array.from(videoGroups.keys()).sort((a, b) => a.localeCompare(b));
+  for (const videoId of videoIds) {
+    const timestamps = videoGroups.get(videoId)!;
     exportData[`ytls-${videoId}`] = {
       video_id: videoId,
-      timestamps: timestamps.sort((a, b) => a.start - b.start)
+      timestamps: timestamps.sort((a, b) => {
+        const startCompare = a.start - b.start;
+        if (startCompare !== 0) return startCompare;
+        return a.guid.localeCompare(b.guid);
+      })
     };
   }
 
   const filename = `timekeeper-data.json`;
   const json = JSON.stringify(exportData, null, 2);
-  return { json, filename, totalVideos: videoGroups.size, totalTimestamps: parsedRows.data.length };
+  return { json, filename, totalVideos: videoGroups.size, totalTimestamps: sortedRows.length };
 }
 
 /**

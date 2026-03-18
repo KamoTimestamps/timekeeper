@@ -72,3 +72,14 @@ export const AutoBackupSettingsSchema = z.object({
   lastAutoBackupAt: z.number().int().positive().nullable().optional(),
 });
 export type AutoBackupSettings = z.infer<typeof AutoBackupSettingsSchema>;
+
+export const TimekeeperBackendSettingsSchema = z.object({
+  timekeeperBackendBackupEnabled: z.boolean(),
+  timekeeperBackendHost: z.string().trim().min(1),
+  timekeeperBackendPort: z.number().int().min(1).max(65535),
+  timekeeperBackendBearerToken: z.string().trim().min(1).nullable(),
+});
+export type TimekeeperBackendSettings = z.infer<typeof TimekeeperBackendSettingsSchema>;
+
+export const BackupSettingsSchema = AutoBackupSettingsSchema.extend(TimekeeperBackendSettingsSchema.shape);
+export type BackupSettings = z.infer<typeof BackupSettingsSchema>;
