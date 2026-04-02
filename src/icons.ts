@@ -180,13 +180,10 @@ export function createIcon(name: TablerIconName, size = 20): SVGSVGElement {
 
 /** Replace element's child content with a single icon SVG. */
 export function setIcon(el: Element, name: TablerIconName, size?: number): void {
-  while (el.firstChild) el.removeChild(el.firstChild);
-  el.appendChild(createIcon(name, size));
+  el.replaceChildren(createIcon(name, size));
 }
 
 /** Replace element's child content with an icon followed by a text label. */
 export function setIconLabel(el: Element, name: TablerIconName, label: string, size?: number): void {
-  while (el.firstChild) el.removeChild(el.firstChild);
-  el.appendChild(createIcon(name, size));
-  el.appendChild(document.createTextNode('\u00a0' + label));
+  el.replaceChildren(createIcon(name, size), document.createTextNode('\u00a0' + label));
 }

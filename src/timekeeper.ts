@@ -1691,11 +1691,8 @@ function safePostMessage(message: unknown) {
     const orderChanged = originalOrder.length !== newOrder.length ||
                         originalOrder.some((guid, idx) => guid !== newOrder[idx]);
 
-    // Clear current list
-    while (list.firstChild) {
-      list.removeChild(list.firstChild);
-    }
-    // Append sorted items
+    // Clear current list and append sorted items
+    list.replaceChildren();
     sortedItems.forEach(item => {
       list.appendChild(item.element);
     });
@@ -3481,9 +3478,7 @@ function safePostMessage(message: unknown) {
           setIconLabel(signButton, GoogleDrive.googleAuthState.isSignedIn ? 'logout' : 'login', GoogleDrive.googleAuthState.isSignedIn ? "Sign Out" : "Sign In");
           addTooltip(signButton, GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive");
           // Ensure main backup status indicator updates immediately
-          if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
-            (GoogleDrive as any).updateBackupStatusDisplay();
-          }
+          GoogleDrive.updateBackupStatusDisplay();
         },
         GoogleDrive.googleAuthState.isSignedIn ? 'logout' : 'login'
       );
@@ -3494,9 +3489,7 @@ function safePostMessage(message: unknown) {
         async () => {
           await GoogleDrive.toggleAutoBackup();
           refreshBackupButtons();
-          if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
-            (GoogleDrive as any).updateBackupStatusDisplay();
-          }
+          GoogleDrive.updateBackupStatusDisplay();
         },
         'refresh'
       );
@@ -3507,9 +3500,7 @@ function safePostMessage(message: unknown) {
         async () => {
           await GoogleDrive.setAutoBackupIntervalPrompt();
           refreshBackupButtons();
-          if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
-            (GoogleDrive as any).updateBackupStatusDisplay();
-          }
+          GoogleDrive.updateBackupStatusDisplay();
         },
         'clock-plus'
       );
@@ -4505,19 +4496,11 @@ function safePostMessage(message: unknown) {
     // Load the global UI visibility state BEFORE appending to DOM
     await loadUIVisibilityState();
 
-    // Initialize Google Drive module callbacks using setter functions
-    if (typeof (GoogleDrive as any).setBuildExportPayload === 'function') {
-      (GoogleDrive as any).setBuildExportPayload(buildExportPayload);
-    }
-    if (typeof (GoogleDrive as any).setSaveGlobalSettings === 'function') {
-      (GoogleDrive as any).setSaveGlobalSettings(saveGlobalSettings);
-    }
-    if (typeof (GoogleDrive as any).setLoadGlobalSettings === 'function') {
-      (GoogleDrive as any).setLoadGlobalSettings(loadGlobalSettings);
-    }
-    if (typeof (GoogleDrive as any).setBackupStatusIndicator === 'function') {
-      (GoogleDrive as any).setBackupStatusIndicator(backupStatusIndicator);
-    }
+    // Initialize Google Drive module callbacks
+    GoogleDrive.setBuildExportPayload(buildExportPayload);
+    GoogleDrive.setSaveGlobalSettings(saveGlobalSettings);
+    GoogleDrive.setLoadGlobalSettings(loadGlobalSettings);
+    GoogleDrive.setBackupStatusIndicator(backupStatusIndicator);
 
     // Load Google auth state
     await GoogleDrive.loadGoogleAuthState();
@@ -4527,9 +4510,7 @@ function safePostMessage(message: unknown) {
     await GoogleDrive.scheduleAutoBackup();
 
     // Update backup status indicator after everything is loaded
-    if (typeof (GoogleDrive as any).updateBackupStatusIndicator === 'function') {
-      (GoogleDrive as any).updateBackupStatusIndicator();
-    }
+    GoogleDrive.updateBackupStatusIndicator();
 
     // Aggressively ensure no duplicate panes exist before appending
     const allExistingPanes = document.querySelectorAll("#ytls-pane");

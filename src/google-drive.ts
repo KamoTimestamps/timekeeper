@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { log } from './util';
 import { addTooltip } from './tooltip';
-import { zipSync, strToU8 } from 'fflate';
+import { zipSync } from 'fflate';
 import { BackupSettingsSchema, GoogleAuthStateSchema } from './schema';
 import { createIcon, setIcon, setIconLabel } from './icons';
 import * as AppState from './services/state';
@@ -87,9 +87,6 @@ export function setAutoBackupEnabledInternal(enabled: boolean) {
   AppState.setAutoBackupEnabled(enabled);
 }
 
-// Note: Use getAutoBackupEnabled() getter for reading, not this export
-export const autoBackupEnabled: boolean = undefined as any;
-
 export function getAutoBackupIntervalMinutes() {
   return AppState.getState().auth.autoBackupIntervalMinutes;
 }
@@ -97,9 +94,6 @@ export function getAutoBackupIntervalMinutes() {
 export function setAutoBackupIntervalMinutesInternal(minutes: number) {
   AppState.setAutoBackupIntervalMinutes(minutes);
 }
-
-// Note: Use getAutoBackupIntervalMinutes() getter for reading, not this export
-export const autoBackupIntervalMinutes: number = undefined as any;
 
 export function getLastAutoBackupAt() {
   return AppState.getState().auth.lastAutoBackupAt;
@@ -109,9 +103,6 @@ export function setLastAutoBackupAtInternal(timestamp: number | null) {
   AppState.setLastAutoBackupAt(timestamp);
 }
 
-// Note: Use getLastAutoBackupAt() getter for reading, not this export
-export const lastAutoBackupAt: number | null = undefined as any;
-
 export function getIsAutoBackupRunning() {
   return AppState.getState().auth.isAutoBackupRunning;
 }
@@ -119,9 +110,6 @@ export function getIsAutoBackupRunning() {
 export function setIsAutoBackupRunningInternal(running: boolean) {
   AppState.setAutoBackupRunning(running);
 }
-
-// Note: Use getIsAutoBackupRunning() getter for reading, not this export
-export const isAutoBackupRunning: boolean = undefined as any;
 
 export function getAutoBackupRetryAttempts() {
   return AppState.getState().auth.autoBackupRetryAttempts;
@@ -131,9 +119,6 @@ export function setAutoBackupRetryAttemptsInternal(attempts: number) {
   AppState.setAutoBackupRetryAttempts(attempts);
 }
 
-// Note: Use getAutoBackupRetryAttempts() getter for reading, not this export
-export const autoBackupRetryAttempts: number = undefined as any;
-
 export function getAutoBackupBackoffMs() {
   return AppState.getState().auth.autoBackupBackoffMs;
 }
@@ -141,9 +126,6 @@ export function getAutoBackupBackoffMs() {
 export function setAutoBackupBackoffMsInternal(backoff: number | null) {
   AppState.setAutoBackupBackoffMs(backoff);
 }
-
-// Note: Use getAutoBackupBackoffMs() getter for reading, not this export
-export const autoBackupBackoffMs: number | null = undefined as any;
 
 export function getTimekeeperBackendBackupEnabled() {
   return AppState.getState().auth.timekeeperBackendBackupEnabled;
@@ -331,7 +313,7 @@ export function updateAuthStatusDisplay(status?: 'authenticating' | 'error', mes
   if (status === 'authenticating') {
     ensureAuthSpinnerStyles();
     authStatusDisplay.style.color = '#ffa500';
-    while (authStatusDisplay.firstChild) authStatusDisplay.removeChild(authStatusDisplay.firstChild);
+    authStatusDisplay.replaceChildren();
     const spinner = document.createElement('span');
     spinner.className = 'tk-auth-spinner';
     const text = document.createTextNode(` ${message || 'Authorizing with Google…'}`);
@@ -965,7 +947,7 @@ async function findFileInFolder(filename: string, folderId: string, accessToken:
 // Creates a well-formed standard ZIP format compatible with Windows, macOS, and Linux
 // The ZIP file includes proper headers: local file header, central directory header, and EOCD record
 function createZipFromJson(json: string, filename: string): Uint8Array {
-  const jsonBytes = strToU8(json);
+  const jsonBytes = new TextEncoder().encode(json);
 
   // Normalize filename for ZIP standard:
   // - Use forward slashes only (not backslashes)

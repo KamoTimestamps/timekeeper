@@ -41,9 +41,7 @@ export function getTimestampItems(list: HTMLUListElement | null): HTMLLIElement[
  */
 export function clearTimestampsDisplay(list: HTMLUListElement | null): void {
   if (!list) return;
-  while (list.firstChild) {
-    list.removeChild(list.firstChild);
-  }
+  list.replaceChildren();
 }
 
 /**
