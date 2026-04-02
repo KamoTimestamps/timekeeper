@@ -603,8 +603,7 @@ export async function signInToGoogle() {
         await saveGoogleAuthState();
         updateGoogleUserDisplay();
         updateAuthStatusDisplay();
-        updateBackupStatusDisplay(); // Update backup status indicator immediately
-        updateBackupStatusIndicator(); // Update main window indicator
+        updateBackupStatusDisplay();
 
         // Check if backup is needed and schedule auto-backup
         await scheduleAutoBackup();
@@ -776,8 +775,7 @@ export async function signOutFromGoogle() {
   await scheduleAutoBackup();
   updateGoogleUserDisplay();
   updateAuthStatusDisplay();
-  updateBackupStatusDisplay(); // Update backup status indicator immediately
-  updateBackupStatusIndicator(); // Update main window indicator
+  updateBackupStatusDisplay();
 }
 
 // Verify that the user is still signed in by making a lightweight API call
@@ -1093,7 +1091,6 @@ async function handleAuthExpiration(opts?: { silent?: boolean }): Promise<void> 
   await scheduleAutoBackup();
   updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
   updateBackupStatusDisplay();
-  updateBackupStatusIndicator(); // Update main window indicator
 }
 
 // Export all timestamps to Google Drive
@@ -1333,6 +1330,9 @@ function getBackupStatusColor(): string {
 }
 
 export function updateBackupStatusDisplay() {
+  // Always keep the header indicator in sync, even when the settings panel is closed
+  updateBackupStatusIndicator();
+
   if (!backupStatusDisplay) return;
 
   if (!getAutoBackupEnabled()) {
@@ -1379,14 +1379,8 @@ export function updateBackupStatusDisplay() {
   backupStatusDisplay.style.display = 'inline';
 
   // Apply matching color to settings display so it matches main UI indicator
-  try {
-    const color = getBackupStatusColor();
-    backupStatusDisplay.style.color = color;
-  } catch (e) {
-    // ignore
-  }
-
-  updateBackupStatusIndicator();
+  const color = getBackupStatusColor();
+  backupStatusDisplay.style.color = color;
 }
 
 export function updateBackupStatusIndicator() {
@@ -1473,8 +1467,7 @@ export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
       AppState.setGoogleAuthState({ ...currentAuth, accessToken: null, isSignedIn: false });
       await saveGoogleAuthState();
       updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
-      updateBackupStatusDisplay(); // Update backup status indicator immediately
-      updateBackupStatusIndicator(); // Update main window indicator
+      updateBackupStatusDisplay();
       // Reset retry state
       setAutoBackupRetryAttemptsInternal(0);
       setAutoBackupBackoffMsInternal(null);
