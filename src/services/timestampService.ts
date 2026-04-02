@@ -60,11 +60,7 @@ export async function buildExportPayload(): Promise<{
     const timestamps = videoGroups.get(videoId)!;
     exportData[`ytls-${videoId}`] = {
       video_id: videoId,
-      timestamps: timestamps.sort((a, b) => {
-        const startCompare = a.start - b.start;
-        if (startCompare !== 0) return startCompare;
-        return a.guid.localeCompare(b.guid);
-      })
+      timestamps,
     };
   }
 

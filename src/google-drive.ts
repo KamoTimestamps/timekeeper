@@ -252,6 +252,7 @@ let autoBackupBackoffTimeoutId: ReturnType<typeof setTimeout> | null = null;
 type BackupDestinationErrorKind = 'auth' | 'other';
 
 interface BackupDestination {
+  type: 'google' | 'timekeeper-backend';
   label: string;
   exportPayload: (payload: ExportPayload) => Promise<void>;
 }
@@ -1119,6 +1120,7 @@ async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boo
 
   if (hasGoogleDriveBackupDestination()) {
     destinations.push({
+      type: 'google',
       label: 'Google Drive',
       exportPayload: async (payload) => {
         const authState = getGoogleAuthState();
@@ -1133,6 +1135,7 @@ async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boo
 
   if (hasTimekeeperBackendBackupDestination()) {
     destinations.push({
+      type: 'timekeeper-backend',
       label: 'Timekeeper backend',
       exportPayload: async (payload) => {
         await uploadJsonToTimekeeperBackend(payload.filename, payload.json);
@@ -1158,20 +1161,25 @@ async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boo
   const failures: Array<{ label: string; kind: BackupDestinationErrorKind; error: unknown }> = [];
   const successes: string[] = [];
 
-  for (const destination of destinations) {
-    try {
-      await destination.exportPayload(payload);
+  const results = await Promise.allSettled(
+    destinations.map(destination => destination.exportPayload(payload))
+  );
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    const destination = destinations[i];
+    if (result.status === 'fulfilled') {
       log(`Exported backup to ${destination.label} (${payload.filename}) with ${payload.totalVideos} videos / ${payload.totalTimestamps} timestamps.`);
       successes.push(destination.label);
-    } catch (err) {
-      const error = err as Error;
+    } else {
+      const error = result.reason as Error;
       const kind: BackupDestinationErrorKind = error.message === 'unauthorized' ? 'auth' : 'other';
-      failures.push({ label: destination.label, kind, error: err });
+      failures.push({ label: destination.label, kind, error: result.reason });
 
-      if (destination.label === 'Google Drive' && kind === 'auth') {
+      if (destination.type === 'google' && kind === 'auth') {
         await handleAuthExpiration({ silent: opts?.silent });
       } else {
-        log(`${destination.label} export failed:`, err, 'error');
+        log(`${destination.label} export failed:`, result.reason, 'error');
       }
     }
   }
@@ -1193,15 +1201,31 @@ async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boo
 // Auto-backup settings
 export async function loadAutoBackupSettings() {
   try {
-    const storedLastAutoBackupAt = await loadGlobalSettings('lastAutoBackupAt');
+    const [
+      storedLastAutoBackupAt,
+      autoBackupEnabled,
+      autoBackupIntervalMinutes,
+      timekeeperBackendBackupEnabled,
+      timekeeperBackendHost,
+      timekeeperBackendPort,
+      timekeeperBackendBearerToken,
+    ] = await Promise.all([
+      loadGlobalSettings('lastAutoBackupAt'),
+      loadGlobalSettings('autoBackupEnabled'),
+      loadGlobalSettings('autoBackupIntervalMinutes'),
+      loadGlobalSettings('timekeeperBackendBackupEnabled'),
+      loadGlobalSettings('timekeeperBackendHost'),
+      loadGlobalSettings('timekeeperBackendPort'),
+      loadGlobalSettings('timekeeperBackendBearerToken'),
+    ]);
     const parsed = BackupSettingsSchema.partial().safeParse({
-      autoBackupEnabled: await loadGlobalSettings('autoBackupEnabled'),
-      autoBackupIntervalMinutes: await loadGlobalSettings('autoBackupIntervalMinutes'),
+      autoBackupEnabled,
+      autoBackupIntervalMinutes,
       lastAutoBackupAt: typeof storedLastAutoBackupAt === 'number' && storedLastAutoBackupAt > 0 ? storedLastAutoBackupAt : null,
-      timekeeperBackendBackupEnabled: await loadGlobalSettings('timekeeperBackendBackupEnabled'),
-      timekeeperBackendHost: await loadGlobalSettings('timekeeperBackendHost'),
-      timekeeperBackendPort: await loadGlobalSettings('timekeeperBackendPort'),
-      timekeeperBackendBearerToken: await loadGlobalSettings('timekeeperBackendBearerToken'),
+      timekeeperBackendBackupEnabled,
+      timekeeperBackendHost,
+      timekeeperBackendPort,
+      timekeeperBackendBearerToken,
     });
 
     if (parsed.success) {
@@ -1241,13 +1265,15 @@ export async function saveAutoBackupSettings() {
       return;
     }
 
-    await saveGlobalSettings('autoBackupEnabled', getAutoBackupEnabled());
-    await saveGlobalSettings('autoBackupIntervalMinutes', getAutoBackupIntervalMinutes());
-    await saveGlobalSettings('lastAutoBackupAt', getLastAutoBackupAt());
-    await saveGlobalSettings('timekeeperBackendBackupEnabled', getTimekeeperBackendBackupEnabled());
-    await saveGlobalSettings('timekeeperBackendHost', getTimekeeperBackendHostNormalized());
-    await saveGlobalSettings('timekeeperBackendPort', getTimekeeperBackendPort());
-    await saveGlobalSettings('timekeeperBackendBearerToken', getTimekeeperBackendBearerTokenNormalized());
+    await Promise.all([
+      saveGlobalSettings('autoBackupEnabled', getAutoBackupEnabled()),
+      saveGlobalSettings('autoBackupIntervalMinutes', getAutoBackupIntervalMinutes()),
+      saveGlobalSettings('lastAutoBackupAt', getLastAutoBackupAt()),
+      saveGlobalSettings('timekeeperBackendBackupEnabled', getTimekeeperBackendBackupEnabled()),
+      saveGlobalSettings('timekeeperBackendHost', getTimekeeperBackendHostNormalized()),
+      saveGlobalSettings('timekeeperBackendPort', getTimekeeperBackendPort()),
+      saveGlobalSettings('timekeeperBackendBearerToken', getTimekeeperBackendBearerTokenNormalized()),
+    ]);
   } catch (err) {
     log('Failed to save auto backup settings:', err, 'error');
   }
