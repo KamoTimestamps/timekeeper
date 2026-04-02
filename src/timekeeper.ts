@@ -258,7 +258,7 @@ initializeDvrEnablement();
   function performSizingAndSave() {
     // Run a layout recalc then ensure pane sizing/clamping are applied
     requestAnimationFrame(() => {
-      if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+      recalculateTimestampsAreaFn?.();
       ensureMinPaneHeight();
       clampAndSavePanePosition(true);
     });
@@ -356,9 +356,7 @@ initializeDvrEnablement();
 
     updateIndentMarkers();
     updateSeekbarMarkers();
-    if (typeof (window as any).recalculateTimestampsArea === 'function') {
-      requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
-    }
+    if (recalculateTimestampsAreaFn) requestAnimationFrame(recalculateTimestampsAreaFn);
 
     autoHighlightNearest(true);
   }
@@ -614,6 +612,8 @@ function safePostMessage(message: unknown) {
   let scrollbarHideTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let scrollbarTrack: HTMLDivElement | null = null;
   let scrollbarThumb: HTMLDivElement | null = null;
+  // Module-level ref set by initializePane; avoids polluting window globals
+  let recalculateTimestampsAreaFn: (() => void) | null = null;
   // When timestamps are loaded while a show animation is running, build the DOM nodes
   // but defer appending them to the visible list until the animation completes.
   let pendingTimestampsFragment: DocumentFragment | null = null;
@@ -1732,7 +1732,7 @@ function safePostMessage(message: unknown) {
 
     // Always size the list to fill the available pane height, let the resize observer
     // and recalculateTimestampsArea handle the exact maxHeight calculation.
-    if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+    recalculateTimestampsAreaFn?.();
 
     // Decide whether to show a scrollbar based on content height vs available height
     const paneRect = pane.getBoundingClientRect();
@@ -2077,6 +2077,7 @@ function safePostMessage(message: unknown) {
     btns = null;
     scrollbarTrack = null;
     scrollbarThumb = null;
+    recalculateTimestampsAreaFn = null;
     timeDisplay = null;
     playbackSpeedDisplay = null;
     style = null;
@@ -2195,9 +2196,7 @@ function safePostMessage(message: unknown) {
             updateIndentMarkers();
             updateSeekbarMarkers();
             // Ensure scroll area is recalculated after DOM updates
-            if (typeof (window as any).recalculateTimestampsArea === 'function') {
-              requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
-            }
+            if (recalculateTimestampsAreaFn) requestAnimationFrame(recalculateTimestampsAreaFn);
           }
         }
 
@@ -2213,9 +2212,7 @@ function safePostMessage(message: unknown) {
         // Sync empty timestamps to centralized state
         setTimestampsInState([]);
         // Still recalculate area in case list is now empty
-        if (typeof (window as any).recalculateTimestampsArea === 'function') {
-          requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
-        }
+        if (recalculateTimestampsAreaFn) requestAnimationFrame(recalculateTimestampsAreaFn);
       }
     } catch (err) {
       log("Unexpected error while loading timestamps:", err, 'error');
@@ -2227,9 +2224,7 @@ function safePostMessage(message: unknown) {
       }
       requestAnimationFrame(restoreScrollPosition);
       // Ensure scroll area is recalculated after loading timestamps
-      if (typeof (window as any).recalculateTimestampsArea === 'function') {
-        requestAnimationFrame(() => (window as any).recalculateTimestampsArea());
-      }
+      if (recalculateTimestampsAreaFn) requestAnimationFrame(recalculateTimestampsAreaFn);
       // If there is no error being shown, ensure a friendly placeholder appears when the list is empty
       if (list && !list.querySelector('.ytls-error-message')) {
         ensureEmptyPlaceholder();
@@ -2551,7 +2546,7 @@ function safePostMessage(message: unknown) {
       visibilitySizingTimeoutId = setTimeout(() => {
         // If timestamps were deferred while animating, append them first so sizing sees them
         appendPendingTimestamps();
-        if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+        recalculateTimestampsAreaFn?.();
         ensureMinPaneHeight();
         clampAndSavePanePosition(true);
 
@@ -4031,7 +4026,7 @@ function safePostMessage(message: unknown) {
           updateLastSavedPanePositionFromRect(rect);
         }
         // Ensure the scroll area is sized after restoring position/size
-        if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+        recalculateTimestampsAreaFn?.();
       }).catch(err => {
         log("failed to load pane position from IndexedDB:", err, 'warn');
         clampPaneToViewport();
@@ -4044,7 +4039,7 @@ function safePostMessage(message: unknown) {
             height: Math.round(rect.height)
           });
         }
-        if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+        recalculateTimestampsAreaFn?.();
       });
     }
 
@@ -4091,7 +4086,10 @@ function safePostMessage(message: unknown) {
     setTimeout(() => clampPaneToViewport(), 10);
 
     let isDragging = false;
-    let offsetX; let offsetY;
+    let offsetX = 0; let offsetY = 0;
+    let dragCachedPaneWidth = 0; let dragCachedPaneHeight = 0;
+    let dragCachedViewportWidth = 0; let dragCachedViewportHeight = 0;
+    let dragRafId: number | null = null;
     let dragOccurredSinceLastMouseDown = false; // Flag to track if a drag occurred
 
     pane.addEventListener("mousedown", (e) => {
@@ -4116,8 +4114,14 @@ function safePostMessage(message: unknown) {
 
       isDragging = true;
       dragOccurredSinceLastMouseDown = false;
-      offsetX = e.clientX - pane.getBoundingClientRect().left;
-      offsetY = e.clientY - pane.getBoundingClientRect().top;
+      // Read layout once at drag start; reuse for clamping throughout the drag
+      const rect = pane.getBoundingClientRect();
+      offsetX = e.clientX - rect.left;
+      offsetY = e.clientY - rect.top;
+      dragCachedPaneWidth = rect.width;
+      dragCachedPaneHeight = rect.height;
+      dragCachedViewportWidth = document.documentElement.clientWidth;
+      dragCachedViewportHeight = document.documentElement.clientHeight;
 
       pane.style.transition = "none";
     });
@@ -4125,35 +4129,37 @@ function safePostMessage(message: unknown) {
     document.addEventListener("mousemove", documentMousemoveHandler = (e) => {
       if (!isDragging) return;
 
-      dragOccurredSinceLastMouseDown = true; // Set flag if mouse moves while dragging
+      dragOccurredSinceLastMouseDown = true;
 
-      let x = e.clientX - offsetX;
-      let y = e.clientY - offsetY;
+      // Capture coordinates before yielding to RAF to get the latest pointer position
+      const clientX = e.clientX;
+      const clientY = e.clientY;
 
-      // Get pane dimensions and viewport dimensions
-      const paneRect = pane.getBoundingClientRect();
-      const paneWidth = paneRect.width;
-      const paneHeight = paneRect.height;
-      // Use document.documentElement.clientWidth/Height to account for scrollbars
-      const viewportWidth = document.documentElement.clientWidth;
-      const viewportHeight = document.documentElement.clientHeight;
+      // Skip if a frame is already queued; the captured coords will be applied next frame
+      if (dragRafId !== null) return;
 
-      // Clamp x to keep pane fully on screen horizontally, accounting for scrollbars
-      x = Math.max(0, Math.min(x, viewportWidth - paneWidth));
+      dragRafId = requestAnimationFrame(() => {
+        dragRafId = null;
+        if (!isDragging) return;
 
-      // Clamp y to keep pane fully on screen vertically, accounting for scrollbars
-      y = Math.max(0, Math.min(y, viewportHeight - paneHeight));
+        let x = Math.max(0, Math.min(clientX - offsetX, dragCachedViewportWidth - dragCachedPaneWidth));
+        let y = Math.max(0, Math.min(clientY - offsetY, dragCachedViewportHeight - dragCachedPaneHeight));
 
-      pane.style.left = `${x}px`;
-      pane.style.top = `${y}px`;
-      pane.style.right = "auto";
-      pane.style.bottom = "auto";
+        pane.style.left = `${x}px`;
+        pane.style.top = `${y}px`;
+        pane.style.right = "auto";
+        pane.style.bottom = "auto";
+      });
     });
 
     document.addEventListener("mouseup", documentMouseupHandler = () => {
       if (!isDragging) return;
 
       isDragging = false;
+      if (dragRafId !== null) {
+        cancelAnimationFrame(dragRafId);
+        dragRafId = null;
+      }
       const didDrag = dragOccurredSinceLastMouseDown;
       setTimeout(() => {
         dragOccurredSinceLastMouseDown = false; // Reset the flag after a short delay
@@ -4189,6 +4195,9 @@ function safePostMessage(message: unknown) {
     let resizeStartHeight: number = 0;
     let resizeStartLeft: number = 0;
     let resizeStartTop: number = 0;
+    let resizeCachedViewportWidth: number = 0;
+    let resizeCachedViewportHeight: number = 0;
+    let resizeRafId: number | null = null;
     let resizeEdge: "top-left" | "top-right" | "bottom-left" | "bottom-right" | null = null;
 
     function setupCorner(handle: HTMLElement, edge: "top-left" | "top-right" | "bottom-left" | "bottom-right") {
@@ -4214,6 +4223,9 @@ function safePostMessage(message: unknown) {
         resizeStartHeight = rect.height;
         resizeStartLeft = rect.left;
         resizeStartTop = rect.top;
+        // Cache viewport dimensions once at resize start
+        resizeCachedViewportWidth = document.documentElement.clientWidth;
+        resizeCachedViewportHeight = document.documentElement.clientHeight;
         // Set diagonal cursor indicator
         if (edge === "top-left" || edge === "bottom-right") document.body.style.cursor = "nwse-resize";
         else document.body.style.cursor = "nesw-resize";
@@ -4228,50 +4240,63 @@ function safePostMessage(message: unknown) {
     document.addEventListener("mousemove", (e) => {
       if (!isResizing || !pane || !resizeEdge) return;
 
-      const deltaX = e.clientX - resizeStartX;
-      const deltaY = e.clientY - resizeStartY;
+      const clientX = e.clientX;
+      const clientY = e.clientY;
 
-      let newWidth = resizeStartWidth;
-      let newHeight = resizeStartHeight;
-      let newLeft = resizeStartLeft;
-      let newTop = resizeStartTop;
+      if (resizeRafId !== null) return;
 
-      const viewportWidth = document.documentElement.clientWidth;
-      const viewportHeight = document.documentElement.clientHeight;
+      resizeRafId = requestAnimationFrame(() => {
+        resizeRafId = null;
+        if (!isResizing || !pane || !resizeEdge) return;
 
-      if (resizeEdge === "bottom-right") {
-        newWidth = Math.max(200, Math.min(800, resizeStartWidth + deltaX));
-        newHeight = Math.max(250, Math.min(viewportHeight, resizeStartHeight + deltaY));
-      } else if (resizeEdge === "top-left") {
-        newWidth = Math.max(200, Math.min(800, resizeStartWidth - deltaX));
-        newLeft = resizeStartLeft + deltaX;
-        newHeight = Math.max(250, Math.min(viewportHeight, resizeStartHeight - deltaY));
-        newTop = resizeStartTop + deltaY;
-      } else if (resizeEdge === "top-right") {
-        newWidth = Math.max(200, Math.min(800, resizeStartWidth + deltaX));
-        newHeight = Math.max(250, Math.min(viewportHeight, resizeStartHeight - deltaY));
-        newTop = resizeStartTop + deltaY;
-      } else if (resizeEdge === "bottom-left") {
-        newWidth = Math.max(200, Math.min(800, resizeStartWidth - deltaX));
-        newLeft = resizeStartLeft + deltaX;
-        newHeight = Math.max(250, Math.min(viewportHeight, resizeStartHeight + deltaY));
-      }
+        const deltaX = clientX - resizeStartX;
+        const deltaY = clientY - resizeStartY;
+        const vw = resizeCachedViewportWidth;
+        const vh = resizeCachedViewportHeight;
 
-      // Clamp to viewport
-      newLeft = Math.max(0, Math.min(newLeft, viewportWidth - newWidth));
-      newTop = Math.max(0, Math.min(newTop, viewportHeight - newHeight));
+        let newWidth = resizeStartWidth;
+        let newHeight = resizeStartHeight;
+        let newLeft = resizeStartLeft;
+        let newTop = resizeStartTop;
 
-      pane.style.width = `${newWidth}px`;
-      pane.style.height = `${newHeight}px`;
-      pane.style.left = `${newLeft}px`;
-      pane.style.top = `${newTop}px`;
-      pane.style.right = "auto";
-      pane.style.bottom = "auto";
+        if (resizeEdge === "bottom-right") {
+          newWidth = Math.max(200, Math.min(800, resizeStartWidth + deltaX));
+          newHeight = Math.max(250, Math.min(vh, resizeStartHeight + deltaY));
+        } else if (resizeEdge === "top-left") {
+          newWidth = Math.max(200, Math.min(800, resizeStartWidth - deltaX));
+          newLeft = resizeStartLeft + deltaX;
+          newHeight = Math.max(250, Math.min(vh, resizeStartHeight - deltaY));
+          newTop = resizeStartTop + deltaY;
+        } else if (resizeEdge === "top-right") {
+          newWidth = Math.max(200, Math.min(800, resizeStartWidth + deltaX));
+          newHeight = Math.max(250, Math.min(vh, resizeStartHeight - deltaY));
+          newTop = resizeStartTop + deltaY;
+        } else if (resizeEdge === "bottom-left") {
+          newWidth = Math.max(200, Math.min(800, resizeStartWidth - deltaX));
+          newLeft = resizeStartLeft + deltaX;
+          newHeight = Math.max(250, Math.min(vh, resizeStartHeight + deltaY));
+        }
+
+        // Clamp to viewport
+        newLeft = Math.max(0, Math.min(newLeft, vw - newWidth));
+        newTop = Math.max(0, Math.min(newTop, vh - newHeight));
+
+        pane.style.width = `${newWidth}px`;
+        pane.style.height = `${newHeight}px`;
+        pane.style.left = `${newLeft}px`;
+        pane.style.top = `${newTop}px`;
+        pane.style.right = "auto";
+        pane.style.bottom = "auto";
+      });
     });
 
     document.addEventListener("mouseup", () => {
       if (isResizing) {
         isResizing = false;
+        if (resizeRafId !== null) {
+          cancelAnimationFrame(resizeRafId);
+          resizeRafId = null;
+        }
         resizeEdge = null;
         document.body.style.cursor = "";
         clampAndSavePanePosition(true);
@@ -4286,8 +4311,9 @@ function safePostMessage(message: unknown) {
         clearTimeout(resizeTimeout);
       }
       resizeTimeout = setTimeout(() => {
-        // After resize finishes, clamp and save in a single helper
+        // After resize finishes, clamp, save, and recalculate layout in a single debounced pass
         clampAndSavePanePosition(true);
+        recalculateTimestampsAreaFn?.();
         resizeTimeout = null;
       }, 200);
     });
@@ -4323,42 +4349,47 @@ function safePostMessage(message: unknown) {
     pane.append(header, content, style, resizeTL, resizeTR, resizeBL, resizeBR); // Append header, content, style, and corner resize handles to the pane
 
     // Show diagonal cursors only on corners (no edge cursors)
+    let lastPaneCursor = '';
     pane.addEventListener('mousemove', (ev) => {
-      try {
-        if (isDragging || isResizing) return;
-        const rect = pane.getBoundingClientRect();
-        const threshold = 20; // matches corner grab size
-        const x = ev.clientX;
-        const y = ev.clientY;
-        const inLeft = x - rect.left <= threshold;
-        const inRight = rect.right - x <= threshold;
-        const inTop = y - rect.top <= threshold;
-        const inBottom = rect.bottom - y <= threshold;
-        let c = '';
-        // Only show diagonal resize cursors when pointer is in a corner area
-        if ((inTop && inLeft) || (inBottom && inRight)) c = 'nwse-resize';
-        else if ((inTop && inRight) || (inBottom && inLeft)) c = 'nesw-resize';
-        else c = '';
+      if (isDragging || isResizing) return;
+      const rect = pane.getBoundingClientRect();
+      const threshold = 20; // matches corner grab size
+      const x = ev.clientX;
+      const y = ev.clientY;
+      const inLeft = x - rect.left <= threshold;
+      const inRight = rect.right - x <= threshold;
+      const inTop = y - rect.top <= threshold;
+      const inBottom = rect.bottom - y <= threshold;
+      let c = '';
+      if ((inTop && inLeft) || (inBottom && inRight)) c = 'nwse-resize';
+      else if ((inTop && inRight) || (inBottom && inLeft)) c = 'nesw-resize';
+      if (c !== lastPaneCursor) {
+        lastPaneCursor = c;
         document.body.style.cursor = c;
-      } catch (e) {
-        // ignore
       }
     });
+
+    let scrollThumbRafId: number | null = null;
 
     function updateScrollbarThumb() {
       if (!list || !scrollbarThumb) return;
       const { scrollTop, scrollHeight, clientHeight } = list;
       if (scrollHeight <= clientHeight) return;
-      const trackHeight = clientHeight;
-      const thumbHeight = Math.max(30, (clientHeight / scrollHeight) * trackHeight);
-      const thumbTop = (scrollTop / (scrollHeight - clientHeight)) * (trackHeight - thumbHeight);
+      const thumbHeight = Math.max(30, (clientHeight / scrollHeight) * clientHeight);
+      const thumbTop = (scrollTop / (scrollHeight - clientHeight)) * (clientHeight - thumbHeight);
       scrollbarThumb.style.height = `${thumbHeight}px`;
       scrollbarThumb.style.top = `${thumbTop}px`;
     }
 
     function showScrollbar() {
       if (!scrollbarTrack) return;
-      updateScrollbarThumb();
+      // Batch thumb geometry update with the next paint
+      if (scrollThumbRafId === null) {
+        scrollThumbRafId = requestAnimationFrame(() => {
+          scrollThumbRafId = null;
+          updateScrollbarThumb();
+        });
+      }
       scrollbarTrack.classList.add('ytls-scrollbar-visible');
       if (scrollbarHideTimeoutId) clearTimeout(scrollbarHideTimeoutId);
       scrollbarHideTimeoutId = setTimeout(() => {
@@ -4402,7 +4433,7 @@ function safePostMessage(message: unknown) {
         list.style.overflowY = available > 0 ? 'auto' : 'hidden';
       }
     }
-    (window as any).recalculateTimestampsArea = recalculateTimestampsArea;
+    recalculateTimestampsAreaFn = recalculateTimestampsArea;
 
     setTimeout(() => {
       recalculateTimestampsArea();
@@ -4427,8 +4458,8 @@ function safePostMessage(message: unknown) {
       }
     }, 0);
 
-    // Recalculate on window and pane resize
-    window.addEventListener('resize', recalculateTimestampsArea);
+    // Recalculate when the pane itself changes size (drag-resize); window resize is handled
+    // by the debounced windowResizeHandler above which already calls recalculateTimestampsAreaFn.
     if (paneResizeObserver) {
       try { paneResizeObserver.disconnect(); } catch (_) {}
       paneResizeObserver = null;
@@ -4526,7 +4557,7 @@ function safePostMessage(message: unknown) {
     visibilitySizingTimeoutId = setTimeout(() => {
       // If timestamps were deferred while animating, append them first so sizing sees them
       appendPendingTimestamps();
-      if (typeof (window as any).recalculateTimestampsArea === 'function') (window as any).recalculateTimestampsArea();
+      recalculateTimestampsAreaFn?.();
       ensureMinPaneHeight();
       clampAndSavePanePosition(true);
       visibilitySizingTimeoutId = null;
