@@ -611,6 +611,9 @@ function safePostMessage(message: unknown) {
   let currentLoadedVideoId: string | null = null; // Track the currently loaded video to prevent duplicate loads
   let visibilityAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let visibilitySizingTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let scrollbarHideTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let scrollbarTrack: HTMLDivElement | null = null;
+  let scrollbarThumb: HTMLDivElement | null = null;
   // When timestamps are loaded while a show animation is running, build the DOM nodes
   // but defer appending them to the visible list until the animation completes.
   let pendingTimestampsFragment: DocumentFragment | null = null;
@@ -2072,6 +2075,8 @@ function safePostMessage(message: unknown) {
     header = null;
     list = null;
     btns = null;
+    scrollbarTrack = null;
+    scrollbarThumb = null;
     timeDisplay = null;
     playbackSpeedDisplay = null;
     style = null;
@@ -4301,9 +4306,18 @@ function safePostMessage(message: unknown) {
 
     header.appendChild(versionWrapper); // Add version wrapper with indicator to header
 
+    const listWrapper = document.createElement("div");
+    listWrapper.id = "ytls-list-wrapper";
+    scrollbarTrack = document.createElement("div");
+    scrollbarTrack.className = "ytls-scrollbar-track";
+    scrollbarThumb = document.createElement("div");
+    scrollbarThumb.className = "ytls-scrollbar-thumb";
+    scrollbarTrack.append(scrollbarThumb);
+    listWrapper.append(list, scrollbarTrack);
+
     const content = document.createElement("div");
     content.id = "ytls-content";
-    content.append(list); // Only the list is scrollable
+    content.append(listWrapper); // list is inside its own positioned wrapper
     content.append(btns); // Buttons are always at the bottom of content
 
     pane.append(header, content, style, resizeTL, resizeTR, resizeBL, resizeBR); // Append header, content, style, and corner resize handles to the pane
@@ -4331,10 +4345,35 @@ function safePostMessage(message: unknown) {
       }
     });
 
+    function updateScrollbarThumb() {
+      if (!list || !scrollbarThumb) return;
+      const { scrollTop, scrollHeight, clientHeight } = list;
+      if (scrollHeight <= clientHeight) return;
+      const trackHeight = clientHeight;
+      const thumbHeight = Math.max(30, (clientHeight / scrollHeight) * trackHeight);
+      const thumbTop = (scrollTop / (scrollHeight - clientHeight)) * (trackHeight - thumbHeight);
+      scrollbarThumb.style.height = `${thumbHeight}px`;
+      scrollbarThumb.style.top = `${thumbTop}px`;
+    }
+
+    function showScrollbar() {
+      if (!scrollbarTrack) return;
+      updateScrollbarThumb();
+      scrollbarTrack.classList.add('ytls-scrollbar-visible');
+      if (scrollbarHideTimeoutId) clearTimeout(scrollbarHideTimeoutId);
+      scrollbarHideTimeoutId = setTimeout(() => {
+        scrollbarTrack?.classList.remove('ytls-scrollbar-visible');
+        scrollbarHideTimeoutId = null;
+      }, 500);
+    }
+
     pane.addEventListener('mouseenter', () => {
       isMouseOverTimestamps = true;
       TimestampView.setMouseOverTimestamps(true);
+      showScrollbar();
     });
+
+    list.addEventListener('scroll', showScrollbar);
 
     pane.addEventListener('mouseleave', () => {
       if (!isResizing && !isDragging) document.body.style.cursor = '';

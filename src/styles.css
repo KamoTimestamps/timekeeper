@@ -75,59 +75,58 @@
   box-sizing: border-box;
   position: relative;
 }
-#ytls-content ul {
-  --ytls-scrollbar-size: 10px;
+/* Wrapper that gives the custom scrollbar a positioned ancestor covering only the list area */
+#ytls-list-wrapper {
+  position: relative;
   flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#ytls-content ul {
+  height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  margin: 0 calc(-1 * var(--ytls-scrollbar-size)) 0 0 !important;
   padding: 0 !important;
   border: none !important;
   box-sizing: border-box;
-  width: calc(100% + var(--ytls-scrollbar-size));
-  max-width: none;
-  min-height: 0;
-  z-index: 1;
-  scrollbar-gutter: auto;
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-
-/* Keep scroll behavior active, but only reveal scrollbar visuals over the timestamp list */
-#ytls-content ul:hover,
-#ytls-content ul:focus-within {
-  scrollbar-color: rgba(255, 255, 255, 0.45) transparent;
+  scrollbar-width: none; /* Firefox: hide native scrollbar */
 }
 
 #ytls-content ul::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+  display: none; /* WebKit: hide native scrollbar */
 }
 
-#ytls-content ul:hover::-webkit-scrollbar,
-#ytls-content ul:focus-within::-webkit-scrollbar {
+/* Custom overlay scrollbar track */
+.ytls-scrollbar-track {
+  --ytls-scrollbar-size: 10px;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
   width: var(--ytls-scrollbar-size);
-  height: var(--ytls-scrollbar-size);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 2;
 }
 
-#ytls-content ul::-webkit-scrollbar-track {
-  background: transparent;
+.ytls-scrollbar-track.ytls-scrollbar-visible {
+  opacity: 1;
 }
 
-#ytls-content ul::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-#ytls-content ul:hover::-webkit-scrollbar-thumb,
-#ytls-content ul:focus-within::-webkit-scrollbar-thumb {
+/* Custom overlay scrollbar thumb */
+.ytls-scrollbar-thumb {
+  position: absolute;
+  right: 2px;
+  width: calc(var(--ytls-scrollbar-size) - 4px);
+  min-height: 30px;
   background: rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  transition: background 0.15s ease;
 }
 
-#ytls-content ul:hover::-webkit-scrollbar-thumb:hover,
-#ytls-content ul:focus-within::-webkit-scrollbar-thumb:hover {
+.ytls-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.62);
 }
 
