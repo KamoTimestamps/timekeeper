@@ -5,33 +5,12 @@
 
 import { z } from 'zod';
 import { log } from './util';
+import { TIMEKEEPER_VERSION } from './version';
 import { addTooltip } from './tooltip';
 import { zipSync } from 'fflate';
 import { BackupSettingsSchema, GoogleAuthStateSchema } from './schema';
 import { createIcon, setIcon, setIconLabel } from './icons';
 import * as AppState from './services/state';
-
-declare const GM: {
-  getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
-  setValue<T = unknown>(key: string, value: T): Promise<void>;
-  xmlHttpRequest?: (details: {
-    method: string;
-    url: string;
-    headers?: Record<string, string>;
-    data?: string | ArrayBuffer | Blob | FormData;
-    timeout?: number;
-    responseType?: 'text';
-    onload: (response: { status: number; responseText?: string }) => void;
-    onerror: (response: { status?: number; statusText?: string; error?: unknown }) => void;
-    ontimeout?: () => void;
-  }) => void;
-};
-
-declare const GM_info: {
-  script?: {
-    version?: string;
-  };
-};
 
 // Types
 export interface ExportPayload {
@@ -833,44 +812,35 @@ function getTimekeeperBackendBaseUrl(): string {
   return `https://${host}:${getTimekeeperBackendPort()}`;
 }
 
-function sendUserscriptRequest(details: {
+async function sendUserscriptRequest(details: {
   method: string;
   url: string;
   headers?: Record<string, string>;
   data?: string | ArrayBuffer | Blob | FormData;
   timeout?: number;
 }): Promise<{ status: number; responseText: string }> {
-  return new Promise((resolve, reject) => {
-    if (!GM.xmlHttpRequest) {
-      reject(new Error('GM.xmlHttpRequest is unavailable'));
-      return;
-    }
-
-    const version = GM_info?.script?.version || 'unknown';
-    GM.xmlHttpRequest({
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), details.timeout ?? 30000);
+  try {
+    const response = await fetch(details.url, {
       method: details.method,
-      url: details.url,
       headers: {
-        'User-Agent': `Timekeeper/${version}`,
+        'User-Agent': `Timekeeper/${TIMEKEEPER_VERSION}`,
         ...(details.headers || {}),
       },
-      data: details.data,
-      timeout: details.timeout ?? 30000,
-      responseType: 'text',
-      onload: (response) => {
-        resolve({
-          status: response.status,
-          responseText: response.responseText ?? '',
-        });
-      },
-      onerror: (response) => {
-        reject(new Error(response.statusText || 'request failed'));
-      },
-      ontimeout: () => {
-        reject(new Error('request timed out'));
-      },
+      body: details.data as BodyInit | null | undefined,
+      signal: controller.signal,
     });
-  });
+    const responseText = await response.text();
+    return { status: response.status, responseText };
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw new Error('request timed out');
+    }
+    throw new Error(err.message || 'request failed');
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function uploadJsonToTimekeeperBackend(filename: string, json: string): Promise<void> {

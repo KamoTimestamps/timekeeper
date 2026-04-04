@@ -120,8 +120,18 @@ function parseAttributes(fragment: string): Record<string, string> {
   return attrs;
 }
 
+function decodeSvgSource(source: string): string {
+  if (source.startsWith('data:image/svg+xml;base64,')) {
+    return atob(source.slice('data:image/svg+xml;base64,'.length));
+  }
+  if (source.startsWith('data:image/svg+xml,')) {
+    return decodeURIComponent(source.slice('data:image/svg+xml,'.length));
+  }
+  return source;
+}
+
 function buildSvgFromSource(source: string): SVGSVGElement {
-  const outerMatch = source.match(SVG_OUTER_REGEX);
+  const outerMatch = decodeSvgSource(source).match(SVG_OUTER_REGEX);
   if (!outerMatch) {
     throw new Error('Invalid Tabler SVG source');
   }

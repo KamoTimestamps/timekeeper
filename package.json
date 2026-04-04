@@ -2,14 +2,19 @@
   "name": "timekeeper",
   "version": "4.7.12",
   "private": true,
-  "description": "Timekeeper userscript TypeScript project",
+  "description": "Timekeeper browser extension",
   "scripts": {
-    "build": "node scripts/build.js",
+    "dev": "npx extension@latest dev",
+    "build": "npx extension@latest build --browser chromium",
+    "build:firefox": "npx extension@latest build --browser firefox",
+    "build:userscript": "node build-tools/build.js",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
+    "@types/chrome": "^0.0.320",
     "clean-css-cli": "^5.6.3",
     "esbuild": "^0.27.2",
+    "extension": "^3.10.3",
     "typescript": "^5.4.0"
   },
   "dependencies": {

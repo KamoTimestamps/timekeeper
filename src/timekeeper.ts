@@ -7,24 +7,24 @@ import {
   buildYouTubeUrlWithTimestamp,
   getTimestampSuffix,
 } from "./util";
+import { TIMEKEEPER_VERSION } from "./version";
 import { addTooltip, hideActiveTooltip } from "./tooltip";
 import * as TimestampModel from "./timestamp-model";
 import * as TimestampView from "./timestamp-view";
 import * as AppState from "./services/state";
 import { initializeDvrEnablement } from "./dvr-enablement";
 
-declare const GM: {
-  getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
-  setValue<T = unknown>(key: string, value: T): Promise<void>;
-};
+function getExtensionStorageValue<T = unknown>(key: string, defaultValue?: T): Promise<T | undefined> {
+  return TimestampModel.loadGlobalSettings(key).then(
+    v => (v !== undefined ? v : defaultValue) as T | undefined
+  );
+}
 
-declare const GM_info: {
-  script: {
-    version: string;
-  };
-};
+function setExtensionStorageValue(key: string, value: unknown): Promise<void> {
+  TimestampModel.saveGlobalSettings(key, value);
+  return Promise.resolve();
+}
 
-import { PANE_STYLES } from "./styles";
 import * as GoogleDrive from "./google-drive";
 import {
   PanePositionSchema,
@@ -114,11 +114,11 @@ initializeDvrEnablement();
 
   // Setup minimal logging and storage functions early for OAuth handling
   function earlyLoadGlobalSettings(key: string): Promise<unknown> {
-    return GM.getValue(`timekeeper_${key}`, undefined);
+    return getExtensionStorageValue(key, undefined);
   }
 
   function earlySaveGlobalSettings(key: string, value: unknown): Promise<void> {
-    return GM.setValue(`timekeeper_${key}`, JSON.stringify(value));
+    return setExtensionStorageValue(key, value);
   }
 
   // Initialize GoogleDrive callbacks early for OAuth handling
@@ -160,7 +160,6 @@ initializeDvrEnablement();
   let btns: HTMLDivElement | null = null;
   let timeDisplay: HTMLSpanElement | null = null;
   let playbackSpeedDisplay: HTMLSpanElement | null = null;
-  let style: HTMLStyleElement | null = null;
   let versionDisplay: HTMLSpanElement | null = null;
   let backupStatusIndicator: HTMLSpanElement | null = null;
   // Used for dynamic min-height calculation
@@ -655,19 +654,19 @@ initializeDvrEnablement();
 
   // The user can configure 'timestampOffsetSeconds' in ViolentMonkey's script values.
   // A positive value will make it after current time, negative before.
-  let configuredOffset = await GM.getValue<number>(OFFSET_KEY);
+  let configuredOffset = await getExtensionStorageValue<number>(OFFSET_KEY);
   if (typeof configuredOffset !== "number" || Number.isNaN(configuredOffset)) {
     configuredOffset = DEFAULT_OFFSET;
-    await GM.setValue(OFFSET_KEY, configuredOffset);
+    await setExtensionStorageValue(OFFSET_KEY, configuredOffset);
   }
 
-  let configuredShiftSkip = await GM.getValue<number>(SHIFT_SKIP_KEY);
+  let configuredShiftSkip = await getExtensionStorageValue<number>(SHIFT_SKIP_KEY);
   if (
     typeof configuredShiftSkip !== "number" ||
     Number.isNaN(configuredShiftSkip)
   ) {
     configuredShiftSkip = DEFAULT_SHIFT_SKIP;
-    await GM.setValue(SHIFT_SKIP_KEY, configuredShiftSkip);
+    await setExtensionStorageValue(SHIFT_SKIP_KEY, configuredShiftSkip);
   }
 
   let loadTimeoutId: ReturnType<typeof setTimeout> | null = null; // Variable to hold the timeout ID for debouncing loads from broadcast
@@ -2325,7 +2324,6 @@ initializeDvrEnablement();
     recalculateTimestampsAreaFn = null;
     timeDisplay = null;
     playbackSpeedDisplay = null;
-    style = null;
     versionDisplay = null;
 
     lastValidatedPlayer = null;
@@ -3060,7 +3058,6 @@ initializeDvrEnablement();
       list = document.createElement("ul");
       btns = document.createElement("div");
       timeDisplay = document.createElement("span");
-      style = document.createElement("style");
       versionDisplay = document.createElement("span");
       backupStatusIndicator = document.createElement("span");
       backupStatusIndicator.classList.add("ytls-backup-indicator");
@@ -3191,8 +3188,7 @@ initializeDvrEnablement();
         true,
       );
 
-      const scriptVersion = GM_info.script.version; // Get script version
-      versionDisplay.textContent = `v${scriptVersion}`;
+      versionDisplay.textContent = `v${TIMEKEEPER_VERSION}`;
       versionDisplay.classList.add("ytls-version-display"); // Add class for CSS targeting
 
       // Create a wrapper for version and backup indicator
@@ -4650,8 +4646,6 @@ initializeDvrEnablement();
         fileInput.click();
       };
 
-      style.textContent = PANE_STYLES;
-
       list.onclick = (e) => {
         handleClick(e);
       };
@@ -5092,12 +5086,11 @@ initializeDvrEnablement();
       pane.append(
         header,
         content,
-        style,
         resizeTL,
         resizeTR,
         resizeBL,
         resizeBR,
-      ); // Append header, content, style, and corner resize handles to the pane
+      ); // Append header, content, and corner resize handles to the pane
 
       // Show diagonal cursors only on corners (no edge cursors)
       let lastPaneCursor = "";

@@ -32,11 +32,11 @@ jobs:
 
     - name: Make fetch script executable
       run: |
-        chmod +x scripts/fetch-youtube.sh
+        chmod +x build-tools/fetch-youtube.sh
 
     - name: Run fetch script
       run: |
-        bash scripts/fetch-youtube.sh artifacts
+        bash build-tools/fetch-youtube.sh artifacts
 
     - name: Upload CSV artifact
       uses: actions/upload-artifact@v4
