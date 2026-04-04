@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Timekeeper",
+  "version": "4.7.12",
+  "description": "Enhanced timestamp tool for YouTube videos with DVR/rewind enablement for live streams",
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["src/timekeeper.ts"],
+      "css": ["src/styles.css"],
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": ["storage", "clipboardWrite"],
+  "host_permissions": ["*://*/*"],
+  "icons": {
+    "48": "assets/Kamo_64px_Indexed.png",
+    "64": "assets/Kamo_64px_Indexed.png"
+  }
+}
