@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import { log } from './util';
+import { TIMEKEEPER_VERSION } from './version';
 import { addTooltip } from './tooltip';
 import { zipSync } from 'fflate';
 import { BackupSettingsSchema, GoogleAuthStateSchema } from './schema';
@@ -819,14 +820,13 @@ async function sendUserscriptRequest(details: {
   data?: string | ArrayBuffer | Blob | FormData;
   timeout?: number;
 }): Promise<{ status: number; responseText: string }> {
-  const version = chrome?.runtime?.getManifest?.()?.version ?? 'unknown';
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), details.timeout ?? 30000);
   try {
     const response = await fetch(details.url, {
       method: details.method,
       headers: {
-        'User-Agent': `Timekeeper/${version}`,
+        'User-Agent': `Timekeeper/${TIMEKEEPER_VERSION}`,
         ...(details.headers || {}),
       },
       body: details.data as BodyInit | null | undefined,

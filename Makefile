@@ -3,6 +3,7 @@
 build:
 	@npm install
 	@npm run build
+	@npm run build:firefox
 
 server:
 	 @http-server -a 127.0.0.1 -c5
@@ -18,4 +19,6 @@ bump:
 	new_patch=$$((patch + 1)); \
 	new_version="$$major.$$minor.$$new_patch"; \
 	jq ".version = \"$$new_version\"" package.json > package.json.tmp && mv package.json.tmp package.json; \
+	jq ".version = \"$$new_version\"" manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json; \
+	printf "export const TIMEKEEPER_VERSION = '%s';\n" "$$new_version" > src/version.ts; \
 	echo "Version bumped from $$current to $$new_version"

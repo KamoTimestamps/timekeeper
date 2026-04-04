@@ -1,23 +1,36 @@
 {
   "manifest_version": 3,
   "name": "Timekeeper",
-  "version": "4.7.12",
+  "version": "4.7.14",
   "description": "Enhanced timestamp tool for YouTube videos with DVR/rewind enablement for live streams",
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/*"],
-      "css": ["src/styles.css"],
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "css": [
+        "src/styles.css"
+      ],
       "run_at": "document_start"
     },
     {
-      "matches": ["https://www.youtube.com/*"],
-      "js": ["src/timekeeper.ts"],
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "src/timekeeper.ts"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     }
   ],
-  "permissions": ["storage", "clipboardWrite"],
-  "host_permissions": ["*://*/*"],
+  "permissions": [
+    "storage",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ],
   "icons": {
     "48": "assets/Kamo_64px_Indexed.png",
     "64": "assets/Kamo_64px_Indexed.png"

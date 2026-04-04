@@ -7,6 +7,7 @@ import {
   buildYouTubeUrlWithTimestamp,
   getTimestampSuffix,
 } from "./util";
+import { TIMEKEEPER_VERSION } from "./version";
 import { addTooltip, hideActiveTooltip } from "./tooltip";
 import * as TimestampModel from "./timestamp-model";
 import * as TimestampView from "./timestamp-view";
@@ -3187,8 +3188,7 @@ initializeDvrEnablement();
         true,
       );
 
-      const scriptVersion = chrome?.runtime?.getManifest?.()?.version ?? 'unknown'; // Get script version
-      versionDisplay.textContent = `v${scriptVersion}`;
+      versionDisplay.textContent = `v${TIMEKEEPER_VERSION}`;
       versionDisplay.classList.add("ytls-version-display"); // Add class for CSS targeting
 
       // Create a wrapper for version and backup indicator

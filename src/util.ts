@@ -1,3 +1,5 @@
+import { TIMEKEEPER_VERSION } from './version';
+
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export function log(message: string, ...args: any[]) {
@@ -7,8 +9,7 @@ export function log(message: string, ...args: any[]) {
     ['debug', 'info', 'warn', 'error'].includes(args[args.length - 1])) {
     logLevel = consoleArgs.pop() as LogLevel;
   }
-  const version = chrome?.runtime?.getManifest?.()?.version ?? 'unknown';
-  const prefix = `[Timekeeper v${version}]`;
+  const prefix = `[Timekeeper v${TIMEKEEPER_VERSION}]`;
   const methodMap: Record<LogLevel, (...args: any[]) => void> = {
     'debug': console.log, 'info': console.info, 'warn': console.warn, 'error': console.error
   };

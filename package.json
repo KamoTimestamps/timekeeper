@@ -1,11 +1,12 @@
 {
   "name": "timekeeper",
-  "version": "4.7.12",
+  "version": "4.7.14",
   "private": true,
   "description": "Timekeeper browser extension",
   "scripts": {
     "dev": "npx extension@latest dev",
-    "build": "npx extension@latest build",
+    "build": "npx extension@latest build --browser chromium",
+    "build:firefox": "npx extension@latest build --browser firefox",
     "build:userscript": "node build-tools/build.js",
     "clean": "rm -rf dist"
   },
