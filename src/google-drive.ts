@@ -819,7 +819,7 @@ async function sendUserscriptRequest(details: {
   data?: string | ArrayBuffer | Blob | FormData;
   timeout?: number;
 }): Promise<{ status: number; responseText: string }> {
-  const version = chrome.runtime.getManifest().version;
+  const version = chrome?.runtime?.getManifest?.()?.version ?? 'unknown';
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), details.timeout ?? 30000);
   try {

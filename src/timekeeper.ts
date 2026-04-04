@@ -14,17 +14,14 @@ import * as AppState from "./services/state";
 import { initializeDvrEnablement } from "./dvr-enablement";
 
 function getExtensionStorageValue<T = unknown>(key: string, defaultValue?: T): Promise<T | undefined> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(key, (result) => {
-      resolve((key in result ? result[key] : defaultValue) as T | undefined);
-    });
-  });
+  return TimestampModel.loadGlobalSettings(key).then(
+    v => (v !== undefined ? v : defaultValue) as T | undefined
+  );
 }
 
 function setExtensionStorageValue(key: string, value: unknown): Promise<void> {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [key]: value }, resolve);
-  });
+  TimestampModel.saveGlobalSettings(key, value);
+  return Promise.resolve();
 }
 
 import * as GoogleDrive from "./google-drive";
@@ -116,11 +113,11 @@ initializeDvrEnablement();
 
   // Setup minimal logging and storage functions early for OAuth handling
   function earlyLoadGlobalSettings(key: string): Promise<unknown> {
-    return getExtensionStorageValue(`timekeeper_${key}`, undefined);
+    return getExtensionStorageValue(key, undefined);
   }
 
   function earlySaveGlobalSettings(key: string, value: unknown): Promise<void> {
-    return setExtensionStorageValue(`timekeeper_${key}`, JSON.stringify(value));
+    return setExtensionStorageValue(key, value);
   }
 
   // Initialize GoogleDrive callbacks early for OAuth handling
@@ -3190,7 +3187,7 @@ initializeDvrEnablement();
         true,
       );
 
-      const scriptVersion = chrome.runtime.getManifest().version; // Get script version
+      const scriptVersion = chrome?.runtime?.getManifest?.()?.version ?? 'unknown'; // Get script version
       versionDisplay.textContent = `v${scriptVersion}`;
       versionDisplay.classList.add("ytls-version-display"); // Add class for CSS targeting
 
