@@ -239,6 +239,7 @@ interface TimestampRow {
   video_id: string;
   start: number;
   comment: string;
+  deleted_at?: number;
 }
 
 // === Public Repository API ===
@@ -271,13 +272,14 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
 
       getRequest.onsuccess = () => {
         try {
-          const existingRecords = getRequest.result as Array<{ guid: string }>;
+          const existingRecords = getRequest.result as TimestampRow[];
           const newGuids = new Set(timestamps.map(ts => ts.guid));
+          const now = Date.now();
 
-          // Delete removed timestamps
+          // Soft-delete removed timestamps
           existingRecords.forEach(record => {
-            if (!newGuids.has(record.guid)) {
-              v2Store.delete(record.guid);
+            if (!newGuids.has(record.guid) && !record.deleted_at) {
+              v2Store.put({ ...record, deleted_at: now });
             }
           });
 
@@ -345,10 +347,10 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
 }
 
 /**
- * Delete a single timestamp by GUID
+ * Soft-delete a single timestamp by GUID (marks deleted_at, does not remove the record)
  */
 export function deleteTimestamp(guid: string): Promise<void> {
-  log(`Deleting timestamp ${guid}`);
+  log(`Soft-deleting timestamp ${guid}`);
   return getDB().then(db => {
     return new Promise<void>((resolve, reject) => {
       let tx: IDBTransaction;
@@ -360,14 +362,21 @@ export function deleteTimestamp(guid: string): Promise<void> {
       }
 
       const v2Store = tx.objectStore(STORE_NAME_V2);
-      const deleteRequest = v2Store.delete(guid);
+      const getRequest = v2Store.get(guid);
 
-      deleteRequest.onerror = () => {
-        reject(deleteRequest.error ?? new Error('Failed to delete timestamp'));
+      getRequest.onsuccess = () => {
+        const record = getRequest.result as TimestampRow | undefined;
+        if (record) {
+          v2Store.put({ ...record, deleted_at: Date.now() });
+        }
+      };
+
+      getRequest.onerror = () => {
+        reject(getRequest.error ?? new Error('Failed to get timestamp for deletion'));
       };
 
       tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error('Failed to delete single timestamp from IndexedDB'));
+      tx.onerror = () => reject(tx.error ?? new Error('Failed to soft-delete timestamp from IndexedDB'));
       tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted during timestamp deletion'));
     });
   });
@@ -394,7 +403,7 @@ export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | nul
       const v2Request = v2Index.getAll(IDBKeyRange.only(videoId));
 
       v2Request.onsuccess = () => {
-        const v2Records = v2Request.result as TimestampRow[];
+        const v2Records = (v2Request.result as TimestampRow[]).filter(r => !r.deleted_at);
 
         if (v2Records.length === 0) {
           resolve(null);
@@ -452,8 +461,11 @@ export function deleteTimestampsForVideo(videoId: string): Promise<void> {
       getRequest.onsuccess = () => {
         try {
           const records = getRequest.result as TimestampRow[];
+          const now = Date.now();
           records.forEach(record => {
-            v2Store.delete(record.guid);
+            if (!record.deleted_at) {
+              v2Store.put({ ...record, deleted_at: now });
+            }
           });
         } catch (err) {
           log('Error during remove operation:', err, 'error');

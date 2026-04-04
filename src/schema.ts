@@ -18,6 +18,7 @@ export type TimestampRecord = z.infer<typeof TimestampRecordSchema>;
 
 export const TimestampRowSchema = TimestampRecordSchema.extend({
   video_id: z.string(),
+  deleted_at: z.number().optional(),
 });
 export type TimestampRow = z.infer<typeof TimestampRowSchema>;
 

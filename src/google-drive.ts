@@ -182,6 +182,7 @@ export let buildExportPayload: any = null;
 export let mergeBackupData: any = null;
 export let saveGlobalSettings: any = null;
 export let loadGlobalSettings: any = null;
+export let reloadCurrentVideoTimestamps: any = null;
 
 // Helper functions to set callbacks
 export function setBuildExportPayload(fn: any) {
@@ -198,6 +199,10 @@ export function setSaveGlobalSettings(fn: any) {
 
 export function setLoadGlobalSettings(fn: any) {
   loadGlobalSettings = fn;
+}
+
+export function setReloadCurrentVideoTimestamps(fn: any) {
+  reloadCurrentVideoTimestamps = fn;
 }
 
 // Google OAuth2 Configuration
@@ -1050,16 +1055,22 @@ async function mergeFromAllRemotesBeforeBackup(): Promise<void> {
 
   const jsons = await Promise.all(fetches);
 
+  let totalMergedTimestamps = 0;
   for (const json of jsons) {
     if (!json) continue;
     try {
       const { mergedVideos, mergedTimestamps } = await mergeBackupData(json);
       if (mergedTimestamps > 0) {
         log(`Pre-backup merge: added ${mergedTimestamps} timestamps from ${mergedVideos} videos from remote`);
+        totalMergedTimestamps += mergedTimestamps;
       }
     } catch (err) {
       log('Failed to merge remote backup data:', err, 'warn');
     }
+  }
+
+  if (totalMergedTimestamps > 0 && reloadCurrentVideoTimestamps) {
+    reloadCurrentVideoTimestamps();
   }
 }
 

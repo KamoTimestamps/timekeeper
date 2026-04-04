@@ -2076,7 +2076,6 @@ initializeDvrEnablement();
   ) {
     if (!videoId || isLoadingTimestamps) return;
 
-    log(`Deleting timestamp: guid=${guid}`);
     deleteSingleTimestampFromIndexedDB(videoId, guid).catch((err) =>
       log(`Failed to delete timestamp ${guid}:`, err, "error"),
     );
@@ -5273,6 +5272,7 @@ initializeDvrEnablement();
     GoogleDrive.setMergeBackupData(mergeBackupData);
     GoogleDrive.setSaveGlobalSettings(saveGlobalSettings);
     GoogleDrive.setLoadGlobalSettings(loadGlobalSettings);
+    GoogleDrive.setReloadCurrentVideoTimestamps(loadTimestamps);
     GoogleDrive.setBackupStatusIndicator(backupStatusIndicator);
 
     // Load Google auth state
