@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { log } from './util';
 import { TIMEKEEPER_VERSION } from './version';
 import { addTooltip } from './tooltip';
-import { zipSync } from 'fflate';
+import { zipSync, unzipSync } from 'fflate';
 import { BackupSettingsSchema, GoogleAuthStateSchema } from './schema';
 import { createIcon, setIcon, setIconLabel } from './icons';
 import * as AppState from './services/state';
@@ -179,12 +179,17 @@ function ensureAuthSpinnerStyles() {
 
 // Callbacks (set from main script)
 export let buildExportPayload: any = null;
+export let mergeBackupData: any = null;
 export let saveGlobalSettings: any = null;
 export let loadGlobalSettings: any = null;
 
 // Helper functions to set callbacks
 export function setBuildExportPayload(fn: any) {
   buildExportPayload = fn;
+}
+
+export function setMergeBackupData(fn: any) {
+  mergeBackupData = fn;
 }
 
 export function setSaveGlobalSettings(fn: any) {
@@ -913,6 +918,108 @@ async function findFileInFolder(filename: string, folderId: string, accessToken:
   return null;
 }
 
+// Download and decompress the latest backup from Google Drive
+async function fetchLatestDriveBackup(accessToken: string): Promise<string | null> {
+  try {
+    const folderId = await ensureDriveFolder(accessToken);
+    const fileId = await findFileInFolder('timekeeper-data.zip', folderId, accessToken);
+    if (!fileId) return null;
+
+    const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (resp.status === 401) throw new Error('unauthorized');
+    if (!resp.ok) return null;
+
+    const zipData = new Uint8Array(await resp.arrayBuffer());
+    const unzipped = unzipSync(zipData);
+    const firstFile = Object.values(unzipped)[0];
+    if (!firstFile) return null;
+    return new TextDecoder().decode(firstFile);
+  } catch (err: any) {
+    if (err.message === 'unauthorized') throw err;
+    log('Failed to fetch latest Drive backup for merge:', err, 'warn');
+    return null;
+  }
+}
+
+// Download and decompress the latest backup from the Timekeeper backend
+async function fetchLatestBackendBackup(): Promise<string | null> {
+  const bearerToken = getTimekeeperBackendBearerTokenNormalized();
+  if (!bearerToken) return null;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const response = await fetch(`${getTimekeeperBackendBaseUrl()}/api/v1/backups/latest`, {
+      headers: {
+        Authorization: `Bearer ${bearerToken}`,
+        'User-Agent': `Timekeeper/${TIMEKEEPER_VERSION}`,
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (response.status === 401 || response.status === 403) throw new Error('unauthorized');
+    if (!response.ok) return null;
+
+    const zipData = new Uint8Array(await response.arrayBuffer());
+    const unzipped = unzipSync(zipData);
+    const firstFile = Object.values(unzipped)[0];
+    if (!firstFile) return null;
+    return new TextDecoder().decode(firstFile);
+  } catch (err: any) {
+    if (err.name === 'AbortError') return null;
+    if (err.message === 'unauthorized') throw err;
+    log('Failed to fetch latest backend backup for merge:', err, 'warn');
+    return null;
+  }
+}
+
+// Fetch and merge the latest remote backup from all configured destinations before uploading.
+// Errors during fetch/merge are logged but never block the backup.
+async function mergeFromAllRemotesBeforeBackup(): Promise<void> {
+  if (!mergeBackupData) return;
+
+  const fetches: Array<Promise<string | null>> = [];
+
+  if (hasGoogleDriveBackupDestination()) {
+    const authState = getGoogleAuthState();
+    if (authState.isSignedIn && authState.accessToken) {
+      const token = authState.accessToken;
+      fetches.push(
+        fetchLatestDriveBackup(token).catch(async (err: Error) => {
+          if (err.message === 'unauthorized') await handleAuthExpiration({ silent: true });
+          return null;
+        })
+      );
+    }
+  }
+
+  if (hasTimekeeperBackendBackupDestination()) {
+    fetches.push(
+      fetchLatestBackendBackup().catch((err: Error) => {
+        if (err.message === 'unauthorized') {
+          log('Backend backup: unauthorized during pre-merge fetch', null, 'warn');
+        }
+        return null;
+      })
+    );
+  }
+
+  const jsons = await Promise.all(fetches);
+
+  for (const json of jsons) {
+    if (!json) continue;
+    try {
+      const { mergedVideos, mergedTimestamps } = await mergeBackupData(json);
+      if (mergedTimestamps > 0) {
+        log(`Pre-backup merge: added ${mergedTimestamps} timestamps from ${mergedVideos} videos from remote`);
+      }
+    } catch (err) {
+      log('Failed to merge remote backup data:', err, 'warn');
+    }
+  }
+}
+
 // Helper function to create a ZIP archive containing the JSON file
 // Creates a well-formed standard ZIP format compatible with Windows, macOS, and Linux
 // The ZIP file includes proper headers: local file header, central directory header, and EOCD record
@@ -1098,6 +1205,8 @@ async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boo
     }
     throw new Error('no-backup-destination');
   }
+
+  await mergeFromAllRemotesBeforeBackup();
 
   const payload = await buildExportPayload();
   if (payload.totalTimestamps === 0) {

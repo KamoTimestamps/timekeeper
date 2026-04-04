@@ -7,6 +7,7 @@
 import {
   TimestampRecord,
   TimestampRowSchema,
+  LegacyExportDataSchema,
 } from '../schema';
 import { log, getTimestampSuffix, buildYouTubeUrlWithTimestamp } from '../util';
 import * as TimestampRepository from './timestampRepository';
@@ -230,6 +231,50 @@ export async function getVideoTimestamps(videoId: string): Promise<TimestampReco
     throw new Error('Video ID is required');
   }
   return TimestampRepository.loadTimestamps(videoId);
+}
+
+// === Import/Merge Business Logic ===
+
+/**
+ * Merge remote backup data into local DB.
+ * Adds any timestamps whose GUID is not already present locally (additive merge).
+ * Existing local timestamps are never modified or deleted.
+ */
+export async function mergeBackupData(json: string): Promise<{ mergedVideos: number; mergedTimestamps: number }> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    log('mergeBackupData: failed to parse JSON', null, 'warn');
+    return { mergedVideos: 0, mergedTimestamps: 0 };
+  }
+
+  const result = LegacyExportDataSchema.safeParse(parsed);
+  if (!result.success) {
+    log('mergeBackupData: data failed validation', result.error.format(), 'warn');
+    return { mergedVideos: 0, mergedTimestamps: 0 };
+  }
+
+  const existingRows = await TimestampRepository.getAllTimestamps();
+  const existingGuids = new Set(existingRows.map(r => r.guid));
+
+  let mergedVideos = 0;
+  let mergedTimestamps = 0;
+
+  for (const [, videoEntry] of Object.entries(result.data)) {
+    const { video_id, timestamps } = videoEntry;
+    let videoMerged = 0;
+    for (const ts of timestamps) {
+      if (existingGuids.has(ts.guid)) continue;
+      await TimestampRepository.saveTimestamp(video_id, ts);
+      existingGuids.add(ts.guid);
+      videoMerged++;
+      mergedTimestamps++;
+    }
+    if (videoMerged > 0) mergedVideos++;
+  }
+
+  return { mergedVideos, mergedTimestamps };
 }
 
 // === Settings Business Logic ===

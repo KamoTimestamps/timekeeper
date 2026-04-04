@@ -2718,6 +2718,7 @@ initializeDvrEnablement();
     saveGlobalSettings,
     loadGlobalSettings,
     buildExportPayload,
+    mergeBackupData,
     exportAllTimestamps,
     buildExportCsvPayload,
     exportAllTimestampsCsv,
@@ -5269,6 +5270,7 @@ initializeDvrEnablement();
 
     // Initialize Google Drive module callbacks
     GoogleDrive.setBuildExportPayload(buildExportPayload);
+    GoogleDrive.setMergeBackupData(mergeBackupData);
     GoogleDrive.setSaveGlobalSettings(saveGlobalSettings);
     GoogleDrive.setLoadGlobalSettings(loadGlobalSettings);
     GoogleDrive.setBackupStatusIndicator(backupStatusIndicator);

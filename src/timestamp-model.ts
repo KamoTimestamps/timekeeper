@@ -109,3 +109,10 @@ export function buildExportCsvPayload() {
 export function exportAllTimestampsCsv(): Promise<void> {
   return TimestampService.exportAllTimestampsCsv();
 }
+
+/**
+ * Merge remote backup JSON into local DB (additive by GUID)
+ */
+export function mergeBackupData(json: string): Promise<{ mergedVideos: number; mergedTimestamps: number }> {
+  return TimestampService.mergeBackupData(json);
+}
