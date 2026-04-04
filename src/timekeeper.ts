@@ -8,6 +8,7 @@ import {
   getTimestampSuffix,
 } from "./util";
 import { TIMEKEEPER_VERSION } from "./version";
+import { PANE_STYLES } from "./styles";
 import { addTooltip, hideActiveTooltip } from "./tooltip";
 import * as TimestampModel from "./timestamp-model";
 import * as TimestampView from "./timestamp-view";
@@ -3052,6 +3053,14 @@ initializeDvrEnablement();
     try {
       // Remove any stray panes before creating a new one
       document.querySelectorAll("#ytls-pane").forEach((el) => el.remove());
+
+      // Inject styles if not already present (required for userscript; harmless no-op for extension)
+      if (!document.getElementById("ytls-styles")) {
+        const styleEl = document.createElement("style");
+        styleEl.id = "ytls-styles";
+        styleEl.textContent = PANE_STYLES;
+        document.head.appendChild(styleEl);
+      }
 
       pane = document.createElement("div");
       header = document.createElement("div");
