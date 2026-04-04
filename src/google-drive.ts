@@ -352,7 +352,7 @@ export function blinkAuthStatusDisplay() {
 }
 
 // Monitor popup for OAuth token via BroadcastChannel and localStorage fallback
-function monitorOAuthPopup(popup: Window | null): Promise<string> {
+function monitorOAuthPopup(popup: Window | null, timeoutMs = 5 * 60 * 1000): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!popup) {
       if (log) log('OAuth monitor: popup is null', null, 'error');
@@ -362,7 +362,6 @@ function monitorOAuthPopup(popup: Window | null): Promise<string> {
 
     if (log) log('OAuth monitor: starting to monitor popup for token');
     const start = Date.now();
-    const timeoutMs = 5 * 60 * 1000; // 5 minutes
     const channelName = 'timekeeper_oauth';
     let channel: BroadcastChannel | null = null;
     let storagePollIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -600,6 +599,50 @@ export async function signInToGoogle() {
       console.error('[Timekeeper] Failed to sign in to Google:', err);
     }
     updateAuthStatusDisplay('error', `Failed to sign in: ${errorMessage}`);
+  }
+}
+
+// Silently refresh the Google access token using prompt=none (no user interaction).
+// Returns true if a new token was obtained, false if the user needs to sign in manually.
+async function silentSignInToGoogle(): Promise<boolean> {
+  const currentState = getGoogleAuthState();
+  const loginHint = currentState.email;
+  if (!GOOGLE_CLIENT_ID || !loginHint) return false;
+
+  log('Silent OAuth: attempting silent token refresh for ' + loginHint);
+  const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+  authUrl.searchParams.set('redirect_uri', GOOGLE_REDIRECT_URI);
+  authUrl.searchParams.set('response_type', 'token');
+  authUrl.searchParams.set('scope', GOOGLE_SCOPES);
+  authUrl.searchParams.set('include_granted_scopes', 'true');
+  authUrl.searchParams.set('state', 'timekeeper_auth');
+  authUrl.searchParams.set('prompt', 'none');
+  authUrl.searchParams.set('login_hint', loginHint);
+
+  const popup = window.open(
+    authUrl.toString(),
+    'TimekeeperGoogleAuthSilent',
+    'width=1,height=1,left=-2000,top=-2000,menubar=no,toolbar=no,location=no'
+  );
+
+  if (!popup) {
+    log('Silent OAuth: popup blocked', null, 'warn');
+    return false;
+  }
+
+  try {
+    const accessToken = await monitorOAuthPopup(popup, 15 * 1000);
+    AppState.setGoogleAuthState({ ...currentState, isSignedIn: true, accessToken });
+    await saveGoogleAuthState();
+    updateGoogleUserDisplay();
+    updateAuthStatusDisplay();
+    log('Silent OAuth: token refreshed successfully for ' + loginHint);
+    return true;
+  } catch (err) {
+    log('Silent OAuth: silent refresh failed', err, 'warn');
+    try { popup.close(); } catch (_) {}
+    return false;
   }
 }
 
@@ -1137,9 +1180,12 @@ async function uploadJsonToDrive(filename: string, json: string, folderId: strin
 // Helper function to handle auth expiration
 async function handleAuthExpiration(opts?: { silent?: boolean }): Promise<void> {
   void opts;
-  log('Auth expired, clearing token', null, 'warn');
+  log('Auth expired, attempting silent token refresh', null, 'warn');
 
-  // Clear expired auth state immediately
+  const refreshed = await silentSignInToGoogle();
+  if (refreshed) return;
+
+  log('Silent OAuth: falling back to sign-out', null, 'warn');
   AppState.setGoogleAuthState({
     isSignedIn: false,
     accessToken: null,
