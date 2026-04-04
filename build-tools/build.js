@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { execSync } = require('node:child_process');
+const { syncVersion } = require('./sync-version');
 
 const repoRoot = path.join(__dirname, '..');
 const headerTemplateFile = path.join(repoRoot, 'src', 'userscript-header.txt');
@@ -20,13 +21,7 @@ function readHeaderTemplate() {
 }
 
 function readVersion() {
-  if (!fs.existsSync(packageJsonFile)) {
-    throw new Error('package.json was not found.');
-  }
   const packageJson = JSON.parse(fs.readFileSync(packageJsonFile, 'utf8'));
-  if (!packageJson.version) {
-    throw new Error('Unable to read version from package.json');
-  }
   return packageJson.version;
 }
 
@@ -73,6 +68,9 @@ async function buildUserscript() {
   if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
   }
+
+  // Sync version from package.json to src/version.ts and manifest.json
+  syncVersion();
 
   // Minify CSS first
   minifyCSS();

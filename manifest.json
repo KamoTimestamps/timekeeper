@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Timekeeper",
-  "version": "4.7.13",
+  "version": "4.8.0",
   "description": "Enhanced timestamp tool for YouTube videos with DVR/rewind enablement for live streams",
   "content_scripts": [
     {
