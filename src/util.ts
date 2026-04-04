@@ -24,20 +24,20 @@ export function log(message: string, ...args: any[]) {
 /**
  * Format seconds into a time string (M:SS, MM:SS, H:MM:SS, or HH:MM:SS)
  * @param seconds - The time in seconds to format
- * @param videoDuration - The total video duration (used to determine format)
+ * @param maxTime - The maximum timestamp value in the list (determines format width)
  */
-export function formatTimeString(seconds: number, videoDuration: number = seconds): string {
+export function formatTimeString(seconds: number, maxTime: number = seconds): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = String(seconds % 60).padStart(2, "0");
 
-  // For times under 1 hour, show M:SS or MM:SS
-  if (videoDuration < 3600) {
-    return `${m < 10 ? m : String(m).padStart(2, "0")}:${s}`;
+  // For times under 1 hour, show M:SS or MM:SS (pad minutes when max >= 10 min)
+  if (maxTime < 3600) {
+    return `${maxTime >= 600 ? String(m).padStart(2, "0") : m}:${s}`;
   }
 
   // For times with hours, show H:MM:SS or HH:MM:SS
-  return `${videoDuration >= 36000 ? String(h).padStart(2, "0") : h}:${String(m).padStart(2, "0")}:${s}`;
+  return `${maxTime >= 36000 ? String(h).padStart(2, "0") : h}:${String(m).padStart(2, "0")}:${s}`;
 }
 
 /**

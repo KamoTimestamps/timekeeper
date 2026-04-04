@@ -1,12 +1,17 @@
-import { z } from 'zod';
-import { getHolidayEmoji } from './holidays';
-import { createIcon, setIcon, setIconLabel, TablerIconName } from './icons';
-import { log, formatTimeString, buildYouTubeUrlWithTimestamp, getTimestampSuffix } from './util';
-import { addTooltip, hideActiveTooltip } from './tooltip';
-import * as TimestampModel from './timestamp-model';
-import * as TimestampView from './timestamp-view';
-import * as AppState from './services/state';
-import { initializeDvrEnablement } from './dvr-enablement';
+import { z } from "zod";
+import { getHolidayEmoji } from "./holidays";
+import { createIcon, setIcon, setIconLabel, TablerIconName } from "./icons";
+import {
+  log,
+  formatTimeString,
+  buildYouTubeUrlWithTimestamp,
+  getTimestampSuffix,
+} from "./util";
+import { addTooltip, hideActiveTooltip } from "./tooltip";
+import * as TimestampModel from "./timestamp-model";
+import * as TimestampView from "./timestamp-view";
+import * as AppState from "./services/state";
+import { initializeDvrEnablement } from "./dvr-enablement";
 
 declare const GM: {
   getValue<T = unknown>(key: string, defaultValue?: T): Promise<T>;
@@ -25,45 +30,58 @@ import {
   PanePositionSchema,
   TimestampRecord,
   TimestampRecordSchema,
-} from './schema';
+} from "./schema";
 
 // OAuth detection - always check URL for auth token, runs synchronously before any async operations
 const hash = window.location.hash;
 if (hash && hash.length > 1) {
   const params = new URLSearchParams(hash.substring(1));
-  const state = params.get('state');
+  const state = params.get("state");
 
-  if (state === 'timekeeper_auth') {
-    const token = params.get('access_token');
+  if (state === "timekeeper_auth") {
+    const token = params.get("access_token");
     if (token) {
-      console.log('[Timekeeper] Auth token detected in URL, broadcasting token');
-      console.log('[Timekeeper] Token length:', token.length, 'characters');
+      console.log(
+        "[Timekeeper] Auth token detected in URL, broadcasting token",
+      );
+      console.log("[Timekeeper] Token length:", token.length, "characters");
 
       // Broadcast via BroadcastChannel (primary method)
       try {
-        const channel = new BroadcastChannel('timekeeper_oauth');
-        const message = { type: 'timekeeper_oauth_token', token: token };
-        console.log('[Timekeeper] Sending auth message via BroadcastChannel:', { type: message.type, tokenLength: token.length });
+        const channel = new BroadcastChannel("timekeeper_oauth");
+        const message = { type: "timekeeper_oauth_token", token: token };
+        console.log("[Timekeeper] Sending auth message via BroadcastChannel:", {
+          type: message.type,
+          tokenLength: token.length,
+        });
         channel.postMessage(message);
         channel.close();
-        console.log('[Timekeeper] Token broadcast via BroadcastChannel completed');
+        console.log(
+          "[Timekeeper] Token broadcast via BroadcastChannel completed",
+        );
       } catch (e) {
-        console.log('[Timekeeper] BroadcastChannel failed, using IndexedDB fallback:', e);
+        console.log(
+          "[Timekeeper] BroadcastChannel failed, using IndexedDB fallback:",
+          e,
+        );
         // Fallback to IndexedDB for cross-tab communication
         const message = {
-          type: 'timekeeper_oauth_token',
+          type: "timekeeper_oauth_token",
           token: token,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         };
         // Direct IndexedDB write (can't use async helper here as it's not defined yet)
-        const openReq = indexedDB.open('ytls-timestamps-db', 3);
+        const openReq = indexedDB.open("ytls-timestamps-db", 3);
         openReq.onsuccess = () => {
           const db = openReq.result;
-          const tx = db.transaction('settings', 'readwrite');
-          const store = tx.objectStore('settings');
-          store.put({ key: 'oauth_message', value: message });
+          const tx = db.transaction("settings", "readwrite");
+          const store = tx.objectStore("settings");
+          store.put({ key: "oauth_message", value: message });
           tx.oncomplete = () => {
-            console.log('[Timekeeper] Token broadcast via IndexedDB completed, timestamp:', message.timestamp);
+            console.log(
+              "[Timekeeper] Token broadcast via IndexedDB completed, timestamp:",
+              message.timestamp,
+            );
             db.close();
           };
         };
@@ -72,14 +90,14 @@ if (hash && hash.length > 1) {
       // Clean up the hash from the URL
       if (history.replaceState) {
         const cleanUrl = window.location.pathname + window.location.search;
-        history.replaceState(null, '', cleanUrl);
+        history.replaceState(null, "", cleanUrl);
       }
 
       // Close window after broadcasting auth token
-      console.log('[Timekeeper] Closing window after broadcasting auth token');
+      console.log("[Timekeeper] Closing window after broadcasting auth token");
       window.close();
       // Exit the module by throwing - this prevents the IIFE from running
-      throw new Error('OAuth window closed');
+      throw new Error("OAuth window closed");
     }
   }
 }
@@ -88,7 +106,7 @@ if (hash && hash.length > 1) {
 initializeDvrEnablement();
 
 (async function () {
-  'use strict';
+  "use strict";
 
   if (window.top !== window.self) {
     return; // Don't run in iframes
@@ -125,11 +143,13 @@ initializeDvrEnablement();
       if (parsed.origin !== "https://www.youtube.com") {
         return false;
       }
-      return SUPPORTED_PATH_PREFIXES.some(prefix => {
-        return parsed.pathname === prefix || parsed.pathname.startsWith(`${prefix}/`);
+      return SUPPORTED_PATH_PREFIXES.some((prefix) => {
+        return (
+          parsed.pathname === prefix || parsed.pathname.startsWith(`${prefix}/`)
+        );
       });
     } catch (err) {
-      log("Timekeeper failed to parse URL for support check:", err, 'error');
+      log("Timekeeper failed to parse URL for support check:", err, "error");
       return false;
     }
   }
@@ -178,11 +198,23 @@ initializeDvrEnablement();
     AppState.setUrlChangeHandlersSetup(setup);
   }
 
-  function getPanePositionState(): { x?: number; y?: number; width?: number; height?: number } | null {
+  function getPanePositionState(): {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+  } | null {
     return AppState.getState().ui.panePosition as any;
   }
 
-  function setPanePositionState(position: { x?: number; y?: number; width?: number; height?: number } | null): void {
+  function setPanePositionState(
+    position: {
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+    } | null,
+  ): void {
     AppState.setPanePosition(position as any);
   }
 
@@ -209,13 +241,23 @@ initializeDvrEnablement();
     return pane.getBoundingClientRect();
   }
 
-  function updateLastSavedPanePositionFromRect(rect: DOMRect | null, xOverride?: number, yOverride?: number) {
+  function updateLastSavedPanePositionFromRect(
+    rect: DOMRect | null,
+    xOverride?: number,
+    yOverride?: number,
+  ) {
     if (!rect) return;
     setPanePositionState({
-      x: typeof xOverride === 'number' ? Math.round(xOverride) : Math.round(rect.left),
-      y: typeof yOverride === 'number' ? Math.round(yOverride) : Math.round(rect.top),
+      x:
+        typeof xOverride === "number"
+          ? Math.round(xOverride)
+          : Math.round(rect.left),
+      y:
+        typeof yOverride === "number"
+          ? Math.round(yOverride)
+          : Math.round(rect.top),
       width: Math.round(rect.width),
-      height: Math.round(rect.height)
+      height: Math.round(rect.height),
     });
   }
 
@@ -227,8 +269,12 @@ initializeDvrEnablement();
       updateLastSavedPanePositionFromRect(rect);
       if (save) {
         const position = getPanePositionState();
-        saveGlobalSettings('windowPosition', position);
-        safePostMessage({ type: 'window_position_updated', position: position, timestamp: Date.now() });
+        saveGlobalSettings("windowPosition", position);
+        safePostMessage({
+          type: "window_position_updated",
+          position: position,
+          timestamp: Date.now(),
+        });
       }
     }
   }
@@ -240,10 +286,10 @@ initializeDvrEnablement();
     if (itemsForSize.length > 0) {
       liH = (itemsForSize[0] as HTMLElement).offsetHeight;
     } else {
-      const tempLi = document.createElement('li');
-      tempLi.style.visibility = 'hidden';
-      tempLi.style.position = 'absolute';
-      tempLi.textContent = '00:00 Example';
+      const tempLi = document.createElement("li");
+      tempLi.style.visibility = "hidden";
+      tempLi.style.position = "absolute";
+      tempLi.textContent = "00:00 Example";
       // Append temporarily so we can measure
       list.appendChild(tempLi);
       liH = tempLi.offsetHeight;
@@ -251,7 +297,7 @@ initializeDvrEnablement();
     }
     minPaneHeight = header.offsetHeight + btns.offsetHeight + liH;
     setMinPaneHeight(minPaneHeight);
-    pane.style.minHeight = getMinPaneHeight() + 'px';
+    pane.style.minHeight = getMinPaneHeight() + "px";
   }
 
   // Append any timestamps that were built while the pane was animating open.
@@ -286,8 +332,8 @@ initializeDvrEnablement();
 
   function startShowAnimation() {
     if (list) {
-      list.style.visibility = 'hidden';
-      log('Hiding timestamps during show animation');
+      list.style.visibility = "hidden";
+      log("Hiding timestamps during show animation");
     }
     performSizingAndSave();
     scheduleShowFinalizer();
@@ -325,9 +371,9 @@ initializeDvrEnablement();
 
     // If there's nothing pending, ensure visibility is restored
     if (!pendingTimestampsFragment) {
-      if (list.style.visibility === 'hidden') {
-        list.style.visibility = '';
-        log('Restoring timestamp visibility (no deferred fragment)');
+      if (list.style.visibility === "hidden") {
+        list.style.visibility = "";
+        log("Restoring timestamp visibility (no deferred fragment)");
       }
       if (pendingTimestampsResolve) {
         pendingTimestampsResolve();
@@ -337,14 +383,16 @@ initializeDvrEnablement();
       return;
     }
 
-    log('Appending deferred timestamps after animation');
+    log("Appending deferred timestamps after animation");
     list.appendChild(pendingTimestampsFragment);
     pendingTimestampsFragment = null;
+    invalidateLatestTimestampValue();
+    updateTimeDifferences();
 
     // Restore visibility now that nodes are present
-    if (list.style.visibility === 'hidden') {
-      list.style.visibility = '';
-      log('Restoring timestamp visibility after append');
+    if (list.style.visibility === "hidden") {
+      list.style.visibility = "";
+      log("Restoring timestamp visibility after append");
     }
 
     // Resolve promise so loadTimestamps can continue
@@ -356,7 +404,8 @@ initializeDvrEnablement();
 
     updateIndentMarkers();
     updateSeekbarMarkers();
-    if (recalculateTimestampsAreaFn) requestAnimationFrame(recalculateTimestampsAreaFn);
+    if (recalculateTimestampsAreaFn)
+      requestAnimationFrame(recalculateTimestampsAreaFn);
 
     autoHighlightNearest(true);
   }
@@ -365,8 +414,10 @@ initializeDvrEnablement();
   let isLoadingTimestamps = false; // Track if timestamps are currently loading
   const TIMESTAMP_DELETE_CLASS = "ytls-timestamp-pending-delete";
   const TIMESTAMP_HIGHLIGHT_CLASS = "ytls-timestamp-highlight";
-  const HEADER_ICON_DEFAULT_URL = "https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_64px_Indexed.png";
-  const HEADER_ICON_HOVER_URL = "https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_Eyebrow_64px_Indexed.png";
+  const HEADER_ICON_DEFAULT_URL =
+    "https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_64px_Indexed.png";
+  const HEADER_ICON_HOVER_URL =
+    "https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_Eyebrow_64px_Indexed.png";
 
   // Preload header images once at script startup so they're cached for later use
   function preloadHeaderIcons() {
@@ -382,15 +433,18 @@ initializeDvrEnablement();
   // Wait for YouTube interface to load completely
   async function waitForYouTubeReady() {
     // Wait for the main video element and controls to be present
-    while (!document.querySelector('video') || !document.querySelector('#movie_player')) {
-      await new Promise(r => setTimeout(r, 100));
+    while (
+      !document.querySelector("video") ||
+      !document.querySelector("#movie_player")
+    ) {
+      await new Promise((r) => setTimeout(r, 100));
     }
     // Optionally, wait for the progress bar and other UI elements
-    while (!document.querySelector('.ytp-progress-bar')) {
-      await new Promise(r => setTimeout(r, 100));
+    while (!document.querySelector(".ytp-progress-bar")) {
+      await new Promise((r) => setTimeout(r, 100));
     }
     // Wait a little extra to ensure dynamic elements are ready
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 200));
   }
 
   const REQUIRED_PLAYER_METHODS = [
@@ -399,7 +453,7 @@ initializeDvrEnablement();
     "getPlayerState",
     "seekToLiveHead",
     "getVideoData",
-    "getDuration"
+    "getDuration",
   ];
   const PLAYER_METHOD_CHECK_TIMEOUT_MS = 5000;
   const PLAYER_METHODS_WITH_FALLBACK = new Set([
@@ -408,7 +462,7 @@ initializeDvrEnablement();
     "getPlayerState",
     "seekToLiveHead",
     "getVideoData",
-    "getDuration"
+    "getDuration",
   ]);
 
   function methodHasFallback(method) {
@@ -433,7 +487,7 @@ initializeDvrEnablement();
   }
 
   function hasRequiredPlayerMethods(playerInstance) {
-    return REQUIRED_PLAYER_METHODS.every(method => {
+    return REQUIRED_PLAYER_METHODS.every((method) => {
       if (typeof playerInstance?.[method] === "function") {
         return true;
       }
@@ -445,7 +499,7 @@ initializeDvrEnablement();
   }
 
   function missingPlayerMethods(playerInstance) {
-    return REQUIRED_PLAYER_METHODS.filter(method => {
+    return REQUIRED_PLAYER_METHODS.filter((method) => {
       if (typeof playerInstance?.[method] === "function") {
         return false;
       }
@@ -456,14 +510,16 @@ initializeDvrEnablement();
     });
   }
 
-  async function waitForPlayerWithMethods(timeoutMs = PLAYER_METHOD_CHECK_TIMEOUT_MS) {
+  async function waitForPlayerWithMethods(
+    timeoutMs = PLAYER_METHOD_CHECK_TIMEOUT_MS,
+  ) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const playerInstance = getActivePlayer();
       if (hasRequiredPlayerMethods(playerInstance)) {
         return playerInstance;
       }
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
     const fallbackPlayer = getActivePlayer();
     if (hasRequiredPlayerMethods(fallbackPlayer)) {
@@ -471,8 +527,6 @@ initializeDvrEnablement();
     }
     return fallbackPlayer;
   }
-
-
 
   // Configuration for timestamp offset
   const OFFSET_KEY = "timestampOffsetSeconds";
@@ -486,80 +540,92 @@ initializeDvrEnablement();
   const DEFAULT_PANE_WIDTH = 300;
   const DEFAULT_PANE_HEIGHT = 300;
 
-// Create a BroadcastChannel for cross-tab communication only when on www.youtube.com
-let channel: BroadcastChannel | null = null;
+  // Create a BroadcastChannel for cross-tab communication only when on www.youtube.com
+  let channel: BroadcastChannel | null = null;
 
-function isYouTubeOrigin() {
-  try {
-    return (new URL(window.location.href)).origin === 'https://www.youtube.com';
-  } catch (err) {
-    return false;
-  }
-}
-
-function ensureChannel() {
-  if (!isYouTubeOrigin()) return;
-  if (!channel) {
+  function isYouTubeOrigin() {
     try {
-      channel = new BroadcastChannel('ytls_timestamp_channel');
-      channel.onmessage = handleChannelMessage;
+      return new URL(window.location.href).origin === "https://www.youtube.com";
     } catch (err) {
-      log('Failed to create BroadcastChannel:', err, 'warn');
-      channel = null;
+      return false;
     }
   }
-}
 
-// Safe wrapper for posting messages to avoid "Channel is closed" errors
-function safePostMessage(message: unknown) {
-  if (!isYouTubeOrigin()) {
-    log('Skipping BroadcastChannel message: not on https://www.youtube.com', 'warn');
-    return;
+  function ensureChannel() {
+    if (!isYouTubeOrigin()) return;
+    if (!channel) {
+      try {
+        channel = new BroadcastChannel("ytls_timestamp_channel");
+        channel.onmessage = handleChannelMessage;
+      } catch (err) {
+        log("Failed to create BroadcastChannel:", err, "warn");
+        channel = null;
+      }
+    }
   }
-  ensureChannel();
-  if (!channel) {
-    log('No BroadcastChannel available to post message', 'warn');
-    return;
-  }
+
+  // Safe wrapper for posting messages to avoid "Channel is closed" errors
+  function safePostMessage(message: unknown) {
+    if (!isYouTubeOrigin()) {
+      log(
+        "Skipping BroadcastChannel message: not on https://www.youtube.com",
+        "warn",
+      );
+      return;
+    }
+    ensureChannel();
+    if (!channel) {
+      log("No BroadcastChannel available to post message", "warn");
+      return;
+    }
     try {
       channel.postMessage(message);
     } catch (err) {
-      log('BroadcastChannel error, reopening:', err, 'warn');
+      log("BroadcastChannel error, reopening:", err, "warn");
       try {
-        channel = new BroadcastChannel('ytls_timestamp_channel');
+        channel = new BroadcastChannel("ytls_timestamp_channel");
         channel.onmessage = handleChannelMessage;
         channel.postMessage(message);
       } catch (reopenErr) {
-        log('Failed to reopen BroadcastChannel:', reopenErr, 'error');
+        log("Failed to reopen BroadcastChannel:", reopenErr, "error");
       }
     }
   }
 
   // Listen for messages from other tabs
   function handleChannelMessage(event: MessageEvent) {
-    log('Received message from another tab:', event.data);
+    log("Received message from another tab:", event.data);
     if (!isSupportedUrl() || !list || !pane) {
       return;
     }
     if (event.data) {
-      if (event.data.type === 'timestamps_updated' && event.data.videoId === currentLoadedVideoId) {
-        log('Debouncing timestamp load due to external update for video:', event.data.videoId);
+      if (
+        event.data.type === "timestamps_updated" &&
+        event.data.videoId === currentLoadedVideoId
+      ) {
+        log(
+          "Debouncing timestamp load due to external update for video:",
+          event.data.videoId,
+        );
         clearTimeout(loadTimeoutId);
         loadTimeoutId = setTimeout(() => {
-          log('Reloading timestamps due to external update for video:', event.data.videoId);
+          log(
+            "Reloading timestamps due to external update for video:",
+            event.data.videoId,
+          );
           loadTimestamps();
         }, 500);
-      } else if (event.data.type === 'window_position_updated' && pane) {
+      } else if (event.data.type === "window_position_updated" && pane) {
         const pos = event.data.position;
-        if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
+        if (pos && typeof pos.x === "number" && typeof pos.y === "number") {
           pane.style.left = `${pos.x}px`;
           pane.style.top = `${pos.y}px`;
           pane.style.right = "auto";
           pane.style.bottom = "auto";
-          if (typeof pos.width === 'number' && pos.width > 0) {
+          if (typeof pos.width === "number" && pos.width > 0) {
             pane.style.width = `${pos.width}px`;
           }
-          if (typeof pos.height === 'number' && pos.height > 0) {
+          if (typeof pos.height === "number" && pos.height > 0) {
             pane.style.height = `${pos.height}px`;
           }
           const rect = pane.getBoundingClientRect();
@@ -567,7 +633,7 @@ function safePostMessage(message: unknown) {
             x: Math.round(pos.x),
             y: Math.round(pos.y),
             width: Math.round(rect.width),
-            height: Math.round(rect.height)
+            height: Math.round(rect.height),
           });
           // Only clamp if pane is outside viewport
           const viewportWidth = document.documentElement.clientWidth;
@@ -590,19 +656,25 @@ function safePostMessage(message: unknown) {
   // The user can configure 'timestampOffsetSeconds' in ViolentMonkey's script values.
   // A positive value will make it after current time, negative before.
   let configuredOffset = await GM.getValue<number>(OFFSET_KEY);
-  if (typeof configuredOffset !== 'number' || Number.isNaN(configuredOffset)) {
+  if (typeof configuredOffset !== "number" || Number.isNaN(configuredOffset)) {
     configuredOffset = DEFAULT_OFFSET;
     await GM.setValue(OFFSET_KEY, configuredOffset);
   }
 
   let configuredShiftSkip = await GM.getValue<number>(SHIFT_SKIP_KEY);
-  if (typeof configuredShiftSkip !== 'number' || Number.isNaN(configuredShiftSkip)) {
+  if (
+    typeof configuredShiftSkip !== "number" ||
+    Number.isNaN(configuredShiftSkip)
+  ) {
     configuredShiftSkip = DEFAULT_SHIFT_SKIP;
     await GM.setValue(SHIFT_SKIP_KEY, configuredShiftSkip);
   }
 
   let loadTimeoutId: ReturnType<typeof setTimeout> | null = null; // Variable to hold the timeout ID for debouncing loads from broadcast
-  let commentSaveTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map(); // Track comment save timeouts per GUID
+  let commentSaveTimeouts: Map<
+    string,
+    ReturnType<typeof setTimeout>
+  > = new Map(); // Track comment save timeouts per GUID
   let isMouseOverTimestamps = false; // Default to false
   let settingsModalInstance: HTMLDivElement | null = null; // To keep a reference to the settings modal
   let settingsCogButtonElement: HTMLButtonElement | null = null; // To keep a reference to the settings cog button
@@ -621,7 +693,12 @@ function safePostMessage(message: unknown) {
   let pendingTimestampsResolve: (() => void) | null = null;
   let headerButtonImage: HTMLImageElement | null = null;
   let isHeaderButtonHovered = false;
-  let lastSavedPanePosition: { x: number; y: number; width: number; height: number } | null = null;
+  let lastSavedPanePosition: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null = null;
   let isPaneInitializing = false; // Lock flag to prevent concurrent pane initialization
 
   // Event listener references for cleanup to prevent memory leaks
@@ -648,7 +725,6 @@ function safePostMessage(message: unknown) {
   // Global cache for latest timestamp value
   let latestTimestampValue: number | null = null;
 
-
   // Using view module for UI operations
   function getTimestampItems(): HTMLLIElement[] {
     return TimestampView.getTimestampItems(list);
@@ -672,10 +748,10 @@ function safePostMessage(message: unknown) {
   }
 
   function hasNegativeTimeDifference(li: HTMLLIElement): boolean {
-    const timeDiffSpan = li.querySelector<HTMLSpanElement>('.time-diff');
+    const timeDiffSpan = li.querySelector<HTMLSpanElement>(".time-diff");
     if (!timeDiffSpan) return false;
-    const text = timeDiffSpan.textContent?.trim() || '';
-    return text.startsWith('-');
+    const text = timeDiffSpan.textContent?.trim() || "";
+    return text.startsWith("-");
   }
 
   // Indent marker constants
@@ -705,7 +781,7 @@ function safePostMessage(message: unknown) {
     }
 
     const nextItem = items[itemIndex + 1];
-    const nextInput = nextItem.querySelector<HTMLInputElement>('input');
+    const nextInput = nextItem.querySelector<HTMLInputElement>("input");
     const nextIsIndented = nextInput && isIndented(nextInput.value);
 
     return nextIsIndented ? INDENT_MARKER_BRANCH : INDENT_MARKER_CORNER;
@@ -729,7 +805,7 @@ function safePostMessage(message: unknown) {
       iterations++;
 
       items.forEach((item, index) => {
-        const input = item.querySelector<HTMLInputElement>('input');
+        const input = item.querySelector<HTMLInputElement>("input");
         if (!input || !isIndented(input.value)) return;
 
         const cleanComment = removeIndentMarker(input.value);
@@ -779,65 +855,79 @@ function safePostMessage(message: unknown) {
 
     if (loading) {
       // Show the pane and display a placeholder message while we load timestamps
-      pane.style.display = '';
-      pane.classList.remove('ytls-fade-out');
-      pane.classList.add('ytls-fade-in');
-      showListPlaceholder('Loading timestamps...');
+      pane.style.display = "";
+      pane.classList.remove("ytls-fade-out");
+      pane.classList.add("ytls-fade-in");
+      showListPlaceholder("Loading timestamps...");
     } else {
       // Remove any loading placeholder and show the pane
       clearListPlaceholder();
-      pane.style.display = '';
-      pane.classList.remove('ytls-fade-out');
-      pane.classList.add('ytls-fade-in');
+      pane.style.display = "";
+      pane.classList.remove("ytls-fade-out");
+      pane.classList.add("ytls-fade-in");
 
       // Update CT display now that loading is done
       if (timeDisplay) {
         const playerInstance = getActivePlayer();
         if (playerInstance) {
           const rawTime = playerInstance.getCurrentTime();
-          const currentSeconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
-          const h = Math.floor(currentSeconds / 3600);
-          const m = Math.floor(currentSeconds / 60) % 60;
-          const s = currentSeconds % 60;
+          const currentSeconds = Number.isFinite(rawTime)
+            ? Math.max(0, Math.floor(rawTime))
+            : Math.max(0, getLatestTimestampValue());
 
           const { isLive } = playerInstance.getVideoData() || { isLive: false };
 
-          const timestamps = list ? getTimestampItems().map(li => {
-            const timeLink = li.querySelector('a[data-time]');
-            return timeLink ? parseFloat(timeLink.getAttribute('data-time') ?? "0") : 0;
-          }) : [];
+          const timestamps = list
+            ? getTimestampItems().map((li) => {
+                const timeLink = li.querySelector("a[data-time]");
+                return timeLink
+                  ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
+                  : 0;
+              })
+            : [];
 
           let timestampDisplay = "";
           if (timestamps.length > 0) {
             if (isLive) {
               const currentTimeMinutes = Math.max(1, currentSeconds / 60);
-              const liveTimestamps = timestamps.filter(time => time <= currentSeconds);
+              const liveTimestamps = timestamps.filter(
+                (time) => time <= currentSeconds,
+              );
               if (liveTimestamps.length > 0) {
-                const timestampsPerMin = (liveTimestamps.length / currentTimeMinutes).toFixed(2);
+                const timestampsPerMin = (
+                  liveTimestamps.length / currentTimeMinutes
+                ).toFixed(2);
                 if (parseFloat(timestampsPerMin) > 0) {
                   timestampDisplay = ` (${timestampsPerMin}/min)`;
                 }
               }
             } else {
               const durationSeconds = playerInstance.getDuration();
-              const validDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
-                ? durationSeconds
-                : 0;
+              const validDuration =
+                Number.isFinite(durationSeconds) && durationSeconds > 0
+                  ? durationSeconds
+                  : 0;
               const totalMinutes = Math.max(1, validDuration / 60);
-              const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(1);
+              const timestampsPerMin = (
+                timestamps.length / totalMinutes
+              ).toFixed(1);
               if (parseFloat(timestampsPerMin) > 0) {
                 timestampDisplay = ` (${timestampsPerMin}/min)`;
               }
             }
           }
 
-          timeDisplay.textContent = `${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+          timeDisplay.textContent = `${formatTimeString(currentSeconds)}${timestampDisplay}`;
         }
       }
     }
 
     // Ensure empty placeholder is shown now that loading finished
-    if (!isLoadingTimestamps && list && !list.querySelector('.ytls-error-message')) {
+    if (
+      !isLoadingTimestamps &&
+      list &&
+      !list.querySelector(".ytls-error-message")
+    ) {
       ensureEmptyPlaceholder();
     }
 
@@ -845,17 +935,23 @@ function safePostMessage(message: unknown) {
   }
 
   // Helper function to format timestamps based on total duration
-  function isTimestampRecord(value: TimestampRecord | null | undefined): value is TimestampRecord {
+  function isTimestampRecord(
+    value: TimestampRecord | null | undefined,
+  ): value is TimestampRecord {
     if (!value) return false;
     return TimestampRecordSchema.safeParse(value).success;
   }
 
-  // Update existing calls to formatTimeString to pass only the timestamp value itself
   function formatTime(anchor: HTMLAnchorElement, timeInSeconds: number) {
-    // Format the timestamp based solely on its own value.
-    anchor.textContent = formatTimeString(timeInSeconds);
     anchor.dataset.time = String(timeInSeconds);
-    anchor.href = buildYouTubeUrlWithTimestamp(timeInSeconds, window.location.href);
+    anchor.textContent = formatTimeString(
+      timeInSeconds,
+      getLatestTimestampValue(),
+    );
+    anchor.href = buildYouTubeUrlWithTimestamp(
+      timeInSeconds,
+      window.location.href,
+    );
   }
 
   // Debounce state for seeking
@@ -877,8 +973,12 @@ function safePostMessage(message: unknown) {
     // Use YouTube's progress state if available to avoid relying on the HTML5 video element.
     if (typeof playerInstance.getProgressState === "function") {
       const state = playerInstance.getProgressState();
-      const liveHead = Number(state?.seekableEnd ?? state?.liveHead ?? state?.head ?? state?.duration);
-      const current = Number(state?.current ?? playerInstance.getCurrentTime?.());
+      const liveHead = Number(
+        state?.seekableEnd ?? state?.liveHead ?? state?.head ?? state?.duration,
+      );
+      const current = Number(
+        state?.current ?? playerInstance.getCurrentTime?.(),
+      );
 
       if (Number.isFinite(liveHead) && Number.isFinite(current)) {
         // Consider a small threshold to avoid flicker at the edge.
@@ -889,7 +989,10 @@ function safePostMessage(message: unknown) {
     return false;
   }
 
-  function highlightNearestTimestampAtTime(currentSeconds: number, shouldScroll: boolean) {
+  function highlightNearestTimestampAtTime(
+    currentSeconds: number,
+    shouldScroll: boolean,
+  ) {
     if (!Number.isFinite(currentSeconds)) {
       return;
     }
@@ -908,12 +1011,14 @@ function safePostMessage(message: unknown) {
     if (isMouseOverTimestamps && !shouldScroll) return;
 
     let currentTime: number;
-    if (typeof currentSeconds === 'number' && Number.isFinite(currentSeconds)) {
+    if (typeof currentSeconds === "number" && Number.isFinite(currentSeconds)) {
       currentTime = Math.max(0, Math.floor(currentSeconds));
     } else {
       const player = getActivePlayer();
       const rawTime = player ? player.getCurrentTime() : NaN;
-      currentTime = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
+      currentTime = Number.isFinite(rawTime)
+        ? Math.max(0, Math.floor(rawTime))
+        : Math.max(0, getLatestTimestampValue());
     }
 
     if (Number.isFinite(currentTime)) {
@@ -936,7 +1041,7 @@ function safePostMessage(message: unknown) {
     let largestTimestamp = -Infinity;
 
     for (const li of items) {
-      const timeLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
+      const timeLink = li.querySelector<HTMLAnchorElement>("a[data-time]");
       const timeValue = timeLink?.dataset.time;
       if (!timeValue) {
         continue;
@@ -959,7 +1064,7 @@ function safePostMessage(message: unknown) {
   function highlightTimestamp(li: HTMLLIElement | null, shouldScroll = false) {
     const items = getTimestampItems();
     // Always clear existing highlights first
-    items.forEach(item => {
+    items.forEach((item) => {
       if (!item.classList.contains(TIMESTAMP_DELETE_CLASS)) {
         item.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
       }
@@ -976,7 +1081,9 @@ function safePostMessage(message: unknown) {
           if (list instanceof HTMLElement) {
             const liRect = li.getBoundingClientRect();
             const listRect = list.getBoundingClientRect();
-            const isVisible = !(liRect.bottom < listRect.top || liRect.top > listRect.bottom);
+            const isVisible = !(
+              liRect.bottom < listRect.top || liRect.top > listRect.bottom
+            );
             if (!isVisible) {
               li.scrollIntoView({ behavior: "smooth", block: "center" });
             }
@@ -986,14 +1093,16 @@ function safePostMessage(message: unknown) {
           }
         } catch (e) {
           // Be defensive: if geometry checks fail for any reason, fallback to scrolling
-          try { li.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (_) {}
+          try {
+            li.scrollIntoView({ behavior: "smooth", block: "center" });
+          } catch (_) {}
         }
       }
     }
   }
 
   function offsetAllTimestamps(delta: number): boolean {
-    if (!list || list.querySelector('.ytls-error-message')) {
+    if (!list || list.querySelector(".ytls-error-message")) {
       return false;
     }
 
@@ -1008,8 +1117,8 @@ function safePostMessage(message: unknown) {
 
     let changed = false;
 
-    items.forEach(li => {
-      const anchor = li.querySelector<HTMLAnchorElement>('a[data-time]');
+    items.forEach((li) => {
+      const anchor = li.querySelector<HTMLAnchorElement>("a[data-time]");
       const timeValue = anchor?.dataset.time;
       if (!anchor || !timeValue) {
         return;
@@ -1045,7 +1154,10 @@ function safePostMessage(message: unknown) {
     logLabel?: string;
   };
 
-  function applyOffsetToAllTimestamps(delta: number, options: OffsetApplicationOptions = {}): boolean {
+  function applyOffsetToAllTimestamps(
+    delta: number,
+    options: OffsetApplicationOptions = {},
+  ): boolean {
     if (!Number.isFinite(delta) || delta === 0) {
       return false;
     }
@@ -1053,14 +1165,17 @@ function safePostMessage(message: unknown) {
     const applied = offsetAllTimestamps(delta);
     if (!applied) {
       if (options.alertOnNoChange) {
-        const message = options.failureMessage ?? "Offset did not change any timestamps.";
+        const message =
+          options.failureMessage ?? "Offset did not change any timestamps.";
         alert(message);
       }
       return false;
     }
 
     const label = options.logLabel ?? "bulk offset";
-    log(`Timestamps changed: Offset all timestamps by ${delta > 0 ? '+' : ''}${delta} seconds (${label})`);
+    log(
+      `Timestamps changed: Offset all timestamps by ${delta > 0 ? "+" : ""}${delta} seconds (${label})`,
+    );
 
     const player = getActivePlayer();
     const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
@@ -1082,9 +1197,9 @@ function safePostMessage(message: unknown) {
       return;
     }
 
-    const timeTarget = target.closest<HTMLElement>('[data-time]');
-    const incrementTarget = target.closest<HTMLElement>('[data-increment]');
-    const actionTarget = target.closest<HTMLElement>('[data-action]');
+    const timeTarget = target.closest<HTMLElement>("[data-time]");
+    const incrementTarget = target.closest<HTMLElement>("[data-increment]");
+    const actionTarget = target.closest<HTMLElement>("[data-action]");
 
     if (timeTarget?.dataset.time) {
       event.preventDefault();
@@ -1093,11 +1208,13 @@ function safePostMessage(message: unknown) {
         isSeeking = true;
         const player = getActivePlayer();
         if (player) player.seekTo(newTime);
-        setTimeout(() => { isSeeking = false; }, 500);
+        setTimeout(() => {
+          isSeeking = false;
+        }, 500);
       }
-      const clickedLi = timeTarget.closest('li') as HTMLLIElement | null;
+      const clickedLi = timeTarget.closest("li") as HTMLLIElement | null;
       if (clickedLi) {
-        getTimestampItems().forEach(item => {
+        getTimestampItems().forEach((item) => {
           if (!item.classList.contains(TIMESTAMP_DELETE_CLASS)) {
             item.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
           }
@@ -1110,8 +1227,9 @@ function safePostMessage(message: unknown) {
     } else if (incrementTarget?.dataset.increment) {
       event.preventDefault();
 
-      const timestampLi = incrementTarget.closest('li');
-      const timeLink = timestampLi?.querySelector<HTMLAnchorElement>('a[data-time]');
+      const timestampLi = incrementTarget.closest("li");
+      const timeLink =
+        timestampLi?.querySelector<HTMLAnchorElement>("a[data-time]");
       if (!timeLink || !timeLink.dataset.time) {
         return;
       }
@@ -1119,21 +1237,23 @@ function safePostMessage(message: unknown) {
       const currTime = parseInt(timeLink.dataset.time, 10);
       let increment = parseInt(incrementTarget.dataset.increment, 10);
 
-      const shiftPressed = 'shiftKey' in event ? event.shiftKey : false;
+      const shiftPressed = "shiftKey" in event ? event.shiftKey : false;
       if (shiftPressed) {
         increment *= configuredShiftSkip;
       }
 
-      const altPressed = 'altKey' in event ? event.altKey : false;
+      const altPressed = "altKey" in event ? event.altKey : false;
       if (altPressed) {
         applyOffsetToAllTimestamps(increment, { logLabel: "Alt adjust" });
         return;
       }
 
       const newTime = Math.max(0, currTime + increment);
-      log(`Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`);
-      formatTime(timeLink, newTime);
+      log(
+        `Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`,
+      );
       invalidateLatestTimestampValue();
+      formatTime(timeLink, newTime);
 
       pendingSeekTime = newTime;
       if (seekTimeoutId) {
@@ -1147,7 +1267,9 @@ function safePostMessage(message: unknown) {
         }
         seekTimeoutId = null;
         pendingSeekTime = null;
-        setTimeout(() => { isSeeking = false; }, 500);
+        setTimeout(() => {
+          isSeeking = false;
+        }, 500);
       }, 500);
 
       updateTimeDifferences();
@@ -1156,16 +1278,22 @@ function safePostMessage(message: unknown) {
 
       // Save the modified timestamp
       if (timestampLi) {
-        const tsCommentInput = timestampLi.querySelector<HTMLInputElement>('input');
+        const tsCommentInput =
+          timestampLi.querySelector<HTMLInputElement>("input");
         const tsGuid = timestampLi.dataset.guid;
         if (tsCommentInput && tsGuid) {
-          saveSingleTimestampDirect(currentLoadedVideoId, tsGuid, newTime, tsCommentInput.value);
+          saveSingleTimestampDirect(
+            currentLoadedVideoId,
+            tsGuid,
+            newTime,
+            tsCommentInput.value,
+          );
           mostRecentlyModifiedTimestampGuid = tsGuid;
         }
       }
     } else if (actionTarget?.dataset.action === "clear") {
       event.preventDefault();
-      log('Timestamps changed: All timestamps cleared from UI');
+      log("Timestamps changed: All timestamps cleared from UI");
       list.textContent = "";
       invalidateLatestTimestampValue();
       updateSeekbarMarkers();
@@ -1177,7 +1305,13 @@ function safePostMessage(message: unknown) {
     }
   }
 
-  function addTimestamp(start: number, comment = "", doNotSave = false, guid: string | null = null, appendToList = true) {
+  function addTimestamp(
+    start: number,
+    comment = "",
+    doNotSave = false,
+    guid: string | null = null,
+    appendToList = true,
+  ) {
     if (!list) {
       return null;
     }
@@ -1203,11 +1337,13 @@ function safePostMessage(message: unknown) {
 
     // Setup indent gutter - displays in left margin without affecting layout
     const indentGutter = document.createElement("div");
-    indentGutter.style.cssText = "position:absolute;left:0;top:0;width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;";
+    indentGutter.style.cssText =
+      "position:absolute;left:0;top:0;width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;";
     addTooltip(indentGutter, "Click to toggle indent");
 
     const indentToggle = document.createElement("span");
-    indentToggle.style.cssText = "color:#f4ba78;pointer-events:none;display:none;line-height:0;";
+    indentToggle.style.cssText =
+      "color:#f4ba78;pointer-events:none;display:none;line-height:0;";
 
     const syncIndentGutterPosition = () => {
       const inputTop = commentInput.offsetTop;
@@ -1218,10 +1354,15 @@ function safePostMessage(message: unknown) {
 
     // Helper function to update arrow icon based on current indent state
     const updateArrowIcon = () => {
-      setIcon(indentToggle, isIndented(commentInput.value) ? 'indent-decrease' : 'indent-increase', 18);
+      setIcon(
+        indentToggle,
+        isIndented(commentInput.value) ? "indent-decrease" : "indent-increase",
+        18,
+      );
     };
 
-    const indentIconGlow = "drop-shadow(0 0 4px #eee8cf) drop-shadow(0 0 8px #eee8cf)";
+    const indentIconGlow =
+      "drop-shadow(0 0 4px #eee8cf) drop-shadow(0 0 8px #eee8cf)";
     const setIndentIconGlow = (enabled: boolean) => {
       const icon = indentToggle.querySelector<SVGElement>("svg");
       if (icon) {
@@ -1250,7 +1391,12 @@ function safePostMessage(message: unknown) {
       updateArrowIcon();
       updateIndentMarkers();
       const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
-      saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+      saveSingleTimestampDirect(
+        currentLoadedVideoId,
+        timestampGuid,
+        currentTime,
+        commentInput.value,
+      );
     };
 
     indentGutter.onclick = handleIndentToggle;
@@ -1280,7 +1426,10 @@ function safePostMessage(message: unknown) {
     // Add mouseleave listener to check for negative time diff and sort if needed
     li.addEventListener("mouseleave", () => {
       // Only sort immediately if this is the most recently modified timestamp and it has a negative diff
-      if (li.dataset.guid === mostRecentlyModifiedTimestampGuid && hasNegativeTimeDifference(li)) {
+      if (
+        li.dataset.guid === mostRecentlyModifiedTimestampGuid &&
+        hasNegativeTimeDifference(li)
+      ) {
         sortTimestampsAndUpdateDisplay();
       }
     });
@@ -1305,7 +1454,10 @@ function safePostMessage(message: unknown) {
         suppressSortUntilRefocus = true;
         setTimeout(() => {
           // If nothing else took focus, restore here
-          if (document.activeElement === document.body || document.activeElement == null) {
+          if (
+            document.activeElement === document.body ||
+            document.activeElement == null
+          ) {
             commentInput.focus({ preventScroll: true });
             suppressSortUntilRefocus = false;
           }
@@ -1326,7 +1478,12 @@ function safePostMessage(message: unknown) {
 
       const timeout = setTimeout(() => {
         const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
-        saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+        saveSingleTimestampDirect(
+          currentLoadedVideoId,
+          timestampGuid,
+          currentTime,
+          commentInput.value,
+        );
         commentSaveTimeouts.delete(timestampGuid);
       }, 500);
 
@@ -1337,15 +1494,26 @@ function safePostMessage(message: unknown) {
       const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
       // Let the finalized character land, then save
       setTimeout(() => {
-        saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+        saveSingleTimestampDirect(
+          currentLoadedVideoId,
+          timestampGuid,
+          currentTime,
+          commentInput.value,
+        );
       }, 50);
     });
 
     const rowIconColor = "#f4ba78";
-    const rowIconGlow = "drop-shadow(0 0 4px #eee8cf) drop-shadow(0 0 8px #eee8cf)";
+    const rowIconGlow =
+      "drop-shadow(0 0 4px #eee8cf) drop-shadow(0 0 8px #eee8cf)";
     const trashIconColor = "#c8452d";
-    const trashIconGlow = "drop-shadow(0 0 4px #e36a52) drop-shadow(0 0 8px #e36a52)";
-    const applyRowIconInteraction = (element: HTMLElement, color = rowIconColor, glow = rowIconGlow) => {
+    const trashIconGlow =
+      "drop-shadow(0 0 4px #e36a52) drop-shadow(0 0 8px #e36a52)";
+    const applyRowIconInteraction = (
+      element: HTMLElement,
+      color = rowIconColor,
+      glow = rowIconGlow,
+    ) => {
       element.style.color = color;
       const icon = element.querySelector<SVGElement>("svg");
       if (icon) {
@@ -1363,21 +1531,21 @@ function safePostMessage(message: unknown) {
       });
     };
 
-    setIcon(minus, 'circle-minus', 18);
+    setIcon(minus, "circle-minus", 18);
     minus.classList.add("ytls-row-control");
     minus.dataset.increment = "-1";
     minus.style.cursor = "pointer";
     minus.style.margin = "0px";
     applyRowIconInteraction(minus);
 
-    setIcon(plus, 'circle-plus', 18);
+    setIcon(plus, "circle-plus", 18);
     plus.classList.add("ytls-row-control");
     plus.dataset.increment = "1";
     plus.style.cursor = "pointer";
     plus.style.margin = "0px";
     applyRowIconInteraction(plus);
 
-    setIcon(record, 'current-location', 18);
+    setIcon(record, "current-location", 18);
     record.classList.add("ytls-row-control");
     record.style.cursor = "pointer";
     record.style.margin = "0px";
@@ -1388,20 +1556,27 @@ function safePostMessage(message: unknown) {
       const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
       if (Number.isFinite(currentTime)) {
         log(`Timestamps changedset to current playback time ${currentTime}`);
+        invalidateLatestTimestampValue();
         formatTime(anchor, currentTime);
         updateTimeDifferences();
         updateIndentMarkers();
-        saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, currentTime, commentInput.value);
+        saveSingleTimestampDirect(
+          currentLoadedVideoId,
+          timestampGuid,
+          currentTime,
+          commentInput.value,
+        );
         mostRecentlyModifiedTimestampGuid = timestampGuid;
       }
     };
 
-    formatTime(anchor, sanitizedStart);
     invalidateLatestTimestampValue();
+    formatTime(anchor, sanitizedStart);
 
-    setIcon(del, 'trash', 16);
+    setIcon(del, "trash", 16);
     del.classList.add("ytls-row-control");
-    del.style.cssText = "background:transparent;border:none;cursor:pointer;margin-left:5px;display:inline-flex;align-items:center;";
+    del.style.cssText =
+      "background:transparent;border:none;cursor:pointer;margin-left:5px;display:inline-flex;align-items:center;";
     applyRowIconInteraction(del, trashIconColor, trashIconGlow);
     del.onclick = () => {
       // Track the timeout so we can cancel it if the timestamp is removed early
@@ -1413,10 +1588,16 @@ function safePostMessage(message: unknown) {
 
       // Helper to clean up listeners and timeout
       const cleanupDeleteListeners = () => {
-        try { li.removeEventListener("click", cancelDeleteOnClick!, true); } catch (_) {}
-        try { document.removeEventListener("click", cancelDeleteOnClick!, true); } catch (_) {}
+        try {
+          li.removeEventListener("click", cancelDeleteOnClick!, true);
+        } catch (_) {}
+        try {
+          document.removeEventListener("click", cancelDeleteOnClick!, true);
+        } catch (_) {}
         if (list) {
-          try { list.removeEventListener("mouseleave", cancelDeleteOnMouseLeave!); } catch (_) {}
+          try {
+            list.removeEventListener("mouseleave", cancelDeleteOnMouseLeave!);
+          } catch (_) {}
         }
         if (cancelTimeoutId) {
           clearTimeout(cancelTimeoutId);
@@ -1425,8 +1606,8 @@ function safePostMessage(message: unknown) {
       };
 
       if (li.dataset.deleteConfirmed === "true") {
-        log('Timestamps changed: Timestamp deleted');
-        const guid = li.dataset.guid ?? '';
+        log("Timestamps changed: Timestamp deleted");
+        const guid = li.dataset.guid ?? "";
 
         // Remove any pending comment-save timeouts for this GUID
         const pendingTimeout = commentSaveTimeouts.get(guid);
@@ -1460,8 +1641,16 @@ function safePostMessage(message: unknown) {
           // Restore highlight if the item should be highlighted
           const player = getActivePlayer();
           const currentTime = player ? player.getCurrentTime() : 0;
-          const itemTime = Number.parseInt(li.querySelector<HTMLAnchorElement>('a[data-time]')?.dataset.time ?? "0", 10);
-          if (Number.isFinite(currentTime) && Number.isFinite(itemTime) && currentTime >= itemTime) {
+          const itemTime = Number.parseInt(
+            li.querySelector<HTMLAnchorElement>("a[data-time]")?.dataset.time ??
+              "0",
+            10,
+          );
+          if (
+            Number.isFinite(currentTime) &&
+            Number.isFinite(itemTime) &&
+            currentTime >= itemTime
+          ) {
             li.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
           }
 
@@ -1522,7 +1711,8 @@ function safePostMessage(message: unknown) {
 
       for (let i = 0; i < existingItems.length; i++) {
         const existingLi = existingItems[i];
-        const existingLink = existingLi.querySelector<HTMLAnchorElement>('a[data-time]');
+        const existingLink =
+          existingLi.querySelector<HTMLAnchorElement>("a[data-time]");
         const existingTimeStr = existingLink?.dataset.time;
         if (!existingTimeStr) {
           continue;
@@ -1535,51 +1725,28 @@ function safePostMessage(message: unknown) {
         if (newTime < existingTime) {
           list.insertBefore(li, existingLi);
           inserted = true;
-
-          const prevLi = existingItems[i - 1];
-          if (prevLi) {
-            const prevLink = prevLi.querySelector<HTMLAnchorElement>('a[data-time]');
-            const prevTimeStr = prevLink?.dataset.time;
-            if (prevTimeStr) {
-              const prevTime = Number.parseInt(prevTimeStr, 10);
-              if (Number.isFinite(prevTime)) {
-                timeDiff.textContent = formatTimeString(newTime - prevTime);
-              }
-            }
-          } else {
-            timeDiff.textContent = "";
-          }
-
-          const nextTimeDiff = existingLi.querySelector<HTMLSpanElement>('.time-diff');
-          if (nextTimeDiff) {
-            nextTimeDiff.textContent = formatTimeString(existingTime - newTime);
-          }
           break;
         }
       }
 
       if (!inserted) {
         list.appendChild(li);
-        if (existingItems.length > 0) {
-          const lastLi = existingItems[existingItems.length - 1];
-          const lastLink = lastLi.querySelector<HTMLAnchorElement>('a[data-time]');
-          const lastTimeStr = lastLink?.dataset.time;
-          if (lastTimeStr) {
-            const lastTime = Number.parseInt(lastTimeStr, 10);
-            if (Number.isFinite(lastTime)) {
-              timeDiff.textContent = formatTimeString(newTime - lastTime);
-            }
-          }
-        }
       }
 
       li.scrollIntoView({ behavior: "smooth", block: "center" });
 
+      invalidateLatestTimestampValue();
+      updateTimeDifferences();
       updateScroll();
       updateIndentMarkers();
       updateSeekbarMarkers();
       if (!doNotSave) {
-        saveSingleTimestampDirect(currentLoadedVideoId, timestampGuid, sanitizedStart, comment);
+        saveSingleTimestampDirect(
+          currentLoadedVideoId,
+          timestampGuid,
+          sanitizedStart,
+          comment,
+        );
         mostRecentlyModifiedTimestampGuid = timestampGuid;
         // Immediately highlight the newly created timestamp
         highlightTimestamp(li, false);
@@ -1594,59 +1761,82 @@ function safePostMessage(message: unknown) {
   }
 
   function updateTimeDifferences() {
-    if (!list || list.querySelector('.ytls-error-message')) {
+    if (!list || list.querySelector(".ytls-error-message")) {
       return;
     }
 
+    const maxTime = getLatestTimestampValue();
     const items = getTimestampItems();
     items.forEach((item, index) => {
-      const timeDiffSpan = item.querySelector<HTMLSpanElement>('.time-diff');
+      const timeDiffSpan = item.querySelector<HTMLSpanElement>(".time-diff");
+      const timeLink = item.querySelector<HTMLAnchorElement>("a[data-time]");
+      const currentTimeStr = timeLink?.dataset.time;
+
+      // Reformat anchor text with shared maxTime so all timestamps use consistent width
+      if (timeLink && currentTimeStr) {
+        const t = Number.parseInt(currentTimeStr, 10);
+        if (Number.isFinite(t)) {
+          timeLink.textContent = formatTimeString(t, maxTime);
+        }
+      }
+
       if (!timeDiffSpan) {
         return;
       }
-      const timeLink = item.querySelector<HTMLAnchorElement>('a[data-time]');
-      const currentTimeStr = timeLink?.dataset.time;
       if (!currentTimeStr) {
-        timeDiffSpan.textContent = '';
+        timeDiffSpan.textContent = "";
         return;
       }
       const currentTime = Number.parseInt(currentTimeStr, 10);
       if (!Number.isFinite(currentTime)) {
-        timeDiffSpan.textContent = '';
+        timeDiffSpan.textContent = "";
         return;
       }
       if (index === 0) {
-        timeDiffSpan.textContent = '';
+        timeDiffSpan.textContent = "";
         return;
       }
       const prevItem = items[index - 1];
-      const prevLink = prevItem.querySelector<HTMLAnchorElement>('a[data-time]');
+      const prevLink =
+        prevItem.querySelector<HTMLAnchorElement>("a[data-time]");
       const prevTimeStr = prevLink?.dataset.time;
       if (!prevTimeStr) {
-        timeDiffSpan.textContent = '';
+        timeDiffSpan.textContent = "";
         return;
       }
       const prevTime = Number.parseInt(prevTimeStr, 10);
       if (!Number.isFinite(prevTime)) {
-        timeDiffSpan.textContent = '';
+        timeDiffSpan.textContent = "";
         return;
       }
       const diff = currentTime - prevTime;
-      const sign = diff < 0 ? '-' : '';
+      const sign = diff < 0 ? "-" : "";
       timeDiffSpan.textContent = ` ${sign}${formatTimeString(Math.abs(diff))}`;
     });
   }
 
   function sortTimestampsAndUpdateDisplay() {
-    if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
+    if (
+      !list ||
+      list.querySelector(".ytls-error-message") ||
+      isLoadingTimestamps
+    ) {
       return;
     }
 
     // Capture caret/scroll for the currently focused input so we can restore after sorting
-    let restoreState: { guid: string; start: number; end: number; scroll: number } | null = null;
-    if (document.activeElement instanceof HTMLInputElement && list.contains(document.activeElement)) {
+    let restoreState: {
+      guid: string;
+      start: number;
+      end: number;
+      scroll: number;
+    } | null = null;
+    if (
+      document.activeElement instanceof HTMLInputElement &&
+      list.contains(document.activeElement)
+    ) {
       const activeInput = document.activeElement as HTMLInputElement;
-      const activeLi = activeInput.closest('li');
+      const activeLi = activeInput.closest("li");
       const guid = activeLi?.dataset.guid;
       if (guid) {
         const start = activeInput.selectionStart ?? activeInput.value.length;
@@ -1659,13 +1849,12 @@ function safePostMessage(message: unknown) {
     const items = getTimestampItems();
     if (items.length === 0) return; // Nothing to sort when there are no timestamps
 
-
     // Capture original order to detect if reordering occurred
-    const originalOrder = items.map(li => li.dataset.guid);
+    const originalOrder = items.map((li) => li.dataset.guid);
 
     const sortedItems = items
-      .map(li => {
-        const timeLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
+      .map((li) => {
+        const timeLink = li.querySelector<HTMLAnchorElement>("a[data-time]");
         const timeValue = timeLink?.dataset.time;
         if (!timeLink || !timeValue) {
           return null;
@@ -1677,7 +1866,12 @@ function safePostMessage(message: unknown) {
         const guid = li.dataset.guid ?? "";
         return { time, guid, element: li };
       })
-      .filter((item): item is { time: number; guid: string; element: HTMLLIElement } => item !== null)
+      .filter(
+        (
+          item,
+        ): item is { time: number; guid: string; element: HTMLLIElement } =>
+          item !== null,
+      )
       .sort((a, b) => {
         const timeDiff = a.time - b.time;
         if (timeDiff !== 0) {
@@ -1687,13 +1881,14 @@ function safePostMessage(message: unknown) {
       });
 
     // Check if order changed
-    const newOrder = sortedItems.map(item => item.guid);
-    const orderChanged = originalOrder.length !== newOrder.length ||
-                        originalOrder.some((guid, idx) => guid !== newOrder[idx]);
+    const newOrder = sortedItems.map((item) => item.guid);
+    const orderChanged =
+      originalOrder.length !== newOrder.length ||
+      originalOrder.some((guid, idx) => guid !== newOrder[idx]);
 
     // Clear current list and append sorted items
     list.replaceChildren();
-    sortedItems.forEach(item => {
+    sortedItems.forEach((item) => {
       list.appendChild(item.element);
     });
 
@@ -1705,8 +1900,10 @@ function safePostMessage(message: unknown) {
 
     // Restore focus to the previously focused input if it still exists
     if (restoreState) {
-      const targetLi = getTimestampItems().find(li => li.dataset.guid === restoreState!.guid);
-      const targetInput = targetLi?.querySelector<HTMLInputElement>('input');
+      const targetLi = getTimestampItems().find(
+        (li) => li.dataset.guid === restoreState!.guid,
+      );
+      const targetInput = targetLi?.querySelector<HTMLInputElement>("input");
       if (targetInput) {
         try {
           targetInput.focus({ preventScroll: true });
@@ -1718,7 +1915,7 @@ function safePostMessage(message: unknown) {
 
     // Only save if order actually changed
     if (orderChanged) {
-      log('Timestamps changed: Timestamps sorted');
+      log("Timestamps changed: Timestamps sorted");
       saveTimestamps(currentLoadedVideoId);
     }
   }
@@ -1735,34 +1932,39 @@ function safePostMessage(message: unknown) {
     const paneRect = pane.getBoundingClientRect();
     const headerRect = header.getBoundingClientRect();
     const btnsRect = btns.getBoundingClientRect();
-    const available = Math.max(0, paneRect.height - (headerRect.height + btnsRect.height));
+    const available = Math.max(
+      0,
+      paneRect.height - (headerRect.height + btnsRect.height),
+    );
 
     if (tsCount === 0) {
       // If empty, show the placeholder message and hide overflow
       ensureEmptyPlaceholder();
-      list.style.overflowY = 'hidden';
+      list.style.overflowY = "hidden";
     } else {
       // Show scrollbar only if content exceeds available area
-      list.style.overflowY = list.scrollHeight > available ? 'auto' : 'hidden';
+      list.style.overflowY = list.scrollHeight > available ? "auto" : "hidden";
     }
   }
 
   function updateSeekbarMarkers() {
     if (!list) return;
     const video = getVideoElement();
-    const progressBar = document.querySelector<HTMLDivElement>(".ytp-progress-bar");
+    const progressBar =
+      document.querySelector<HTMLDivElement>(".ytp-progress-bar");
     const player = getActivePlayer();
     const videoData = player ? player.getVideoData() : null;
     const isLiveStream = !!videoData && !!videoData.isLive;
 
     // Skip if video isn't ready, progress bar isn't found, or if it's a live stream
-    if (!video || !progressBar || !isFinite(video.duration) || isLiveStream) return;
+    if (!video || !progressBar || !isFinite(video.duration) || isLiveStream)
+      return;
 
     removeSeekbarMarkers();
 
     const timestamps = getTimestampItems()
-      .map(li => {
-        const startLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
+      .map((li) => {
+        const startLink = li.querySelector<HTMLAnchorElement>("a[data-time]");
         const timeValue = startLink?.dataset.time;
         if (!startLink || !timeValue) {
           return null;
@@ -1771,7 +1973,7 @@ function safePostMessage(message: unknown) {
         if (!Number.isFinite(startTime)) {
           return null;
         }
-        const commentInput = li.querySelector<HTMLInputElement>('input');
+        const commentInput = li.querySelector<HTMLInputElement>("input");
         const comment = commentInput?.value ?? "";
         const guid = li.dataset.guid ?? crypto.randomUUID();
         if (!li.dataset.guid) {
@@ -1781,7 +1983,7 @@ function safePostMessage(message: unknown) {
       })
       .filter(isTimestampRecord);
 
-    timestamps.forEach(ts => {
+    timestamps.forEach((ts) => {
       if (!Number.isFinite(ts.start)) {
         return;
       }
@@ -1792,7 +1994,7 @@ function safePostMessage(message: unknown) {
       marker.style.width = "2px";
       marker.style.backgroundColor = "#ff0000";
       marker.style.cursor = "pointer";
-      marker.style.left = (ts.start / video.duration * 100) + "%";
+      marker.style.left = (ts.start / video.duration) * 100 + "%";
       marker.dataset.time = String(ts.start);
       marker.addEventListener("click", () => {
         const player = getActivePlayer();
@@ -1802,20 +2004,25 @@ function safePostMessage(message: unknown) {
     });
   }
 
-  function saveTimestamps(videoId: string, options: { allowEmpty?: boolean } = {}) {
-    if (!list || list.querySelector('.ytls-error-message')) return;
+  function saveTimestamps(
+    videoId: string,
+    options: { allowEmpty?: boolean } = {},
+  ) {
+    if (!list || list.querySelector(".ytls-error-message")) return;
     if (!videoId) return;
     // Prevent saving during loading state to avoid race conditions
     if (isLoadingTimestamps) {
-      log('Save blocked: timestamps are currently loading');
+      log("Save blocked: timestamps are currently loading");
       return;
     }
     updateIndentMarkers();
-    const currentTimestampsFromUI = extractTimestampRecords().sort((a, b) => a.start - b.start);
+    const currentTimestampsFromUI = extractTimestampRecords().sort(
+      (a, b) => a.start - b.start,
+    );
 
     // Skip saving if the list is empty, unless explicitly allowed (e.g., user cleared all timestamps)
     if (currentTimestampsFromUI.length === 0 && !options.allowEmpty) {
-      log('Save skipped: no timestamps to save');
+      log("Save skipped: no timestamps to save");
       return;
     }
 
@@ -1823,39 +2030,67 @@ function safePostMessage(message: unknown) {
     setTimestampsInState(currentTimestampsFromUI);
 
     saveToIndexedDB(videoId, currentTimestampsFromUI)
-      .then(() => log(`Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`))
-      .catch(err => log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, 'error'));
-    safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+      .then(() =>
+        log(
+          `Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`,
+        ),
+      )
+      .catch((err) =>
+        log(
+          `Failed to save timestamps for ${videoId} to IndexedDB:`,
+          err,
+          "error",
+        ),
+      );
+    safePostMessage({
+      type: "timestamps_updated",
+      videoId: videoId,
+      action: "saved",
+    });
   }
 
-
-
-
-
-  function saveSingleTimestampDirect(videoId: string | null | undefined, guid: string, start: number, comment: string) {
+  function saveSingleTimestampDirect(
+    videoId: string | null | undefined,
+    guid: string,
+    start: number,
+    comment: string,
+  ) {
     if (!videoId || isLoadingTimestamps) return;
 
     const timestamp: TimestampRecord = { guid, start, comment };
     log(`Saving timestamp: guid=${guid}, start=${start}, comment="${comment}"`);
 
-    saveSingleTimestampToIndexedDB(videoId, timestamp)
-      .catch(err => log(`Failed to save timestamp ${guid}:`, err, 'error'));
+    saveSingleTimestampToIndexedDB(videoId, timestamp).catch((err) =>
+      log(`Failed to save timestamp ${guid}:`, err, "error"),
+    );
 
-    safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+    safePostMessage({
+      type: "timestamps_updated",
+      videoId: videoId,
+      action: "saved",
+    });
   }
 
-  function deleteSingleTimestamp(videoId: string | null | undefined, guid: string) {
+  function deleteSingleTimestamp(
+    videoId: string | null | undefined,
+    guid: string,
+  ) {
     if (!videoId || isLoadingTimestamps) return;
 
     log(`Deleting timestamp: guid=${guid}`);
-    deleteSingleTimestampFromIndexedDB(videoId, guid)
-      .catch(err => log(`Failed to delete timestamp ${guid}:`, err, 'error'));
+    deleteSingleTimestampFromIndexedDB(videoId, guid).catch((err) =>
+      log(`Failed to delete timestamp ${guid}:`, err, "error"),
+    );
 
-    safePostMessage({ type: 'timestamps_updated', videoId: videoId, action: 'saved' });
+    safePostMessage({
+      type: "timestamps_updated",
+      videoId: videoId,
+      action: "saved",
+    });
   }
 
   async function saveTimestampsAs(format) {
-    if (!list || list.querySelector('.ytls-error-message')) {
+    if (!list || list.querySelector(".ytls-error-message")) {
       alert("Cannot export timestamps while displaying an error message.");
       return;
     }
@@ -1866,7 +2101,9 @@ function safePostMessage(message: unknown) {
     const videoDuration = Math.max(getLatestTimestampValue(), 0);
     const timestampSuffix = getTimestampSuffix();
     if (format === "json") {
-      const blob = new Blob([JSON.stringify(timestamps, null, 2)], { type: "application/json" });
+      const blob = new Blob([JSON.stringify(timestamps, null, 2)], {
+        type: "application/json",
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -1874,11 +2111,14 @@ function safePostMessage(message: unknown) {
       a.click();
       URL.revokeObjectURL(url);
     } else if (format === "text") {
-      const plainText = timestamps.map(ts => {
-        const timeString = formatTimeString(ts.start, videoDuration);
-        const commentWithGuid = `${ts.comment} <!-- guid:${ts.guid} -->`.trimStart();
-        return `${timeString} ${commentWithGuid}`;
-      }).join("\n");
+      const plainText = timestamps
+        .map((ts) => {
+          const timeString = formatTimeString(ts.start, videoDuration);
+          const commentWithGuid =
+            `${ts.comment} <!-- guid:${ts.guid} -->`.trimStart();
+          return `${timeString} ${commentWithGuid}`;
+        })
+        .join("\n");
       const blob = new Blob([plainText], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1891,7 +2131,7 @@ function safePostMessage(message: unknown) {
 
   function displayPaneError(message) {
     if (!pane || !list) {
-      log("Timekeeper error:", message, 'error');
+      log("Timekeeper error:", message, "error");
       return;
     }
 
@@ -1910,7 +2150,9 @@ function safePostMessage(message: unknown) {
   }
 
   function removeSeekbarMarkers() {
-    document.querySelectorAll(".ytls-marker").forEach(marker => marker.remove());
+    document
+      .querySelectorAll(".ytls-marker")
+      .forEach((marker) => marker.remove());
   }
 
   function clampPaneToViewport() {
@@ -1974,11 +2216,15 @@ function safePostMessage(message: unknown) {
 
     // Disconnect any observers that may have been created for the pane
     if (paneObserver) {
-      try { paneObserver.disconnect(); } catch (_) {}
+      try {
+        paneObserver.disconnect();
+      } catch (_) {}
       paneObserver = null;
     }
     if (paneResizeObserver) {
-      try { paneResizeObserver.disconnect(); } catch (_) {}
+      try {
+        paneResizeObserver.disconnect();
+      } catch (_) {}
       paneResizeObserver = null;
     }
 
@@ -2008,7 +2254,7 @@ function safePostMessage(message: unknown) {
     removeSeekbarMarkers();
 
     // Clear all pending comment saves
-    commentSaveTimeouts.forEach(timeout => clearTimeout(timeout));
+    commentSaveTimeouts.forEach((timeout) => clearTimeout(timeout));
     commentSaveTimeouts.clear();
 
     if (loadTimeoutId) {
@@ -2024,8 +2270,6 @@ function safePostMessage(message: unknown) {
       visibilityAnimationTimeoutId = null;
     }
 
-
-
     // Remove all event listeners to prevent memory leaks
     removeAllEventListeners();
 
@@ -2036,7 +2280,10 @@ function safePostMessage(message: unknown) {
       // Channel may already be closed
     }
 
-    if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
+    if (
+      settingsModalInstance &&
+      settingsModalInstance.parentNode === document.body
+    ) {
       document.body.removeChild(settingsModalInstance);
     }
     settingsModalInstance = null;
@@ -2044,15 +2291,16 @@ function safePostMessage(message: unknown) {
     isMouseOverTimestamps = false;
     currentLoadedVideoId = null;
 
-
-
-
     if (paneObserver) {
-      try { paneObserver.disconnect(); } catch (_) {}
+      try {
+        paneObserver.disconnect();
+      } catch (_) {}
       paneObserver = null;
     }
     if (paneResizeObserver) {
-      try { paneResizeObserver.disconnect(); } catch (_) {}
+      try {
+        paneResizeObserver.disconnect();
+      } catch (_) {}
       paneResizeObserver = null;
     }
     if (pane && pane.parentNode) {
@@ -2089,21 +2337,24 @@ function safePostMessage(message: unknown) {
       lastValidatedPlayer = null;
       return {
         ok: false,
-        message: "Timekeeper cannot determine the current video ID. Please refresh the page or open a standard YouTube watch URL."
+        message:
+          "Timekeeper cannot determine the current video ID. Please refresh the page or open a standard YouTube watch URL.",
       };
     }
 
     const playerInstance = await waitForPlayerWithMethods();
     if (!hasRequiredPlayerMethods(playerInstance)) {
       const missingMethods = missingPlayerMethods(playerInstance);
-      const missingDetail = missingMethods.length ? ` Missing methods: ${missingMethods.join(", ")}.` : "";
+      const missingDetail = missingMethods.length
+        ? ` Missing methods: ${missingMethods.join(", ")}.`
+        : "";
       const baseMessage = playerInstance
         ? "Timekeeper cannot access the YouTube player API."
         : "Timekeeper cannot find the YouTube player on this page.";
       lastValidatedPlayer = null;
       return {
         ok: false,
-        message: `${baseMessage}${missingDetail} Try refreshing once playback is ready.`
+        message: `${baseMessage}${missingDetail} Try refreshing once playback is ready.`,
       };
     }
 
@@ -2112,7 +2363,7 @@ function safePostMessage(message: unknown) {
     return {
       ok: true,
       player: playerInstance,
-      videoId
+      videoId,
     };
   }
 
@@ -2138,25 +2389,31 @@ function safePostMessage(message: unknown) {
 
       const { videoId } = validation;
 
-
-
       let finalTimestampsToDisplay = [];
 
       try {
         const dbTimestamps = await loadFromIndexedDB(videoId);
         if (dbTimestamps) {
           // Ensure all timestamps from DB have GUIDs
-          finalTimestampsToDisplay = dbTimestamps.map(ts => ({
+          finalTimestampsToDisplay = dbTimestamps.map((ts) => ({
             ...ts,
-            guid: ts.guid || crypto.randomUUID()
+            guid: ts.guid || crypto.randomUUID(),
           }));
-          log(`Loaded ${finalTimestampsToDisplay.length} timestamps from IndexedDB for ${videoId}`);
+          log(
+            `Loaded ${finalTimestampsToDisplay.length} timestamps from IndexedDB for ${videoId}`,
+          );
         } else {
           log(`No timestamps found in IndexedDB for ${videoId}`);
         }
       } catch (dbError) {
-        log(`Failed to load timestamps from IndexedDB for ${videoId}:`, dbError, 'error');
-        displayPaneError("Failed to load timestamps from IndexedDB. Try refreshing the page.");
+        log(
+          `Failed to load timestamps from IndexedDB for ${videoId}:`,
+          dbError,
+          "error",
+        );
+        displayPaneError(
+          "Failed to load timestamps from IndexedDB. Try refreshing the page.",
+        );
         updateSeekbarMarkers();
         return;
       }
@@ -2169,20 +2426,31 @@ function safePostMessage(message: unknown) {
         // Build as a document fragment so we can defer appending to the live DOM
         // while show animations are running.
         const frag = document.createDocumentFragment();
-        finalTimestampsToDisplay.forEach(ts => {
+        finalTimestampsToDisplay.forEach((ts) => {
           // Construct LI without appending to the live list
-          const input = addTimestamp(ts.start, ts.comment, true, ts.guid, false);
+          const input = addTimestamp(
+            ts.start,
+            ts.comment,
+            true,
+            ts.guid,
+            false,
+          );
           const li = (input as any).__ytls_li as HTMLLIElement | undefined;
           if (li) frag.appendChild(li);
         });
 
         // If showing animation is running, defer appending until animation completes
-        const isShowingAnimation = pane && pane.classList.contains('ytls-zoom-in') && visibilitySizingTimeoutId != null;
+        const isShowingAnimation =
+          pane &&
+          pane.classList.contains("ytls-zoom-in") &&
+          visibilitySizingTimeoutId != null;
         if (isShowingAnimation) {
-          log('Deferring timestamp DOM append until show animation completes');
+          log("Deferring timestamp DOM append until show animation completes");
           pendingTimestampsFragment = frag;
           if (!pendingTimestampsPromise) {
-            pendingTimestampsPromise = new Promise<void>((resolve) => { pendingTimestampsResolve = resolve; });
+            pendingTimestampsPromise = new Promise<void>((resolve) => {
+              pendingTimestampsResolve = resolve;
+            });
           }
           // Wait until the fragment is appended by the visibility timeout handler
           await pendingTimestampsPromise;
@@ -2190,10 +2458,13 @@ function safePostMessage(message: unknown) {
           // Append immediately
           if (list) {
             list.appendChild(frag);
+            invalidateLatestTimestampValue();
+            updateTimeDifferences();
             updateIndentMarkers();
             updateSeekbarMarkers();
             // Ensure scroll area is recalculated after DOM updates
-            if (recalculateTimestampsAreaFn) requestAnimationFrame(recalculateTimestampsAreaFn);
+            if (recalculateTimestampsAreaFn)
+              requestAnimationFrame(recalculateTimestampsAreaFn);
           }
         }
 
@@ -2204,16 +2475,19 @@ function safePostMessage(message: unknown) {
         shouldRestoreScroll = false;
       } else {
         clearTimestampsDisplay(); // Ensure UI is cleared if no timestamps are found
-        showListPlaceholder('No timestamps for this video');
+        showListPlaceholder("No timestamps for this video");
         updateSeekbarMarkers(); // Ensure seekbar markers are cleared
         // Sync empty timestamps to centralized state
         setTimestampsInState([]);
         // Still recalculate area in case list is now empty
-        if (recalculateTimestampsAreaFn) requestAnimationFrame(recalculateTimestampsAreaFn);
+        if (recalculateTimestampsAreaFn)
+          requestAnimationFrame(recalculateTimestampsAreaFn);
       }
     } catch (err) {
-      log("Unexpected error while loading timestamps:", err, 'error');
-      displayPaneError("Timekeeper encountered an unexpected error while loading timestamps. Check the console for details.");
+      log("Unexpected error while loading timestamps:", err, "error");
+      displayPaneError(
+        "Timekeeper encountered an unexpected error while loading timestamps. Check the console for details.",
+      );
     } finally {
       // If timestamps were deferred for animation, wait until they're appended before restoring scroll
       if (pendingTimestampsPromise) {
@@ -2221,9 +2495,10 @@ function safePostMessage(message: unknown) {
       }
       requestAnimationFrame(restoreScrollPosition);
       // Ensure scroll area is recalculated after loading timestamps
-      if (recalculateTimestampsAreaFn) requestAnimationFrame(recalculateTimestampsAreaFn);
+      if (recalculateTimestampsAreaFn)
+        requestAnimationFrame(recalculateTimestampsAreaFn);
       // If there is no error being shown, ensure a friendly placeholder appears when the list is empty
-      if (list && !list.querySelector('.ytls-error-message')) {
+      if (list && !list.querySelector(".ytls-error-message")) {
         ensureEmptyPlaceholder();
       }
     }
@@ -2238,7 +2513,9 @@ function safePostMessage(message: unknown) {
     }
 
     // Fallback to the clip method using the meta property
-    const clipIdMeta = document.querySelector<HTMLMetaElement>('meta[itemprop="identifier"]');
+    const clipIdMeta = document.querySelector<HTMLMetaElement>(
+      'meta[itemprop="identifier"]',
+    );
     if (clipIdMeta?.content) {
       return clipIdMeta.content; // Return the clip identifier if available
     }
@@ -2247,12 +2524,11 @@ function safePostMessage(message: unknown) {
     return null;
   }
 
-
-
-
-
   // Helper function to update time display with current video time
-  function updateTimeDisplay(currentSeconds: number | null = null, playerInstance: any = null) {
+  function updateTimeDisplay(
+    currentSeconds: number | null = null,
+    playerInstance: any = null,
+  ) {
     if (!timeDisplay) return;
 
     const video = getVideoElement();
@@ -2263,36 +2539,51 @@ function safePostMessage(message: unknown) {
     }
 
     // Get current time from parameter or player
-    const rawTime = currentSeconds !== null ? currentSeconds : (player ? player.getCurrentTime() : 0);
-    const seconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor(seconds / 60) % 60;
-    const s = seconds % 60;
+    const rawTime =
+      currentSeconds !== null
+        ? currentSeconds
+        : player
+          ? player.getCurrentTime()
+          : 0;
+    const seconds = Number.isFinite(rawTime)
+      ? Math.max(0, Math.floor(rawTime))
+      : Math.max(0, getLatestTimestampValue());
 
-    const { isLive } = player ? (player.getVideoData() || { isLive: false }) : { isLive: false };
+    const { isLive } = player
+      ? player.getVideoData() || { isLive: false }
+      : { isLive: false };
     const behindLive = player ? isBehindLiveEdge(player) : false;
 
-    const timestamps = list ? getTimestampItems().map(li => {
-      const timeLink = li.querySelector('a[data-time]');
-      return timeLink ? parseFloat(timeLink.getAttribute('data-time') ?? "0") : 0;
-    }) : [];
+    const timestamps = list
+      ? getTimestampItems().map((li) => {
+          const timeLink = li.querySelector("a[data-time]");
+          return timeLink
+            ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
+            : 0;
+        })
+      : [];
 
     let timestampDisplay = "";
     if (timestamps.length > 0) {
       if (isLive) {
         const currentTimeMinutes = Math.max(1, seconds / 60);
-        const liveTimestamps = timestamps.filter(time => time <= seconds);
+        const liveTimestamps = timestamps.filter((time) => time <= seconds);
         if (liveTimestamps.length > 0) {
-          const timestampsPerMin = (liveTimestamps.length / currentTimeMinutes).toFixed(2);
+          const timestampsPerMin = (
+            liveTimestamps.length / currentTimeMinutes
+          ).toFixed(2);
           if (parseFloat(timestampsPerMin) > 0) {
             timestampDisplay = ` (${timestampsPerMin}/min)`;
           }
         }
       } else {
         const durationSeconds = player ? player.getDuration() : 0;
-        const validDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
-          ? durationSeconds
-          : (video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0);
+        const validDuration =
+          Number.isFinite(durationSeconds) && durationSeconds > 0
+            ? durationSeconds
+            : video && Number.isFinite(video.duration) && video.duration > 0
+              ? video.duration
+              : 0;
         const totalMinutes = Math.max(1, validDuration / 60);
         const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(1);
         if (parseFloat(timestampsPerMin) > 0) {
@@ -2301,7 +2592,7 @@ function safePostMessage(message: unknown) {
       }
     }
 
-    timeDisplay.textContent = `${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
+    timeDisplay.textContent = `${formatTimeString(seconds)}${timestampDisplay}`;
     timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
   }
 
@@ -2325,9 +2616,11 @@ function safePostMessage(message: unknown) {
       // Update playback speed display to stay in sync with player
       try {
         if (playbackSpeedDisplay) {
-          const rate = player ? (Number(player.getPlaybackRate()) || 1) : 1;
+          const rate = player ? Number(player.getPlaybackRate()) || 1 : 1;
           const rateFormatted = Math.round(rate * 100) / 100;
-          const display = rateFormatted.toFixed(2).replace(/\.0+?$|(?<=\.[0-9])0+$/g, '');
+          const display = rateFormatted
+            .toFixed(2)
+            .replace(/\.0+?$|(?<=\.[0-9])0+$/g, "");
           playbackSpeedDisplay.textContent = `${display}x`;
         }
       } catch (_) {}
@@ -2341,11 +2634,11 @@ function safePostMessage(message: unknown) {
       try {
         const url = new URL(window.location.href);
         if (seconds !== null && Number.isFinite(seconds)) {
-          url.searchParams.set('t', `${Math.floor(seconds)}s`);
+          url.searchParams.set("t", `${Math.floor(seconds)}s`);
         } else {
-          url.searchParams.delete('t');
+          url.searchParams.delete("t");
         }
-        window.history.replaceState({}, '', url.toString());
+        window.history.replaceState({}, "", url.toString());
       } catch (err) {
         // Silently fail if URL manipulation doesn't work
       }
@@ -2355,14 +2648,16 @@ function safePostMessage(message: unknown) {
     const handlePause = () => {
       const player = getActivePlayer();
       const rawTime = player ? player.getCurrentTime() : NaN;
-      const currentTime = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
+      const currentTime = Number.isFinite(rawTime)
+        ? Math.max(0, Math.floor(rawTime))
+        : Math.max(0, getLatestTimestampValue());
       if (Number.isFinite(currentTime)) {
         updateUrlTimeParam(currentTime);
         try {
           // Only update highlight automatically if the pointer is not over the UI
           autoHighlightNearest(true);
         } catch (e) {
-          log('Failed to highlight nearest timestamp on pause:', e, 'warn');
+          log("Failed to highlight nearest timestamp on pause:", e, "warn");
         }
       }
     };
@@ -2373,12 +2668,14 @@ function safePostMessage(message: unknown) {
       try {
         const player = getActivePlayer();
         const rawTime = player ? player.getCurrentTime() : NaN;
-        const currentTime = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
+        const currentTime = Number.isFinite(rawTime)
+          ? Math.max(0, Math.floor(rawTime))
+          : Math.max(0, getLatestTimestampValue());
         if (Number.isFinite(currentTime)) {
           autoHighlightNearest(true);
         }
       } catch (e) {
-        log('Failed to highlight nearest timestamp on play:', e, 'warn');
+        log("Failed to highlight nearest timestamp on play:", e, "warn");
       }
     };
 
@@ -2425,23 +2722,21 @@ function safePostMessage(message: unknown) {
     buildExportPayload,
     exportAllTimestamps,
     buildExportCsvPayload,
-    exportAllTimestampsCsv
+    exportAllTimestampsCsv,
   } = TimestampModel;
-
-
-
 
   function saveUIVisibilityState() {
     if (!pane) return;
 
     const isVisible = pane.style.display !== "none";
-    saveGlobalSettings('uiVisible', isVisible);
+    saveGlobalSettings("uiVisible", isVisible);
   }
 
   function syncToggleButtons(visibilityOverride?: boolean) {
-    const isVisible = typeof visibilityOverride === "boolean"
-      ? visibilityOverride
-      : (!!pane && pane.style.display !== "none");
+    const isVisible =
+      typeof visibilityOverride === "boolean"
+        ? visibilityOverride
+        : !!pane && pane.style.display !== "none";
 
     const headerButton = document.getElementById("ytls-header-button");
     if (headerButton instanceof HTMLButtonElement) {
@@ -2458,53 +2753,59 @@ function safePostMessage(message: unknown) {
   function loadUIVisibilityState() {
     if (!pane) return;
 
-    loadGlobalSettings('uiVisible').then(value => {
-      const parsed = z.boolean().safeParse(value);
-      const isVisible = parsed.success ? parsed.data : undefined;
+    loadGlobalSettings("uiVisible")
+      .then((value) => {
+        const parsed = z.boolean().safeParse(value);
+        const isVisible = parsed.success ? parsed.data : undefined;
 
-      if (typeof isVisible === 'boolean') {
-        if (isVisible) {
+        if (typeof isVisible === "boolean") {
+          if (isVisible) {
+            pane.style.display = "flex";
+            // Apply zoom-in animation when showing initially
+            pane.classList.remove("ytls-zoom-out");
+            pane.classList.add("ytls-zoom-in");
+          } else {
+            pane.style.display = "none";
+          }
+          syncToggleButtons(isVisible);
+        } else {
+          if (!parsed.success && value !== undefined) {
+            log(
+              "UI visibility state failed validation, defaulting to visible",
+              parsed.error.format(),
+              "warn",
+            );
+          }
+          // Default to visible if not found
           pane.style.display = "flex";
           // Apply zoom-in animation when showing initially
           pane.classList.remove("ytls-zoom-out");
           pane.classList.add("ytls-zoom-in");
-        } else {
-          pane.style.display = "none";
+          syncToggleButtons(true);
         }
-        syncToggleButtons(isVisible);
-      } else {
-        if (!parsed.success && value !== undefined) {
-          log('UI visibility state failed validation, defaulting to visible', parsed.error.format(), 'warn');
-        }
-        // Default to visible if not found
+      })
+      .catch((err) => {
+        log("Failed to load UI visibility state:", err, "error");
+        // Default to visible on error
         pane.style.display = "flex";
         // Apply zoom-in animation when showing initially
         pane.classList.remove("ytls-zoom-out");
         pane.classList.add("ytls-zoom-in");
         syncToggleButtons(true);
-      }
-    }).catch(err => {
-      log("Failed to load UI visibility state:", err, 'error');
-      // Default to visible on error
-      pane.style.display = "flex";
-      // Apply zoom-in animation when showing initially
-      pane.classList.remove("ytls-zoom-out");
-      pane.classList.add("ytls-zoom-in");
-      syncToggleButtons(true);
-    });
+      });
   }
 
   function togglePaneVisibility(force?: boolean) {
     if (!pane) {
-      log('ERROR: togglePaneVisibility called but pane is null');
+      log("ERROR: togglePaneVisibility called but pane is null");
       return;
     }
 
     // If pane is not in DOM, append it before toggling
     if (!document.body.contains(pane)) {
-      log('Pane not in DOM during toggle, appending it');
+      log("Pane not in DOM during toggle, appending it");
       // Remove any stray panes first
-      document.querySelectorAll("#ytls-pane").forEach(el => {
+      document.querySelectorAll("#ytls-pane").forEach((el) => {
         if (el !== pane) el.remove();
       });
       document.body.appendChild(pane);
@@ -2513,7 +2814,9 @@ function safePostMessage(message: unknown) {
     // Verify no duplicate panes exist
     const allPanes = document.querySelectorAll("#ytls-pane");
     if (allPanes.length > 1) {
-      log(`ERROR: Multiple panes detected in togglePaneVisibility (${allPanes.length}), cleaning up`);
+      log(
+        `ERROR: Multiple panes detected in togglePaneVisibility (${allPanes.length}), cleaning up`,
+      );
       allPanes.forEach((el) => {
         if (el !== pane) el.remove();
       });
@@ -2552,7 +2855,7 @@ function safePostMessage(message: unknown) {
           autoHighlightNearest(true);
         } catch (e) {
           // Be resilient if player isn't ready; swallow errors
-          log('Failed to scroll to nearest timestamp after toggle:', e, 'warn');
+          log("Failed to scroll to nearest timestamp after toggle:", e, "warn");
         }
 
         visibilitySizingTimeoutId = null;
@@ -2570,7 +2873,7 @@ function safePostMessage(message: unknown) {
 
   function processImportedData(contentString) {
     if (!list) {
-      log("UI is not initialized; cannot import timestamps.", 'warn');
+      log("UI is not initialized; cannot import timestamps.", "warn");
       return;
     }
     let processedSuccessfully = false;
@@ -2582,38 +2885,50 @@ function safePostMessage(message: unknown) {
       // Check if it's a direct array of timestamps
       if (Array.isArray(parsed)) {
         timestamps = parsed;
-      } else if (typeof parsed === 'object' && parsed !== null) {
+      } else if (typeof parsed === "object" && parsed !== null) {
         // Check if it's the full export format with ytls- keys
         const currentVideoId = currentLoadedVideoId;
         if (currentVideoId) {
           const key = `timekeeper-${currentVideoId}`;
           if (parsed[key] && Array.isArray(parsed[key].timestamps)) {
             timestamps = parsed[key].timestamps;
-            log(`Found timestamps for current video (${currentVideoId}) in export format`, 'info');
+            log(
+              `Found timestamps for current video (${currentVideoId}) in export format`,
+              "info",
+            );
           }
         }
 
         // If we didn't find a matching video, check if there's only one video in the export
         if (!timestamps) {
-          const keys = Object.keys(parsed).filter(k => k.startsWith('ytls-'));
+          const keys = Object.keys(parsed).filter((k) => k.startsWith("ytls-"));
           if (keys.length === 1 && Array.isArray(parsed[keys[0]].timestamps)) {
             timestamps = parsed[keys[0]].timestamps;
             const videoId = parsed[keys[0]].video_id;
-            log(`Found timestamps for video ${videoId} in export format`, 'info');
+            log(
+              `Found timestamps for video ${videoId} in export format`,
+              "info",
+            );
           }
         }
       }
 
       if (timestamps && Array.isArray(timestamps)) {
         // Check if all items are valid timestamp objects
-        const isValidJsonData = timestamps.every(ts => typeof ts.start === 'number' && typeof ts.comment === 'string');
+        const isValidJsonData = timestamps.every(
+          (ts) =>
+            typeof ts.start === "number" && typeof ts.comment === "string",
+        );
         if (isValidJsonData) {
           // Single pass: Process each timestamp
-          timestamps.forEach(ts => {
+          timestamps.forEach((ts) => {
             if (ts.guid) {
-              const existingLi = getTimestampItems().find(li => li.dataset.guid === ts.guid);
+              const existingLi = getTimestampItems().find(
+                (li) => li.dataset.guid === ts.guid,
+              );
               if (existingLi) {
-                const commentInput = existingLi.querySelector<HTMLInputElement>('input');
+                const commentInput =
+                  existingLi.querySelector<HTMLInputElement>("input");
                 if (commentInput) {
                   commentInput.value = ts.comment;
                 }
@@ -2626,10 +2941,16 @@ function safePostMessage(message: unknown) {
           });
           processedSuccessfully = true;
         } else {
-          log("Parsed JSON array, but items are not in the expected timestamp format. Trying as plain text.", 'warn');
+          log(
+            "Parsed JSON array, but items are not in the expected timestamp format. Trying as plain text.",
+            "warn",
+          );
         }
       } else {
-        log("Parsed JSON, but couldn't find valid timestamps. Trying as plain text.", 'warn');
+        log(
+          "Parsed JSON, but couldn't find valid timestamps. Trying as plain text.",
+          "warn",
+        );
       }
     } catch (e) {
       // JSON parsing failed or was not the correct structure, proceed to plain text parsing
@@ -2637,10 +2958,13 @@ function safePostMessage(message: unknown) {
 
     if (!processedSuccessfully) {
       // Handle plain text input
-      const lines = contentString.split("\n").map(line => line.trim()).filter(line => line);
+      const lines = contentString
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line);
       if (lines.length > 0) {
         let matchedAnyLine = false;
-        lines.forEach(line => {
+        lines.forEach((line) => {
           const match = line.match(/^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*(.*)$/);
           if (match) {
             matchedAnyLine = true;
@@ -2656,20 +2980,25 @@ function safePostMessage(message: unknown) {
             const guidMatch = remainingText.match(/<!--\s*guid:([^>]+?)\s*-->/);
             if (guidMatch) {
               guid = guidMatch[1].trim();
-              comment = remainingText.replace(/<!--\s*guid:[^>]+?\s*-->/, '').trim();
+              comment = remainingText
+                .replace(/<!--\s*guid:[^>]+?\s*-->/, "")
+                .trim();
             }
 
             // First try to match by GUID if available, then fall back to timestamp matching
             let existingLi: HTMLLIElement | undefined;
             if (guid) {
-              existingLi = getTimestampItems().find(li => li.dataset.guid === guid);
+              existingLi = getTimestampItems().find(
+                (li) => li.dataset.guid === guid,
+              );
             }
             if (!existingLi && !guid) {
-              existingLi = getTimestampItems().find(li => {
+              existingLi = getTimestampItems().find((li) => {
                 if (li.dataset.guid) {
                   return false;
                 }
-                const timeLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
+                const timeLink =
+                  li.querySelector<HTMLAnchorElement>("a[data-time]");
                 const timeValue = timeLink?.dataset.time;
                 if (!timeValue) {
                   return false;
@@ -2679,7 +3008,8 @@ function safePostMessage(message: unknown) {
               });
             }
             if (existingLi) {
-              const commentInput = existingLi.querySelector<HTMLInputElement>('input');
+              const commentInput =
+                existingLi.querySelector<HTMLInputElement>("input");
               if (commentInput) {
                 commentInput.value = comment;
               }
@@ -2695,22 +3025,23 @@ function safePostMessage(message: unknown) {
     }
 
     if (processedSuccessfully) {
-      log('Timestamps changed: Imported timestamps from file/clipboard');
+      log("Timestamps changed: Imported timestamps from file/clipboard");
       updateIndentMarkers();
       saveTimestamps(currentLoadedVideoId);
       updateSeekbarMarkers();
       updateScroll();
       // alert("Timestamps loaded and merged successfully!");
     } else {
-      alert("Failed to parse content. Please ensure it is in the correct JSON or plain text format.");
+      alert(
+        "Failed to parse content. Please ensure it is in the correct JSON or plain text format.",
+      );
     }
   }
-
 
   async function initializePaneIfNeeded() {
     // Prevent concurrent initialization
     if (isPaneInitializing) {
-      log('Pane initialization already in progress, skipping duplicate call');
+      log("Pane initialization already in progress, skipping duplicate call");
       return;
     }
 
@@ -2722,366 +3053,495 @@ function safePostMessage(message: unknown) {
 
     try {
       // Remove any stray panes before creating a new one
-      document.querySelectorAll("#ytls-pane").forEach(el => el.remove());
+      document.querySelectorAll("#ytls-pane").forEach((el) => el.remove());
 
-    pane = document.createElement("div");
-    header = document.createElement("div");
-    list = document.createElement("ul");
-    btns = document.createElement("div");
-    timeDisplay = document.createElement("span");
-    style = document.createElement("style");
-    versionDisplay = document.createElement("span");
-    backupStatusIndicator = document.createElement("span");
-    backupStatusIndicator.classList.add("ytls-backup-indicator");
-    backupStatusIndicator.style.cursor = "pointer";
-    backupStatusIndicator.style.backgroundColor = "#666"; // Default gray color
-    backupStatusIndicator.onclick = (e) => {
-      e.stopPropagation();
-      toggleSettingsModal('drive');
-    };
+      pane = document.createElement("div");
+      header = document.createElement("div");
+      list = document.createElement("ul");
+      btns = document.createElement("div");
+      timeDisplay = document.createElement("span");
+      style = document.createElement("style");
+      versionDisplay = document.createElement("span");
+      backupStatusIndicator = document.createElement("span");
+      backupStatusIndicator.classList.add("ytls-backup-indicator");
+      backupStatusIndicator.style.cursor = "pointer";
+      backupStatusIndicator.style.backgroundColor = "#666"; // Default gray color
+      backupStatusIndicator.onclick = (e) => {
+        e.stopPropagation();
+        toggleSettingsModal("drive");
+      };
 
-    // Add event listeners to `list` after it is initialized
-    list.addEventListener("mouseenter", () => {
-      isMouseOverTimestamps = true;
-      TimestampView.setMouseOverTimestamps(true);
-      suppressSortUntilRefocus = false;
-       });
+      // Add event listeners to `list` after it is initialized
+      list.addEventListener("mouseenter", () => {
+        isMouseOverTimestamps = true;
+        TimestampView.setMouseOverTimestamps(true);
+        suppressSortUntilRefocus = false;
+      });
 
-    list.addEventListener("mouseleave", () => {
-      isMouseOverTimestamps = false;
-      TimestampView.setMouseOverTimestamps(false);
-      // Hide any visible tooltips when leaving the list
-      try { hideActiveTooltip(); } catch (_) {}
-      if (suppressSortUntilRefocus) {
-        return;
-      }
-      autoHighlightNearest(false);
+      list.addEventListener("mouseleave", () => {
+        isMouseOverTimestamps = false;
+        TimestampView.setMouseOverTimestamps(false);
+        // Hide any visible tooltips when leaving the list
+        try {
+          hideActiveTooltip();
+        } catch (_) {}
+        if (suppressSortUntilRefocus) {
+          return;
+        }
+        autoHighlightNearest(false);
 
-      // Preserve focus on the currently focused timestamp when sorting
-      let focusedTimestampGuid: string | null = null;
-      if (document.activeElement instanceof HTMLInputElement && list.contains(document.activeElement)) {
-        const activeLi = document.activeElement.closest('li');
-        focusedTimestampGuid = activeLi?.dataset.guid ?? null;
-      }
+        // Preserve focus on the currently focused timestamp when sorting
+        let focusedTimestampGuid: string | null = null;
+        if (
+          document.activeElement instanceof HTMLInputElement &&
+          list.contains(document.activeElement)
+        ) {
+          const activeLi = document.activeElement.closest("li");
+          focusedTimestampGuid = activeLi?.dataset.guid ?? null;
+        }
 
-      // Sort and restore focus
-      sortTimestampsAndUpdateDisplay();
+        // Sort and restore focus
+        sortTimestampsAndUpdateDisplay();
 
-      if (focusedTimestampGuid) {
-        const targetLi = getTimestampItems().find(li => li.dataset.guid === focusedTimestampGuid);
-        const targetInput = targetLi?.querySelector<HTMLInputElement>('input');
-        if (targetInput) {
-          try {
-            targetInput.focus({ preventScroll: true });
-          } catch {
-            // Focus restoration failed, continue
+        if (focusedTimestampGuid) {
+          const targetLi = getTimestampItems().find(
+            (li) => li.dataset.guid === focusedTimestampGuid,
+          );
+          const targetInput =
+            targetLi?.querySelector<HTMLInputElement>("input");
+          if (targetInput) {
+            try {
+              targetInput.focus({ preventScroll: true });
+            } catch {
+              // Focus restoration failed, continue
+            }
           }
         }
-      }
-    });
+      });
 
-  pane.id = "ytls-pane";
-  header.id = "ytls-pane-header";
+      pane.id = "ytls-pane";
+      header.id = "ytls-pane-header";
 
-  header.addEventListener("dblclick", (event) => {
-    const target = event.target instanceof HTMLElement ? event.target : null;
-    if (target && (target.closest("a") || target.closest("button") || target.closest("#ytls-current-time") || target.closest("#ytls-playback-speed") || target.closest(".ytls-version-display") || target.closest(".ytls-backup-indicator"))) {
-      return;
-    }
-    event.preventDefault();
-    togglePaneVisibility(false);
-  });
+      header.addEventListener("dblclick", (event) => {
+        const target =
+          event.target instanceof HTMLElement ? event.target : null;
+        if (
+          target &&
+          (target.closest("a") ||
+            target.closest("button") ||
+            target.closest("#ytls-current-time") ||
+            target.closest("#ytls-playback-speed") ||
+            target.closest(".ytls-version-display") ||
+            target.closest(".ytls-backup-indicator"))
+        ) {
+          return;
+        }
+        event.preventDefault();
+        togglePaneVisibility(false);
+      });
 
-  // --- Prevent events from the Timekeeper UI reaching the YouTube UI ---
-  // Stop propagation for common user interactions so underlying YouTube handlers don't react.
-  // IMPORTANT: use bubble-phase listeners (default) so the event reaches Timekeeper's inner
-  // controls first, then is stopped from reaching the page-level handlers.
-  const stopPropagation = (e: Event) => { try { e.stopPropagation(); } catch (_) {} };
-  // Don't block 'mouseup'/'pointerup'/'touchend' so document-level handlers (drag end) still run.
-  ["click", "dblclick", "mousedown", "pointerdown", "touchstart", "wheel"].forEach(ev => {
-    pane.addEventListener(ev, stopPropagation); // default: bubble phase
-  });
-  // Also prevent keyboard events from reaching the page after Timekeeper handles them
-  pane.addEventListener('keydown', (e) => { try { e.stopPropagation(); } catch (_) {} });
-  pane.addEventListener('keyup', (e) => { try { e.stopPropagation(); } catch (_) {} });
-  // focus/blur don't bubble reliably - keep capture to prevent page from reacting
-  pane.addEventListener('focus', (e) => { try { e.stopPropagation(); } catch (_) {} }, true);
-  pane.addEventListener('blur', (e) => { try { e.stopPropagation(); } catch (_) {} }, true);
-
-
-    const scriptVersion = GM_info.script.version; // Get script version
-    versionDisplay.textContent = `v${scriptVersion}`;
-    versionDisplay.classList.add("ytls-version-display"); // Add class for CSS targeting
-
-    // Create a wrapper for version and backup indicator
-    const versionWrapper = document.createElement("span");
-    versionWrapper.style.display = "inline-flex";
-    versionWrapper.style.alignItems = "center";
-    versionWrapper.style.gap = "6px";
-    versionWrapper.appendChild(versionDisplay);
-    versionWrapper.appendChild(backupStatusIndicator);
-
-    timeDisplay.id = "ytls-current-time";
-    timeDisplay.textContent = "—";
-    timeDisplay.style.cursor = "default";
-
-    // Dynamic tooltip getter for timeDisplay - shows tooltip only during live streams
-    const getTimeDisplayTooltip = () => {
-      const player = getActivePlayer();
-      const { isLive } = player ? (player.getVideoData() || { isLive: false }) : { isLive: false };
-      return isLive ? "Skip to live" : "";
-    };
-
-    // Add tooltip to timeDisplay with dynamic text
-    addTooltip(timeDisplay, getTimeDisplayTooltip);
-
-    // Create playback speed display that shows current speed and toggles between 1x and 2x on click
-    playbackSpeedDisplay = document.createElement("span");
-    playbackSpeedDisplay.id = "ytls-playback-speed";
-    playbackSpeedDisplay.textContent = "1x"; // initial display
-    playbackSpeedDisplay.style.cursor = "pointer";
-    playbackSpeedDisplay.style.userSelect = "none";
-    addTooltip(playbackSpeedDisplay, () => `Current playback speed. Click to toggle between 1x and 2x.`);
-    playbackSpeedDisplay.onclick = () => {
-      const player = getActivePlayer();
-      if (player) {
+      // --- Prevent events from the Timekeeper UI reaching the YouTube UI ---
+      // Stop propagation for common user interactions so underlying YouTube handlers don't react.
+      // IMPORTANT: use bubble-phase listeners (default) so the event reaches Timekeeper's inner
+      // controls first, then is stopped from reaching the page-level handlers.
+      const stopPropagation = (e: Event) => {
         try {
-          const currentRate = Number(player.getPlaybackRate()) || 1;
-          const newRate = currentRate === 1 ? 2 : 1;
-          player.setPlaybackRate(newRate);
-          updatePlaybackSpeedUI();
+          e.stopPropagation();
         } catch (_) {}
+      };
+      // Don't block 'mouseup'/'pointerup'/'touchend' so document-level handlers (drag end) still run.
+      [
+        "click",
+        "dblclick",
+        "mousedown",
+        "pointerdown",
+        "touchstart",
+        "wheel",
+      ].forEach((ev) => {
+        pane.addEventListener(ev, stopPropagation); // default: bubble phase
+      });
+      // Also prevent keyboard events from reaching the page after Timekeeper handles them
+      pane.addEventListener("keydown", (e) => {
+        try {
+          e.stopPropagation();
+        } catch (_) {}
+      });
+      pane.addEventListener("keyup", (e) => {
+        try {
+          e.stopPropagation();
+        } catch (_) {}
+      });
+      // focus/blur don't bubble reliably - keep capture to prevent page from reacting
+      pane.addEventListener(
+        "focus",
+        (e) => {
+          try {
+            e.stopPropagation();
+          } catch (_) {}
+        },
+        true,
+      );
+      pane.addEventListener(
+        "blur",
+        (e) => {
+          try {
+            e.stopPropagation();
+          } catch (_) {}
+        },
+        true,
+      );
+
+      const scriptVersion = GM_info.script.version; // Get script version
+      versionDisplay.textContent = `v${scriptVersion}`;
+      versionDisplay.classList.add("ytls-version-display"); // Add class for CSS targeting
+
+      // Create a wrapper for version and backup indicator
+      const versionWrapper = document.createElement("span");
+      versionWrapper.style.display = "inline-flex";
+      versionWrapper.style.alignItems = "center";
+      versionWrapper.style.gap = "6px";
+      versionWrapper.appendChild(versionDisplay);
+      versionWrapper.appendChild(backupStatusIndicator);
+
+      timeDisplay.id = "ytls-current-time";
+      timeDisplay.textContent = "—";
+      timeDisplay.style.cursor = "default";
+
+      // Dynamic tooltip getter for timeDisplay - shows tooltip only during live streams
+      const getTimeDisplayTooltip = () => {
+        const player = getActivePlayer();
+        const { isLive } = player
+          ? player.getVideoData() || { isLive: false }
+          : { isLive: false };
+        return isLive ? "Skip to live" : "";
+      };
+
+      // Add tooltip to timeDisplay with dynamic text
+      addTooltip(timeDisplay, getTimeDisplayTooltip);
+
+      // Create playback speed display that shows current speed and toggles between 1x and 2x on click
+      playbackSpeedDisplay = document.createElement("span");
+      playbackSpeedDisplay.id = "ytls-playback-speed";
+      playbackSpeedDisplay.textContent = "1x"; // initial display
+      playbackSpeedDisplay.style.cursor = "pointer";
+      playbackSpeedDisplay.style.userSelect = "none";
+      addTooltip(
+        playbackSpeedDisplay,
+        () => `Current playback speed. Click to toggle between 1x and 2x.`,
+      );
+      playbackSpeedDisplay.onclick = () => {
+        const player = getActivePlayer();
+        if (player) {
+          try {
+            const currentRate = Number(player.getPlaybackRate()) || 1;
+            const newRate = currentRate === 1 ? 2 : 1;
+            player.setPlaybackRate(newRate);
+            updatePlaybackSpeedUI();
+          } catch (_) {}
+        }
+      };
+      // Prevent dragging and double-click from the clickable text itself
+      playbackSpeedDisplay.addEventListener("mousedown", (e) => {
+        e.stopPropagation();
+      });
+      playbackSpeedDisplay.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+      });
+      playbackSpeedDisplay.addEventListener("click", (e) => {
+        e.stopPropagation();
+      });
+
+      // Enable clicking on the current timestamp to jump to the latest point in the live stream (only for live streams)
+      timeDisplay.onclick = () => {
+        const player = getActivePlayer();
+        if (!player) return;
+        const { isLive } = player.getVideoData() || { isLive: false };
+        if (!isLive) return; // Only allow clicking during live streams
+
+        isSeeking = true;
+        player.seekToLiveHead();
+        setTimeout(() => {
+          isSeeking = false;
+        }, 500);
+      };
+
+      // Update cursor and interaction state based on live stream status
+      const updateTimeDisplayInteractivity = () => {
+        const player = getActivePlayer();
+        if (!player) {
+          timeDisplay.style.cursor = "default";
+          return;
+        }
+        const { isLive } = player.getVideoData() || { isLive: false };
+        timeDisplay.style.cursor = isLive ? "pointer" : "default";
+      };
+
+      // Sync playback speed display with current player rate
+      function updatePlaybackSpeedUI() {
+        if (!playbackSpeedDisplay) return;
+        const player = getActivePlayer();
+        const rate = player ? Number(player.getPlaybackRate()) || 1 : 1;
+        const display = formatSpeed(rate);
+        playbackSpeedDisplay.textContent = `${display}x`;
+        playbackSpeedDisplay.setAttribute(
+          "aria-label",
+          `Playback speed ${display}x`,
+        );
       }
-    };
-    // Prevent dragging and double-click from the clickable text itself
-    playbackSpeedDisplay.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-    playbackSpeedDisplay.addEventListener('dblclick', (e) => { e.stopPropagation(); });
-    playbackSpeedDisplay.addEventListener('click', (e) => { e.stopPropagation(); });
 
-    // Enable clicking on the current timestamp to jump to the latest point in the live stream (only for live streams)
-    timeDisplay.onclick = () => {
-      const player = getActivePlayer();
-      if (!player) return;
-      const { isLive } = player.getVideoData() || { isLive: false };
-      if (!isLive) return; // Only allow clicking during live streams
-
-      isSeeking = true;
-      player.seekToLiveHead();
-      setTimeout(() => { isSeeking = false; }, 500);
-    };
-
-    // Update cursor and interaction state based on live stream status
-    const updateTimeDisplayInteractivity = () => {
-      const player = getActivePlayer();
-      if (!player) {
-        timeDisplay.style.cursor = "default";
-        return;
-      }
-      const { isLive } = player.getVideoData() || { isLive: false };
-      timeDisplay.style.cursor = isLive ? "pointer" : "default";
-    };
-
-    // Sync playback speed display with current player rate
-    function updatePlaybackSpeedUI() {
-      if (!playbackSpeedDisplay) return;
-      const player = getActivePlayer();
-      const rate = player ? (Number(player.getPlaybackRate()) || 1) : 1;
-      const display = formatSpeed(rate);
-      playbackSpeedDisplay.textContent = `${display}x`;
-      playbackSpeedDisplay.setAttribute('aria-label', `Playback speed ${display}x`);
-    }
-
-    // Format a speed value to the minimal necessary digits: 2 -> "2", 2.5 -> "2.5", 2.25 -> "2.25"
-    function formatSpeed(n: number): string {
-      const r = Math.round(n * 100) / 100;
-      return r.toFixed(2).replace(/\.0+?$|(?<=\.[0-9])0+$/g, '');
-    }
-
-    // Helper function to update time display with current video time
-    function updateTimeDisplay(currentSeconds: number | null = null, playerInstance: any = null) {
-      if (!timeDisplay) return;
-
-      const video = getVideoElement();
-      const player = playerInstance || getActivePlayer();
-
-      if (!video && !player) {
-        return;
+      // Format a speed value to the minimal necessary digits: 2 -> "2", 2.5 -> "2.5", 2.25 -> "2.25"
+      function formatSpeed(n: number): string {
+        const r = Math.round(n * 100) / 100;
+        return r.toFixed(2).replace(/\.0+?$|(?<=\.[0-9])0+$/g, "");
       }
 
-      // Get current time from parameter or player
-      const rawTime = currentSeconds !== null ? currentSeconds : (player ? player.getCurrentTime() : 0);
-      const seconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
-      const h = Math.floor(seconds / 3600);
-      const m = Math.floor(seconds / 60) % 60;
-      const s = seconds % 60;
+      // Helper function to update time display with current video time
+      function updateTimeDisplay(
+        currentSeconds: number | null = null,
+        playerInstance: any = null,
+      ) {
+        if (!timeDisplay) return;
 
-      const { isLive } = player ? (player.getVideoData() || { isLive: false }) : { isLive: false };
-      const behindLive = player ? isBehindLiveEdge(player) : false;
+        const video = getVideoElement();
+        const player = playerInstance || getActivePlayer();
 
-      const timestamps = list ? getTimestampItems().map(li => {
-        const timeLink = li.querySelector('a[data-time]');
-        return timeLink ? parseFloat(timeLink.getAttribute('data-time') ?? "0") : 0;
-      }) : [];
+        if (!video && !player) {
+          return;
+        }
 
-      let timestampDisplay = "";
-      if (timestamps.length > 0) {
-        if (isLive) {
-          const currentTimeMinutes = Math.max(1, seconds / 60);
-          const liveTimestamps = timestamps.filter(time => time <= seconds);
-          if (liveTimestamps.length > 0) {
-            const timestampsPerMin = (liveTimestamps.length / currentTimeMinutes).toFixed(2);
+        // Get current time from parameter or player
+        const rawTime =
+          currentSeconds !== null
+            ? currentSeconds
+            : player
+              ? player.getCurrentTime()
+              : 0;
+        const seconds = Number.isFinite(rawTime)
+          ? Math.max(0, Math.floor(rawTime))
+          : Math.max(0, getLatestTimestampValue());
+
+        const { isLive } = player
+          ? player.getVideoData() || { isLive: false }
+          : { isLive: false };
+        const behindLive = player ? isBehindLiveEdge(player) : false;
+
+        const timestamps = list
+          ? getTimestampItems().map((li) => {
+              const timeLink = li.querySelector("a[data-time]");
+              return timeLink
+                ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
+                : 0;
+            })
+          : [];
+
+        let timestampDisplay = "";
+        if (timestamps.length > 0) {
+          if (isLive) {
+            const currentTimeMinutes = Math.max(1, seconds / 60);
+            const liveTimestamps = timestamps.filter((time) => time <= seconds);
+            if (liveTimestamps.length > 0) {
+              const timestampsPerMin = (
+                liveTimestamps.length / currentTimeMinutes
+              ).toFixed(2);
+              if (parseFloat(timestampsPerMin) > 0) {
+                timestampDisplay = ` (${timestampsPerMin}/min)`;
+              }
+            }
+          } else {
+            const durationSeconds = player ? player.getDuration() : 0;
+            const validDuration =
+              Number.isFinite(durationSeconds) && durationSeconds > 0
+                ? durationSeconds
+                : video && Number.isFinite(video.duration) && video.duration > 0
+                  ? video.duration
+                  : 0;
+            const totalMinutes = Math.max(1, validDuration / 60);
+            const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(
+              1,
+            );
             if (parseFloat(timestampsPerMin) > 0) {
               timestampDisplay = ` (${timestampsPerMin}/min)`;
             }
           }
-        } else {
-          const durationSeconds = player ? player.getDuration() : 0;
-          const validDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
-            ? durationSeconds
-            : (video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0);
-          const totalMinutes = Math.max(1, validDuration / 60);
-          const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(1);
-          if (parseFloat(timestampsPerMin) > 0) {
-            timestampDisplay = ` (${timestampsPerMin}/min)`;
-          }
+        }
+
+        timeDisplay.textContent = `${formatTimeString(seconds)}${timestampDisplay}`;
+        timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
+
+        // Update cursor state based on live stream status
+        updateTimeDisplayInteractivity();
+        // Update playback speed UI to reflect actual video rate
+        try {
+          updatePlaybackSpeedUI();
+        } catch (_) {}
+      }
+
+      function updateTime() {
+        // Skip updates during loading or seeking
+        if (isLoadingTimestamps || isSeeking) {
+          return;
+        }
+
+        const playerInstance = getActivePlayer();
+        if (!playerInstance) {
+          return;
+        }
+
+        const rawTime = playerInstance.getCurrentTime();
+        const currentSeconds = Number.isFinite(rawTime)
+          ? Math.max(0, Math.floor(rawTime))
+          : Math.max(0, getLatestTimestampValue());
+
+        updateTimeDisplay(currentSeconds, playerInstance);
+
+        // Only auto-highlight when the pointer is not over the UI; defer scrolling to mouse leave
+        const timestamps = list ? getTimestampItems() : [];
+        if (timestamps.length > 0) {
+          autoHighlightNearest(false, currentSeconds);
         }
       }
-
-      timeDisplay.textContent = `${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}${timestampDisplay}`;
-      timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
-
-      // Update cursor state based on live stream status
-      updateTimeDisplayInteractivity();
-      // Update playback speed UI to reflect actual video rate
-      try { updatePlaybackSpeedUI(); } catch (_) {}
-    }
-
-    function updateTime() {
-      // Skip updates during loading or seeking
-      if (isLoadingTimestamps || isSeeking) {
-        return;
+      updateTime();
+      if (timeUpdateIntervalId) {
+        clearInterval(timeUpdateIntervalId);
       }
+      timeUpdateIntervalId = setInterval(updateTime, 1000);
+      btns.id = "ytls-buttons";
 
-      const playerInstance = getActivePlayer();
-      if (!playerInstance) {
-        return;
-      }
+      // Reusable modal helper functions
+      const createModalCloseHandler = (
+        modal: HTMLElement,
+        onClose?: () => void,
+      ) => {
+        return () => {
+          modal.classList.remove("ytls-fade-in");
+          modal.classList.add("ytls-fade-out");
+          setTimeout(() => {
+            if (document.body.contains(modal)) {
+              document.body.removeChild(modal);
+            }
+            if (onClose) {
+              onClose();
+            }
+          }, 300);
+        };
+      };
 
-      const rawTime = playerInstance.getCurrentTime();
-      const currentSeconds = Number.isFinite(rawTime) ? Math.max(0, Math.floor(rawTime)) : Math.max(0, getLatestTimestampValue());
+      const createEscapeKeyHandler = (closeHandler: () => void) => {
+        return (event: KeyboardEvent) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            closeHandler();
+          }
+        };
+      };
 
-      updateTimeDisplay(currentSeconds, playerInstance);
-
-      // Only auto-highlight when the pointer is not over the UI; defer scrolling to mouse leave
-      const timestamps = list ? getTimestampItems() : [];
-      if (timestamps.length > 0) {
-        autoHighlightNearest(false, currentSeconds);
-      }
-    }
-    updateTime();
-    if (timeUpdateIntervalId) {
-      clearInterval(timeUpdateIntervalId);
-    }
-    timeUpdateIntervalId = setInterval(updateTime, 1000);
-    btns.id = "ytls-buttons";
-
-    // Reusable modal helper functions
-    const createModalCloseHandler = (modal: HTMLElement, onClose?: () => void) => {
-      return () => {
-        modal.classList.remove("ytls-fade-in");
-        modal.classList.add("ytls-fade-out");
+      const registerModalEscapeHandler = (
+        escapeHandler: (event: KeyboardEvent) => void,
+      ) => {
         setTimeout(() => {
-          if (document.body.contains(modal)) {
-            document.body.removeChild(modal);
-          }
-          if (onClose) {
-            onClose();
-          }
-        }, 300);
+          document.addEventListener("keydown", escapeHandler);
+        }, 0);
       };
-    };
 
-    const createEscapeKeyHandler = (closeHandler: () => void) => {
-      return (event: KeyboardEvent) => {
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          event.stopPropagation();
-          closeHandler();
+      const createClickOutsideHandler = (
+        modal: HTMLElement,
+        closeHandler: () => void,
+      ) => {
+        return (event: MouseEvent) => {
+          if (!modal.contains(event.target as Node)) {
+            closeHandler();
+          }
+        };
+      };
+
+      const registerModalClickOutsideHandler = (
+        clickOutsideHandler: (event: MouseEvent) => void,
+      ) => {
+        setTimeout(() => {
+          document.addEventListener("click", clickOutsideHandler, true);
+        }, 0);
+      };
+
+      // Define handlers for main buttons
+      const handleAddTimestamp = () => {
+        if (
+          !list ||
+          list.querySelector(".ytls-error-message") ||
+          isLoadingTimestamps
+        ) {
+          return;
+        }
+
+        // Use configuredOffset if available, otherwise default to 0
+        const offset =
+          typeof configuredOffset !== "undefined" ? configuredOffset : 0;
+        const player = getActivePlayer();
+        const currentTime = player
+          ? Math.floor(player.getCurrentTime() + offset)
+          : 0;
+        if (!Number.isFinite(currentTime)) {
+          return;
+        }
+        const newCommentInput = addTimestamp(currentTime, "");
+        if (newCommentInput) {
+          newCommentInput.focus();
         }
       };
-    };
 
-    const registerModalEscapeHandler = (escapeHandler: (event: KeyboardEvent) => void) => {
-      setTimeout(() => {
-        document.addEventListener('keydown', escapeHandler);
-      }, 0);
-    };
-
-    const createClickOutsideHandler = (modal: HTMLElement, closeHandler: () => void) => {
-      return (event: MouseEvent) => {
-        if (!modal.contains(event.target as Node)) {
-          closeHandler();
+      const handleCopyTimestamps = function (e) {
+        if (
+          !list ||
+          list.querySelector(".ytls-error-message") ||
+          isLoadingTimestamps
+        ) {
+          setIcon(this as Element, "circle-x", 20);
+          setTimeout(() => {
+            setIcon(this as Element, "clipboard", 20);
+          }, 2000);
+          return;
         }
+        const timestamps = extractTimestampRecords();
+        const videoDuration = Math.max(getLatestTimestampValue(), 0);
+        if (timestamps.length === 0) {
+          setIcon(this as Element, "circle-x", 20);
+          setTimeout(() => {
+            setIcon(this as Element, "clipboard", 20);
+          }, 2000);
+          return;
+        }
+        const includeGuids = e.ctrlKey;
+        const plainText = timestamps
+          .map((ts) => {
+            const timeString = formatTimeString(ts.start, videoDuration);
+            return includeGuids
+              ? `${timeString} ${ts.comment} <!-- guid:${ts.guid} -->`.trimStart()
+              : `${timeString} ${ts.comment}`;
+          })
+          .join("\n");
+        navigator.clipboard
+          .writeText(plainText)
+          .then(() => {
+            setIcon(this as Element, "circle-check", 20);
+            setTimeout(() => {
+              setIcon(this as Element, "clipboard", 20);
+            }, 2000);
+          })
+          .catch((err) => {
+            log("Failed to copy timestamps: ", err, "error");
+            setIcon(this as Element, "circle-x", 20);
+            setTimeout(() => {
+              setIcon(this as Element, "clipboard", 20);
+            }, 2000);
+          });
       };
-    };
-
-    const registerModalClickOutsideHandler = (clickOutsideHandler: (event: MouseEvent) => void) => {
-      setTimeout(() => {
-        document.addEventListener('click', clickOutsideHandler, true);
-      }, 0);
-    };
-
-    // Define handlers for main buttons
-    const handleAddTimestamp = () => {
-      if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
-        return;
-      }
-
-      // Use configuredOffset if available, otherwise default to 0
-      const offset = typeof configuredOffset !== 'undefined' ? configuredOffset : 0;
-      const player = getActivePlayer();
-      const currentTime = player ? Math.floor(player.getCurrentTime() + offset) : 0;
-      if (!Number.isFinite(currentTime)) {
-        return;
-      }
-      const newCommentInput = addTimestamp(currentTime, "");
-      if (newCommentInput) {
-        newCommentInput.focus();
-      }
-    };
-
-    const handleCopyTimestamps = function (e) {
-      if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
-        setIcon(this as Element, 'circle-x', 20);
-        setTimeout(() => { setIcon(this as Element, 'clipboard', 20); }, 2000);
-        return;
-      }
-      const timestamps = extractTimestampRecords();
-      const videoDuration = Math.max(getLatestTimestampValue(), 0);
-      if (timestamps.length === 0) {
-        setIcon(this as Element, 'circle-x', 20);
-        setTimeout(() => { setIcon(this as Element, 'clipboard', 20); }, 2000);
-        return;
-      }
-      const includeGuids = e.ctrlKey;
-      const plainText = timestamps.map(ts => {
-        const timeString = formatTimeString(ts.start, videoDuration);
-        return includeGuids
-          ? `${timeString} ${ts.comment} <!-- guid:${ts.guid} -->`.trimStart()
-          : `${timeString} ${ts.comment}`;
-      }).join("\n");
-      navigator.clipboard.writeText(plainText).then(() => {
-        setIcon(this as Element, 'circle-check', 20);
-        setTimeout(() => { setIcon(this as Element, 'clipboard', 20); }, 2000);
-      }).catch(err => {
-        log("Failed to copy timestamps: ", err, 'error');
-        setIcon(this as Element, 'circle-x', 20);
-        setTimeout(() => { setIcon(this as Element, 'clipboard', 20); }, 2000);
-      });
-    };
 
       const handleBulkOffset = () => {
-        if (!list || list.querySelector('.ytls-error-message') || isLoadingTimestamps) {
+        if (
+          !list ||
+          list.querySelector(".ytls-error-message") ||
+          isLoadingTimestamps
+        ) {
           return;
         }
 
@@ -3091,7 +3551,10 @@ function safePostMessage(message: unknown) {
           return;
         }
 
-        const input = prompt("Enter the number of seconds to offset all timestamps (positive or negative integer):", "0");
+        const input = prompt(
+          "Enter the number of seconds to offset all timestamps (positive or negative integer):",
+          "0",
+        );
         if (input === null) {
           return;
         }
@@ -3111,11 +3574,14 @@ function safePostMessage(message: unknown) {
           return;
         }
 
-        if (!applyOffsetToAllTimestamps(offsetSeconds, {
-          alertOnNoChange: true,
-          failureMessage: "Offset had no effect because timestamps are already at the requested bounds.",
-          logLabel: "bulk offset"
-        })) {
+        if (
+          !applyOffsetToAllTimestamps(offsetSeconds, {
+            alertOnNoChange: true,
+            failureMessage:
+              "Offset had no effect because timestamps are already at the requested bounds.",
+            logLabel: "bulk offset",
+          })
+        ) {
           return;
         }
       };
@@ -3214,8 +3680,10 @@ function safePostMessage(message: unknown) {
                 await removeFromIndexedDB(currentVideoId);
                 handleUrlChange(); // Refresh the tool to reflect deletion
               } catch (err) {
-                log("Failed to delete all timestamps:", err, 'error');
-                alert("Failed to delete timestamps. Check console for details.");
+                log("Failed to delete all timestamps:", err, "error");
+                alert(
+                  "Failed to delete timestamps. Check console for details.",
+                );
               }
             }, 300);
           }, 5000);
@@ -3229,15 +3697,18 @@ function safePostMessage(message: unknown) {
         const closeDeleteModal = createModalCloseHandler(modal, () => {
           resetButton();
           if (escapeHandler) {
-            document.removeEventListener('keydown', escapeHandler);
+            document.removeEventListener("keydown", escapeHandler);
           }
           if (clickOutsideHandler) {
-            document.removeEventListener('click', clickOutsideHandler, true);
+            document.removeEventListener("click", clickOutsideHandler, true);
           }
         });
 
         escapeHandler = createEscapeKeyHandler(closeDeleteModal);
-        clickOutsideHandler = createClickOutsideHandler(modal, closeDeleteModal);
+        clickOutsideHandler = createClickOutsideHandler(
+          modal,
+          closeDeleteModal,
+        );
 
         const cancelButton = document.createElement("button");
         cancelButton.textContent = "Cancel";
@@ -3254,112 +3725,569 @@ function safePostMessage(message: unknown) {
         registerModalClickOutsideHandler(clickOutsideHandler);
       };
 
-    // Configuration for main buttons
-    const mainButtonConfigs: { id: string; icon: TablerIconName; title: string; action: (...args: any[]) => any }[] = [
-      { id: "add",      icon: 'alarm-plus', title: "Add timestamp",                          action: handleAddTimestamp },
-      { id: "settings", icon: 'settings',   title: "Settings",                               action: () => toggleSettingsModal() },
-      { id: "copy",     icon: 'clipboard',  title: "Copy timestamps to clipboard",           action: handleCopyTimestamps },
-      { id: "offset",   icon: 'clock-plus', title: "Offset all timestamps",                  action: handleBulkOffset },
-      { id: "delete",   icon: 'trash',      title: "Delete all timestamps for current video", action: handleDeleteAll },
-    ];
+      // Configuration for main buttons
+      const mainButtonConfigs: {
+        id: string;
+        icon: TablerIconName;
+        title: string;
+        action: (...args: any[]) => any;
+      }[] = [
+        {
+          id: "add",
+          icon: "alarm-plus",
+          title: "Add timestamp",
+          action: handleAddTimestamp,
+        },
+        {
+          id: "settings",
+          icon: "settings",
+          title: "Settings",
+          action: () => toggleSettingsModal(),
+        },
+        {
+          id: "copy",
+          icon: "clipboard",
+          title: "Copy timestamps to clipboard",
+          action: handleCopyTimestamps,
+        },
+        {
+          id: "offset",
+          icon: "clock-plus",
+          title: "Offset all timestamps",
+          action: handleBulkOffset,
+        },
+        {
+          id: "delete",
+          icon: "trash",
+          title: "Delete all timestamps for current video",
+          action: handleDeleteAll,
+        },
+      ];
 
-    // Check for holiday emoji on load
-    const holidayEmoji = getHolidayEmoji();
+      // Check for holiday emoji on load
+      const holidayEmoji = getHolidayEmoji();
 
-    // Create and append main buttons
-    mainButtonConfigs.forEach(config => {
-      const button = document.createElement("button");
-      setIcon(button, config.icon, 20);
-      addTooltip(button, config.title);
-      button.classList.add("ytls-main-button");
+      // Create and append main buttons
+      mainButtonConfigs.forEach((config) => {
+        const button = document.createElement("button");
+        setIcon(button, config.icon, 20);
+        addTooltip(button, config.title);
+        button.classList.add("ytls-main-button");
 
-      // Add holiday emoji overlay to the add-timestamp button if available
-      if (config.id === "add" && holidayEmoji) {
-        const holidayEmojiSpan = document.createElement("span");
-        holidayEmojiSpan.textContent = holidayEmoji;
-        holidayEmojiSpan.classList.add("ytls-holiday-emoji");
-        button.appendChild(holidayEmojiSpan);
-      }
-
-      if (config.id === "copy") {
-        // For copy button, bind to an event handler that includes the event object
-        button.onclick = function (e) { config.action.call(this, e); };
-      } else {
-        button.onclick = config.action;
-      }
-      if (config.id === "settings") { // Store a reference to the settings cog button
-        settingsCogButtonElement = button;
-      }
-      btns.appendChild(button);
-    });
-
-    // Helper function to create a button with common styles and actions (for settings modal)
-    function createButton(label: string, title: string, onClick: (...args: any[]) => any, icon?: TablerIconName) {
-      const button = document.createElement("button");
-      if (icon) {
-        setIconLabel(button, icon, label);
-      } else {
-        button.textContent = label;
-      }
-      addTooltip(button, title);
-      button.classList.add("ytls-settings-modal-button");
-      button.onclick = onClick;
-      return button;
-    }
-
-    // Function to create and toggle the settings modal
-    function toggleSettingsModal(initialTab: 'general' | 'google' | 'backend' | 'drive' = 'general') {
-      if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
-        // Close all subdialogs first
-        const saveModal = document.getElementById('ytls-save-modal');
-        const loadModal = document.getElementById('ytls-load-modal');
-        const deleteModal = document.getElementById('ytls-delete-all-modal');
-        if (saveModal && document.body.contains(saveModal)) {
-          document.body.removeChild(saveModal);
-        }
-        if (loadModal && document.body.contains(loadModal)) {
-          document.body.removeChild(loadModal);
-        }
-        if (deleteModal && document.body.contains(deleteModal)) {
-          document.body.removeChild(deleteModal);
+        // Add holiday emoji overlay to the add-timestamp button if available
+        if (config.id === "add" && holidayEmoji) {
+          const holidayEmojiSpan = document.createElement("span");
+          holidayEmojiSpan.textContent = holidayEmoji;
+          holidayEmojiSpan.classList.add("ytls-holiday-emoji");
+          button.appendChild(holidayEmojiSpan);
         }
 
-        // Modal exists and is visible, so close it with fade-out
-        settingsModalInstance.classList.remove("ytls-fade-in");
-        settingsModalInstance.classList.add("ytls-fade-out");
-        setTimeout(() => {
-          if (document.body.contains(settingsModalInstance)) {
-            document.body.removeChild(settingsModalInstance);
-          }
-          settingsModalInstance = null;
-          document.removeEventListener('click', handleClickOutsideSettingsModal, true); // Remove click-outside listener
-          document.removeEventListener('keydown', handleSettingsModalEscape); // Remove escape key listener
-        }, 300); // Match animation duration
-        return;
+        if (config.id === "copy") {
+          // For copy button, bind to an event handler that includes the event object
+          button.onclick = function (e) {
+            config.action.call(this, e);
+          };
+        } else {
+          button.onclick = config.action;
+        }
+        if (config.id === "settings") {
+          // Store a reference to the settings cog button
+          settingsCogButtonElement = button;
+        }
+        btns.appendChild(button);
+      });
+
+      // Helper function to create a button with common styles and actions (for settings modal)
+      function createButton(
+        label: string,
+        title: string,
+        onClick: (...args: any[]) => any,
+        icon?: TablerIconName,
+      ) {
+        const button = document.createElement("button");
+        if (icon) {
+          setIconLabel(button, icon, label);
+        } else {
+          button.textContent = label;
+        }
+        addTooltip(button, title);
+        button.classList.add("ytls-settings-modal-button");
+        button.onclick = onClick;
+        return button;
       }
 
-      // Modal doesn't exist or isn't visible, so create and show it
-      settingsModalInstance = document.createElement("div");
-      settingsModalInstance.id = "ytls-settings-modal";
-      settingsModalInstance.classList.remove("ytls-fade-out");
-      settingsModalInstance.classList.add("ytls-fade-in");
-
-      // Create header container with tabs and close button
-      const header = document.createElement("div");
-      header.className = "ytls-modal-header";
-
-      const nav = document.createElement("div");
-      nav.id = "ytls-settings-nav";
-
-      const closeButton = document.createElement("button");
-      closeButton.className = "ytls-modal-close-button";
-      setIcon(closeButton, 'x', 14);
-      closeButton.onclick = () => {
-        if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
+      // Function to create and toggle the settings modal
+      function toggleSettingsModal(
+        initialTab: "general" | "google" | "backend" | "drive" = "general",
+      ) {
+        if (
+          settingsModalInstance &&
+          settingsModalInstance.parentNode === document.body
+        ) {
           // Close all subdialogs first
-          const saveModal = document.getElementById('ytls-save-modal');
-          const loadModal = document.getElementById('ytls-load-modal');
-          const deleteModal = document.getElementById('ytls-delete-all-modal');
+          const saveModal = document.getElementById("ytls-save-modal");
+          const loadModal = document.getElementById("ytls-load-modal");
+          const deleteModal = document.getElementById("ytls-delete-all-modal");
+          if (saveModal && document.body.contains(saveModal)) {
+            document.body.removeChild(saveModal);
+          }
+          if (loadModal && document.body.contains(loadModal)) {
+            document.body.removeChild(loadModal);
+          }
+          if (deleteModal && document.body.contains(deleteModal)) {
+            document.body.removeChild(deleteModal);
+          }
+
+          // Modal exists and is visible, so close it with fade-out
+          settingsModalInstance.classList.remove("ytls-fade-in");
+          settingsModalInstance.classList.add("ytls-fade-out");
+          setTimeout(() => {
+            if (document.body.contains(settingsModalInstance)) {
+              document.body.removeChild(settingsModalInstance);
+            }
+            settingsModalInstance = null;
+            document.removeEventListener(
+              "click",
+              handleClickOutsideSettingsModal,
+              true,
+            ); // Remove click-outside listener
+            document.removeEventListener("keydown", handleSettingsModalEscape); // Remove escape key listener
+          }, 300); // Match animation duration
+          return;
+        }
+
+        // Modal doesn't exist or isn't visible, so create and show it
+        settingsModalInstance = document.createElement("div");
+        settingsModalInstance.id = "ytls-settings-modal";
+        settingsModalInstance.classList.remove("ytls-fade-out");
+        settingsModalInstance.classList.add("ytls-fade-in");
+
+        // Create header container with tabs and close button
+        const header = document.createElement("div");
+        header.className = "ytls-modal-header";
+
+        const nav = document.createElement("div");
+        nav.id = "ytls-settings-nav";
+
+        const closeButton = document.createElement("button");
+        closeButton.className = "ytls-modal-close-button";
+        setIcon(closeButton, "x", 14);
+        closeButton.onclick = () => {
+          if (
+            settingsModalInstance &&
+            settingsModalInstance.parentNode === document.body
+          ) {
+            // Close all subdialogs first
+            const saveModal = document.getElementById("ytls-save-modal");
+            const loadModal = document.getElementById("ytls-load-modal");
+            const deleteModal = document.getElementById(
+              "ytls-delete-all-modal",
+            );
+            if (saveModal && document.body.contains(saveModal)) {
+              document.body.removeChild(saveModal);
+            }
+            if (loadModal && document.body.contains(loadModal)) {
+              document.body.removeChild(loadModal);
+            }
+            if (deleteModal && document.body.contains(deleteModal)) {
+              document.body.removeChild(deleteModal);
+            }
+
+            settingsModalInstance.classList.remove("ytls-fade-in");
+            settingsModalInstance.classList.add("ytls-fade-out");
+            setTimeout(() => {
+              if (document.body.contains(settingsModalInstance)) {
+                document.body.removeChild(settingsModalInstance);
+              }
+              settingsModalInstance = null;
+              document.removeEventListener(
+                "click",
+                handleClickOutsideSettingsModal,
+                true,
+              );
+              document.removeEventListener(
+                "keydown",
+                handleSettingsModalEscape,
+              );
+            }, 300);
+          }
+        };
+
+        const settingsContent = document.createElement("div");
+        settingsContent.id = "ytls-settings-content";
+
+        const sectionHeading = document.createElement("h3");
+        sectionHeading.className = "ytls-section-heading";
+        sectionHeading.textContent = "General";
+        sectionHeading.style.display = "none";
+
+        const generalSection = document.createElement("div");
+        const googleSection = document.createElement("div");
+        googleSection.className = "ytls-button-grid";
+        const backendSection = document.createElement("div");
+        backendSection.className = "ytls-button-grid";
+
+        function showSection(section: "general" | "google" | "backend") {
+          generalSection.style.display =
+            section === "general" ? "block" : "none";
+          googleSection.style.display = section === "google" ? "block" : "none";
+          backendSection.style.display =
+            section === "backend" ? "block" : "none";
+          generalTab.classList.toggle("active", section === "general");
+          googleTab.classList.toggle("active", section === "google");
+          backendTab.classList.toggle("active", section === "backend");
+          sectionHeading.textContent =
+            section === "general"
+              ? "General"
+              : section === "google"
+                ? "Google"
+                : "Timekeeper Backend";
+        }
+
+        const generalTab = document.createElement("button");
+        generalTab.appendChild(createIcon("adjustments-horizontal", 16));
+        const generalTabText = document.createElement("span");
+        generalTabText.className = "ytls-tab-text";
+        generalTabText.textContent = " General";
+        generalTab.appendChild(generalTabText);
+        addTooltip(generalTab, "General settings");
+        generalTab.classList.add("ytls-settings-modal-button");
+        generalTab.onclick = () => showSection("general");
+
+        const googleTab = document.createElement("button");
+        googleTab.appendChild(createIcon("cloud", 16));
+        const googleTabText = document.createElement("span");
+        googleTabText.className = "ytls-tab-text";
+        googleTabText.textContent = " Google";
+        googleTab.appendChild(googleTabText);
+        addTooltip(googleTab, "Google Drive backup settings");
+        googleTab.classList.add("ytls-settings-modal-button");
+        googleTab.onclick = async () => {
+          // Verify auth state when opening Google settings
+          if (GoogleDrive.googleAuthState.isSignedIn) {
+            await GoogleDrive.verifySignedIn();
+          }
+          showSection("google");
+        };
+        const backendTab = document.createElement("button");
+        backendTab.appendChild(createIcon("server", 16));
+        const backendTabText = document.createElement("span");
+        backendTabText.className = "ytls-tab-text";
+        backendTabText.textContent = " TKB";
+        backendTab.appendChild(backendTabText);
+        addTooltip(backendTab, "Timekeeper backend backup settings");
+        backendTab.classList.add("ytls-settings-modal-button");
+        backendTab.onclick = () => showSection("backend");
+        nav.appendChild(generalTab);
+        nav.appendChild(googleTab);
+        nav.appendChild(backendTab);
+
+        header.appendChild(nav);
+        header.appendChild(closeButton);
+        settingsModalInstance.appendChild(header);
+
+        // Build General section
+        generalSection.className = "ytls-button-grid";
+        generalSection.appendChild(
+          createButton("Save", "Save As...", saveBtn.onclick, "device-floppy"),
+        );
+        generalSection.appendChild(
+          createButton("Load", "Load", loadBtn.onclick, "folder-open"),
+        );
+        generalSection.appendChild(
+          createButton(
+            "Export All",
+            "Export All Data",
+            exportBtn.onclick,
+            "file-export",
+          ),
+        );
+        generalSection.appendChild(
+          createButton(
+            "Import All",
+            "Import All Data",
+            importBtn.onclick,
+            "file-import",
+          ),
+        );
+        // Export all timestamps as CSV (Tag,Timestamp,URL)
+        generalSection.appendChild(
+          createButton(
+            "Export All (CSV)",
+            "Export All Timestamps to CSV",
+            async () => {
+              try {
+                await exportAllTimestampsCsv();
+              } catch (err) {
+                alert("Failed to export CSV: Could not read from database.");
+              }
+            },
+            "file-spreadsheet",
+          ),
+        );
+
+        // Build Google Drive section
+        const signButton = createButton(
+          GoogleDrive.googleAuthState.isSignedIn ? "Sign Out" : "Sign In",
+          GoogleDrive.googleAuthState.isSignedIn
+            ? "Sign out from Google Drive"
+            : "Sign in to Google Drive",
+          async () => {
+            if (GoogleDrive.googleAuthState.isSignedIn) {
+              await GoogleDrive.signOutFromGoogle();
+            } else {
+              await GoogleDrive.signInToGoogle();
+            }
+            // Update label after action
+            setIconLabel(
+              signButton,
+              GoogleDrive.googleAuthState.isSignedIn ? "logout" : "login",
+              GoogleDrive.googleAuthState.isSignedIn ? "Sign Out" : "Sign In",
+            );
+            addTooltip(
+              signButton,
+              GoogleDrive.googleAuthState.isSignedIn
+                ? "Sign out from Google Drive"
+                : "Sign in to Google Drive",
+            );
+            // Ensure main backup status indicator updates immediately
+            GoogleDrive.updateBackupStatusDisplay();
+          },
+          GoogleDrive.googleAuthState.isSignedIn ? "logout" : "login",
+        );
+
+        const autoToggleButton = createButton(
+          GoogleDrive.getAutoBackupEnabled()
+            ? "Auto Backup: On"
+            : "Auto Backup: Off",
+          "Toggle Auto Backup",
+          async () => {
+            await GoogleDrive.toggleAutoBackup();
+            refreshBackupButtons();
+            GoogleDrive.updateBackupStatusDisplay();
+          },
+          "refresh",
+        );
+
+        const intervalButton = createButton(
+          `Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`,
+          "Set periodic backup interval (minutes)",
+          async () => {
+            await GoogleDrive.setAutoBackupIntervalPrompt();
+            refreshBackupButtons();
+            GoogleDrive.updateBackupStatusDisplay();
+          },
+          "clock-plus",
+        );
+
+        const backendToggleButton = createButton(
+          GoogleDrive.getTimekeeperBackendBackupEnabled()
+            ? "Backend: On"
+            : "Backend: Off",
+          "Toggle Timekeeper backend backup",
+          async () => {
+            await GoogleDrive.toggleTimekeeperBackendBackup();
+            refreshBackupButtons();
+          },
+          "server",
+        );
+
+        const backendHostButton = createButton(
+          `Backend Host: ${GoogleDrive.getTimekeeperBackendHost()}`,
+          "Set the Timekeeper backend host",
+          async () => {
+            await GoogleDrive.setTimekeeperBackendHostPrompt();
+            refreshBackupButtons();
+          },
+          "world",
+        );
+
+        const backendPortButton = createButton(
+          `Backend Port: ${GoogleDrive.getTimekeeperBackendPort()}`,
+          "Set the Timekeeper backend port",
+          async () => {
+            await GoogleDrive.setTimekeeperBackendPortPrompt();
+            refreshBackupButtons();
+          },
+          "plug-connected",
+        );
+
+        const backendTokenButton = createButton(
+          GoogleDrive.getTimekeeperBackendBearerToken()
+            ? "Backend Token: Set"
+            : "Backend Token: Missing",
+          "Set or clear the Timekeeper backend bearer token",
+          async () => {
+            await GoogleDrive.setTimekeeperBackendBearerTokenPrompt();
+            refreshBackupButtons();
+          },
+          "key",
+        );
+
+        const refreshBackupButtons = () => {
+          setIconLabel(
+            signButton,
+            GoogleDrive.googleAuthState.isSignedIn ? "logout" : "login",
+            GoogleDrive.googleAuthState.isSignedIn ? "Sign Out" : "Sign In",
+          );
+          addTooltip(
+            signButton,
+            GoogleDrive.googleAuthState.isSignedIn
+              ? "Sign out from Google Drive"
+              : "Sign in to Google Drive",
+          );
+          setIconLabel(
+            autoToggleButton,
+            "refresh",
+            GoogleDrive.getAutoBackupEnabled()
+              ? "Auto Backup: On"
+              : "Auto Backup: Off",
+          );
+          setIconLabel(
+            intervalButton,
+            "clock-plus",
+            `Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`,
+          );
+          setIconLabel(
+            backendToggleButton,
+            "server",
+            GoogleDrive.getTimekeeperBackendBackupEnabled()
+              ? "Backend: On"
+              : "Backend: Off",
+          );
+          setIconLabel(
+            backendHostButton,
+            "world",
+            `Backend Host: ${GoogleDrive.getTimekeeperBackendHost()}`,
+          );
+          setIconLabel(
+            backendPortButton,
+            "plug-connected",
+            `Backend Port: ${GoogleDrive.getTimekeeperBackendPort()}`,
+          );
+          setIconLabel(
+            backendTokenButton,
+            "key",
+            GoogleDrive.getTimekeeperBackendBearerToken()
+              ? "Backend Token: Set"
+              : "Backend Token: Missing",
+          );
+          if (
+            typeof (GoogleDrive as any).updateBackupStatusDisplay === "function"
+          ) {
+            (GoogleDrive as any).updateBackupStatusDisplay();
+          }
+        };
+
+        googleSection.appendChild(signButton);
+        googleSection.appendChild(autoToggleButton);
+        googleSection.appendChild(intervalButton);
+
+        backendSection.appendChild(backendToggleButton);
+        backendSection.appendChild(backendHostButton);
+        backendSection.appendChild(backendPortButton);
+        backendSection.appendChild(backendTokenButton);
+
+        googleSection.appendChild(
+          createButton(
+            "Backup Now",
+            "Run a backup immediately",
+            async () => {
+              await GoogleDrive.runAutoBackupOnce({
+                silent: false,
+                skipBackoff: true,
+              });
+              refreshBackupButtons();
+            },
+            "database",
+          ),
+        );
+
+        // Add status info displays at the bottom
+        const infoContainer = document.createElement("div");
+        infoContainer.style.marginTop = "15px";
+        infoContainer.style.paddingTop = "10px";
+        infoContainer.style.borderTop = "1px solid #555";
+        infoContainer.style.fontSize = "12px";
+        infoContainer.style.color = "#aaa";
+
+        // Sign-in status indicator
+        const statusDiv = document.createElement("div");
+        statusDiv.style.marginBottom = "8px";
+        statusDiv.style.fontWeight = "bold";
+        infoContainer.appendChild(statusDiv);
+        GoogleDrive.setAuthStatusDisplay(statusDiv);
+
+        // User info
+        const userInfoDiv = document.createElement("div");
+        userInfoDiv.style.marginBottom = "8px";
+        GoogleDrive.setGoogleUserDisplay(userInfoDiv);
+        infoContainer.appendChild(userInfoDiv);
+
+        // Backup status info
+        const backupInfoDiv = document.createElement("div");
+        GoogleDrive.setBackupStatusDisplay(backupInfoDiv);
+        infoContainer.appendChild(backupInfoDiv);
+
+        googleSection.appendChild(infoContainer);
+
+        // Update status display based on sign-in state
+        GoogleDrive.updateAuthStatusDisplay();
+        GoogleDrive.updateGoogleUserDisplay();
+        GoogleDrive.updateBackupStatusDisplay();
+        refreshBackupButtons();
+
+        // Append sections
+        settingsContent.appendChild(sectionHeading);
+        settingsContent.appendChild(generalSection);
+        settingsContent.appendChild(googleSection);
+        settingsContent.appendChild(backendSection);
+        const normalizedInitialTab =
+          initialTab === "drive" ? "google" : initialTab;
+        showSection(normalizedInitialTab);
+
+        settingsModalInstance.appendChild(settingsContent);
+        document.body.appendChild(settingsModalInstance);
+
+        // Calculate centered position and fix top edge
+        requestAnimationFrame(() => {
+          const rect = settingsModalInstance.getBoundingClientRect();
+          const viewportHeight = window.innerHeight;
+          const centeredTop = (viewportHeight - rect.height) / 2;
+          settingsModalInstance.style.top = `${Math.max(20, centeredTop)}px`;
+          settingsModalInstance.style.transform = "translateX(-50%)";
+        });
+
+        // Add click-outside listener
+        // Use setTimeout to ensure this listener is added after the current click event cycle
+        setTimeout(() => {
+          document.addEventListener(
+            "click",
+            handleClickOutsideSettingsModal,
+            true,
+          );
+          document.addEventListener("keydown", handleSettingsModalEscape);
+        }, 0);
+      }
+
+      function handleSettingsModalEscape(event: KeyboardEvent) {
+        if (
+          event.key === "Escape" &&
+          settingsModalInstance &&
+          settingsModalInstance.parentNode === document.body
+        ) {
+          // Check if any subdialogs are open - if so, let their handlers deal with it
+          const saveModal = document.getElementById("ytls-save-modal");
+          const loadModal = document.getElementById("ytls-load-modal");
+          const deleteModal = document.getElementById("ytls-delete-all-modal");
+          if (saveModal || loadModal || deleteModal) {
+            // Let the subdialog's escape handler handle this
+            return;
+          }
+
+          event.preventDefault();
+
+          // Close all subdialogs before closing settings
           if (saveModal && document.body.contains(saveModal)) {
             document.body.removeChild(saveModal);
           }
@@ -3377,1098 +4305,948 @@ function safePostMessage(message: unknown) {
               document.body.removeChild(settingsModalInstance);
             }
             settingsModalInstance = null;
-            document.removeEventListener('click', handleClickOutsideSettingsModal, true);
-            document.removeEventListener('keydown', handleSettingsModalEscape);
+            document.removeEventListener(
+              "click",
+              handleClickOutsideSettingsModal,
+              true,
+            );
+            document.removeEventListener("keydown", handleSettingsModalEscape);
           }, 300);
         }
-      };
-
-      const settingsContent = document.createElement("div");
-      settingsContent.id = "ytls-settings-content";
-
-      const sectionHeading = document.createElement("h3");
-      sectionHeading.className = "ytls-section-heading";
-      sectionHeading.textContent = "General";
-      sectionHeading.style.display = "none";
-
-      const generalSection = document.createElement("div");
-      const googleSection = document.createElement("div");
-      googleSection.className = "ytls-button-grid";
-      const backendSection = document.createElement("div");
-      backendSection.className = "ytls-button-grid";
-
-      function showSection(section: 'general' | 'google' | 'backend') {
-        generalSection.style.display = section === 'general' ? 'block' : 'none';
-        googleSection.style.display = section === 'google' ? 'block' : 'none';
-        backendSection.style.display = section === 'backend' ? 'block' : 'none';
-        generalTab.classList.toggle('active', section === 'general');
-        googleTab.classList.toggle('active', section === 'google');
-        backendTab.classList.toggle('active', section === 'backend');
-        sectionHeading.textContent = section === 'general' ? 'General' : section === 'google' ? 'Google' : 'Timekeeper Backend';
       }
 
-      const generalTab = document.createElement("button");
-      generalTab.appendChild(createIcon('adjustments-horizontal', 16));
-      const generalTabText = document.createElement("span");
-      generalTabText.className = "ytls-tab-text";
-      generalTabText.textContent = " General";
-      generalTab.appendChild(generalTabText);
-      addTooltip(generalTab, "General settings");
-      generalTab.classList.add("ytls-settings-modal-button");
-      generalTab.onclick = () => showSection('general');
-
-      const googleTab = document.createElement("button");
-      googleTab.appendChild(createIcon('cloud', 16));
-      const googleTabText = document.createElement("span");
-      googleTabText.className = "ytls-tab-text";
-      googleTabText.textContent = " Google";
-      googleTab.appendChild(googleTabText);
-      addTooltip(googleTab, "Google Drive backup settings");
-      googleTab.classList.add("ytls-settings-modal-button");
-      googleTab.onclick = async () => {
-        // Verify auth state when opening Google settings
-        if (GoogleDrive.googleAuthState.isSignedIn) {
-          await GoogleDrive.verifySignedIn();
-        }
-        showSection('google');
-      };
-      const backendTab = document.createElement("button");
-      backendTab.appendChild(createIcon('server', 16));
-      const backendTabText = document.createElement("span");
-      backendTabText.className = "ytls-tab-text";
-      backendTabText.textContent = " TKB";
-      backendTab.appendChild(backendTabText);
-      addTooltip(backendTab, "Timekeeper backend backup settings");
-      backendTab.classList.add("ytls-settings-modal-button");
-      backendTab.onclick = () => showSection('backend');
-      nav.appendChild(generalTab);
-      nav.appendChild(googleTab);
-      nav.appendChild(backendTab);
-
-      header.appendChild(nav);
-      header.appendChild(closeButton);
-      settingsModalInstance.appendChild(header);
-
-      // Build General section
-      generalSection.className = "ytls-button-grid";
-      generalSection.appendChild(createButton("Save", "Save As...", saveBtn.onclick, 'device-floppy'));
-      generalSection.appendChild(createButton("Load", "Load", loadBtn.onclick, 'folder-open'));
-      generalSection.appendChild(createButton("Export All", "Export All Data", exportBtn.onclick, 'file-export'));
-      generalSection.appendChild(createButton("Import All", "Import All Data", importBtn.onclick, 'file-import'));
-      // Export all timestamps as CSV (Tag,Timestamp,URL)
-      generalSection.appendChild(createButton("Export All (CSV)", "Export All Timestamps to CSV", async () => {
-        try {
-          await exportAllTimestampsCsv();
-        } catch (err) {
-          alert("Failed to export CSV: Could not read from database.");
-        }
-      }, 'file-spreadsheet'));
-
-      // Build Google Drive section
-      const signButton = createButton(
-        GoogleDrive.googleAuthState.isSignedIn ? "Sign Out" : "Sign In",
-        GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive",
-        async () => {
-          if (GoogleDrive.googleAuthState.isSignedIn) {
-            await GoogleDrive.signOutFromGoogle();
-          } else {
-            await GoogleDrive.signInToGoogle();
-          }
-          // Update label after action
-          setIconLabel(signButton, GoogleDrive.googleAuthState.isSignedIn ? 'logout' : 'login', GoogleDrive.googleAuthState.isSignedIn ? "Sign Out" : "Sign In");
-          addTooltip(signButton, GoogleDrive.googleAuthState.isSignedIn ? "Sign out from Google Drive" : "Sign in to Google Drive");
-          // Ensure main backup status indicator updates immediately
-          GoogleDrive.updateBackupStatusDisplay();
-        },
-        GoogleDrive.googleAuthState.isSignedIn ? 'logout' : 'login'
-      );
-
-      const autoToggleButton = createButton(
-        GoogleDrive.getAutoBackupEnabled() ? "Auto Backup: On" : "Auto Backup: Off",
-        "Toggle Auto Backup",
-        async () => {
-          await GoogleDrive.toggleAutoBackup();
-          refreshBackupButtons();
-          GoogleDrive.updateBackupStatusDisplay();
-        },
-        'refresh'
-      );
-
-      const intervalButton = createButton(
-        `Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`,
-        "Set periodic backup interval (minutes)",
-        async () => {
-          await GoogleDrive.setAutoBackupIntervalPrompt();
-          refreshBackupButtons();
-          GoogleDrive.updateBackupStatusDisplay();
-        },
-        'clock-plus'
-      );
-
-      const backendToggleButton = createButton(
-        GoogleDrive.getTimekeeperBackendBackupEnabled() ? 'Backend: On' : 'Backend: Off',
-        'Toggle Timekeeper backend backup',
-        async () => {
-          await GoogleDrive.toggleTimekeeperBackendBackup();
-          refreshBackupButtons();
-        },
-        'server'
-      );
-
-      const backendHostButton = createButton(
-        `Backend Host: ${GoogleDrive.getTimekeeperBackendHost()}`,
-        'Set the Timekeeper backend host',
-        async () => {
-          await GoogleDrive.setTimekeeperBackendHostPrompt();
-          refreshBackupButtons();
-        },
-        'world'
-      );
-
-      const backendPortButton = createButton(
-        `Backend Port: ${GoogleDrive.getTimekeeperBackendPort()}`,
-        'Set the Timekeeper backend port',
-        async () => {
-          await GoogleDrive.setTimekeeperBackendPortPrompt();
-          refreshBackupButtons();
-        },
-        'plug-connected'
-      );
-
-      const backendTokenButton = createButton(
-        GoogleDrive.getTimekeeperBackendBearerToken() ? 'Backend Token: Set' : 'Backend Token: Missing',
-        'Set or clear the Timekeeper backend bearer token',
-        async () => {
-          await GoogleDrive.setTimekeeperBackendBearerTokenPrompt();
-          refreshBackupButtons();
-        },
-        'key'
-      );
-
-      const refreshBackupButtons = () => {
-        setIconLabel(signButton, GoogleDrive.googleAuthState.isSignedIn ? 'logout' : 'login', GoogleDrive.googleAuthState.isSignedIn ? 'Sign Out' : 'Sign In');
-        addTooltip(signButton, GoogleDrive.googleAuthState.isSignedIn ? 'Sign out from Google Drive' : 'Sign in to Google Drive');
-        setIconLabel(autoToggleButton, 'refresh', GoogleDrive.getAutoBackupEnabled() ? 'Auto Backup: On' : 'Auto Backup: Off');
-        setIconLabel(intervalButton, 'clock-plus', `Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`);
-        setIconLabel(backendToggleButton, 'server', GoogleDrive.getTimekeeperBackendBackupEnabled() ? 'Backend: On' : 'Backend: Off');
-        setIconLabel(backendHostButton, 'world', `Backend Host: ${GoogleDrive.getTimekeeperBackendHost()}`);
-        setIconLabel(backendPortButton, 'plug-connected', `Backend Port: ${GoogleDrive.getTimekeeperBackendPort()}`);
-        setIconLabel(backendTokenButton, 'key', GoogleDrive.getTimekeeperBackendBearerToken() ? 'Backend Token: Set' : 'Backend Token: Missing');
-        if (typeof (GoogleDrive as any).updateBackupStatusDisplay === 'function') {
-          (GoogleDrive as any).updateBackupStatusDisplay();
-        }
-      };
-
-      googleSection.appendChild(signButton);
-      googleSection.appendChild(autoToggleButton);
-      googleSection.appendChild(intervalButton);
-
-      backendSection.appendChild(backendToggleButton);
-      backendSection.appendChild(backendHostButton);
-      backendSection.appendChild(backendPortButton);
-      backendSection.appendChild(backendTokenButton);
-
-      googleSection.appendChild(createButton("Backup Now", "Run a backup immediately", async () => {
-        await GoogleDrive.runAutoBackupOnce({ silent: false, skipBackoff: true });
-        refreshBackupButtons();
-      }, 'database'));
-
-      // Add status info displays at the bottom
-      const infoContainer = document.createElement("div");
-      infoContainer.style.marginTop = "15px";
-      infoContainer.style.paddingTop = "10px";
-      infoContainer.style.borderTop = "1px solid #555";
-      infoContainer.style.fontSize = "12px";
-      infoContainer.style.color = "#aaa";
-
-      // Sign-in status indicator
-      const statusDiv = document.createElement("div");
-      statusDiv.style.marginBottom = "8px";
-      statusDiv.style.fontWeight = "bold";
-      infoContainer.appendChild(statusDiv);
-      GoogleDrive.setAuthStatusDisplay(statusDiv);
-
-      // User info
-      const userInfoDiv = document.createElement("div");
-      userInfoDiv.style.marginBottom = "8px";
-      GoogleDrive.setGoogleUserDisplay(userInfoDiv);
-      infoContainer.appendChild(userInfoDiv);
-
-      // Backup status info
-      const backupInfoDiv = document.createElement("div");
-      GoogleDrive.setBackupStatusDisplay(backupInfoDiv);
-      infoContainer.appendChild(backupInfoDiv);
-
-      googleSection.appendChild(infoContainer);
-
-      // Update status display based on sign-in state
-      GoogleDrive.updateAuthStatusDisplay();
-      GoogleDrive.updateGoogleUserDisplay();
-      GoogleDrive.updateBackupStatusDisplay();
-      refreshBackupButtons();
-
-      // Append sections
-      settingsContent.appendChild(sectionHeading);
-      settingsContent.appendChild(generalSection)
-      settingsContent.appendChild(googleSection);
-      settingsContent.appendChild(backendSection);
-      const normalizedInitialTab = initialTab === 'drive' ? 'google' : initialTab;
-      showSection(normalizedInitialTab);
-
-      settingsModalInstance.appendChild(settingsContent);
-      document.body.appendChild(settingsModalInstance);
-
-      // Calculate centered position and fix top edge
-      requestAnimationFrame(() => {
-        const rect = settingsModalInstance.getBoundingClientRect();
-        const viewportHeight = window.innerHeight;
-        const centeredTop = (viewportHeight - rect.height) / 2;
-        settingsModalInstance.style.top = `${Math.max(20, centeredTop)}px`;
-        settingsModalInstance.style.transform = 'translateX(-50%)';
-      });
-
-      // Add click-outside listener
-      // Use setTimeout to ensure this listener is added after the current click event cycle
-      setTimeout(() => {
-        document.addEventListener('click', handleClickOutsideSettingsModal, true);
-        document.addEventListener('keydown', handleSettingsModalEscape);
-      }, 0);
-    }
-
-    function handleSettingsModalEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape' && settingsModalInstance && settingsModalInstance.parentNode === document.body) {
-        // Check if any subdialogs are open - if so, let their handlers deal with it
-        const saveModal = document.getElementById('ytls-save-modal');
-        const loadModal = document.getElementById('ytls-load-modal');
-        const deleteModal = document.getElementById('ytls-delete-all-modal');
-        if (saveModal || loadModal || deleteModal) {
-          // Let the subdialog's escape handler handle this
+      function handleClickOutsideSettingsModal(event) {
+        // If the click is on the cog button itself, let toggleSettingsModal handle it
+        if (
+          settingsCogButtonElement &&
+          settingsCogButtonElement.contains(event.target)
+        ) {
           return;
         }
 
-        event.preventDefault();
+        // Check if clicked outside all modals
+        const saveModal = document.getElementById("ytls-save-modal");
+        const loadModal = document.getElementById("ytls-load-modal");
+        const deleteModal = document.getElementById("ytls-delete-all-modal");
 
-        // Close all subdialogs before closing settings
-        if (saveModal && document.body.contains(saveModal)) {
-          document.body.removeChild(saveModal);
-        }
-        if (loadModal && document.body.contains(loadModal)) {
-          document.body.removeChild(loadModal);
-        }
-        if (deleteModal && document.body.contains(deleteModal)) {
-          document.body.removeChild(deleteModal);
-        }
+        const clickedInsideAnyModal =
+          (saveModal && saveModal.contains(event.target)) ||
+          (loadModal && loadModal.contains(event.target)) ||
+          (deleteModal && deleteModal.contains(event.target)) ||
+          (settingsModalInstance &&
+            settingsModalInstance.contains(event.target));
 
-        settingsModalInstance.classList.remove("ytls-fade-in");
-        settingsModalInstance.classList.add("ytls-fade-out");
-        setTimeout(() => {
-          if (document.body.contains(settingsModalInstance)) {
-            document.body.removeChild(settingsModalInstance);
+        if (!clickedInsideAnyModal) {
+          // Close all subdialogs first
+          if (saveModal && document.body.contains(saveModal)) {
+            document.body.removeChild(saveModal);
           }
-          settingsModalInstance = null;
-          document.removeEventListener('click', handleClickOutsideSettingsModal, true);
-          document.removeEventListener('keydown', handleSettingsModalEscape);
-        }, 300);
+          if (loadModal && document.body.contains(loadModal)) {
+            document.body.removeChild(loadModal);
+          }
+          if (deleteModal && document.body.contains(deleteModal)) {
+            document.body.removeChild(deleteModal);
+          }
+
+          // Then close settings modal
+          if (
+            settingsModalInstance &&
+            settingsModalInstance.parentNode === document.body
+          ) {
+            settingsModalInstance.classList.remove("ytls-fade-in");
+            settingsModalInstance.classList.add("ytls-fade-out");
+            setTimeout(() => {
+              if (document.body.contains(settingsModalInstance)) {
+                document.body.removeChild(settingsModalInstance);
+              }
+              settingsModalInstance = null;
+              document.removeEventListener(
+                "click",
+                handleClickOutsideSettingsModal,
+                true,
+              );
+              document.removeEventListener(
+                "keydown",
+                handleSettingsModalEscape,
+              );
+            }, 300); // Match animation duration
+          }
+        }
       }
-    }
 
-    function handleClickOutsideSettingsModal(event) {
-      // If the click is on the cog button itself, let toggleSettingsModal handle it
-      if (settingsCogButtonElement && settingsCogButtonElement.contains(event.target)) {
-        return;
-      }
+      // Add a save button to the buttons section
+      const saveBtn = document.createElement("button");
+      setIconLabel(saveBtn, "device-floppy", "Save");
+      saveBtn.classList.add("ytls-file-operation-button");
+      saveBtn.onclick = () => {
+        // Create a styled modal for the save format choice
+        const modal = document.createElement("div");
+        modal.id = "ytls-save-modal";
+        modal.classList.remove("ytls-fade-out");
+        modal.classList.add("ytls-fade-in");
 
-      // Check if clicked outside all modals
-      const saveModal = document.getElementById('ytls-save-modal');
-      const loadModal = document.getElementById('ytls-load-modal');
-      const deleteModal = document.getElementById('ytls-delete-all-modal');
+        const message = document.createElement("p");
+        message.textContent = "Save as:";
 
-      const clickedInsideAnyModal = (saveModal && saveModal.contains(event.target)) ||
-                                    (loadModal && loadModal.contains(event.target)) ||
-                                    (deleteModal && deleteModal.contains(event.target)) ||
-                                    (settingsModalInstance && settingsModalInstance.contains(event.target));
+        let escapeHandler: ((event: KeyboardEvent) => void) | null = null;
+        let clickOutsideHandler: ((event: MouseEvent) => void) | null = null;
+        const closeSaveModal = createModalCloseHandler(modal, () => {
+          if (escapeHandler) {
+            document.removeEventListener("keydown", escapeHandler);
+          }
+          if (clickOutsideHandler) {
+            document.removeEventListener("click", clickOutsideHandler, true);
+          }
+        });
 
-      if (!clickedInsideAnyModal) {
-        // Close all subdialogs first
-        if (saveModal && document.body.contains(saveModal)) {
-          document.body.removeChild(saveModal);
-        }
-        if (loadModal && document.body.contains(loadModal)) {
-          document.body.removeChild(loadModal);
-        }
-        if (deleteModal && document.body.contains(deleteModal)) {
-          document.body.removeChild(deleteModal);
-        }
+        escapeHandler = createEscapeKeyHandler(closeSaveModal);
+        clickOutsideHandler = createClickOutsideHandler(modal, closeSaveModal);
 
-        // Then close settings modal
-        if (settingsModalInstance && settingsModalInstance.parentNode === document.body) {
-          settingsModalInstance.classList.remove("ytls-fade-in");
-          settingsModalInstance.classList.add("ytls-fade-out");
-          setTimeout(() => {
-            if (document.body.contains(settingsModalInstance)) {
-              document.body.removeChild(settingsModalInstance);
+        const jsonButton = document.createElement("button");
+        jsonButton.textContent = "JSON";
+        jsonButton.classList.add("ytls-save-modal-button");
+        jsonButton.onclick = () => {
+          if (escapeHandler) {
+            document.removeEventListener("keydown", escapeHandler);
+          }
+          if (clickOutsideHandler) {
+            document.removeEventListener("click", clickOutsideHandler, true);
+          }
+          createModalCloseHandler(modal, () => saveTimestampsAs("json"))();
+        };
+
+        const textButton = document.createElement("button");
+        textButton.textContent = "Plain Text";
+        textButton.classList.add("ytls-save-modal-button");
+        textButton.onclick = () => {
+          if (escapeHandler) {
+            document.removeEventListener("keydown", escapeHandler);
+          }
+          if (clickOutsideHandler) {
+            document.removeEventListener("click", clickOutsideHandler, true);
+          }
+          createModalCloseHandler(modal, () => saveTimestampsAs("text"))();
+        };
+
+        const cancelButton = document.createElement("button");
+        cancelButton.textContent = "Cancel";
+        cancelButton.classList.add("ytls-save-modal-cancel-button");
+        cancelButton.onclick = closeSaveModal;
+
+        modal.appendChild(message);
+        modal.appendChild(jsonButton);
+        modal.appendChild(textButton);
+        modal.appendChild(cancelButton);
+        document.body.appendChild(modal);
+
+        registerModalEscapeHandler(escapeHandler);
+        registerModalClickOutsideHandler(clickOutsideHandler);
+      };
+
+      // Add a load button to the buttons section
+      const loadBtn = document.createElement("button");
+      setIconLabel(loadBtn, "folder-open", "Load");
+      loadBtn.classList.add("ytls-file-operation-button");
+      loadBtn.onclick = () => {
+        // Create a modal for choosing load source
+        const loadModal = document.createElement("div");
+        loadModal.id = "ytls-load-modal";
+        loadModal.classList.remove("ytls-fade-out");
+        loadModal.classList.add("ytls-fade-in");
+
+        const loadMessage = document.createElement("p");
+        loadMessage.textContent = "Load from:";
+
+        let escapeHandler: ((event: KeyboardEvent) => void) | null = null;
+        let clickOutsideHandler: ((event: MouseEvent) => void) | null = null;
+        const closeLoadModal = createModalCloseHandler(loadModal, () => {
+          if (escapeHandler) {
+            document.removeEventListener("keydown", escapeHandler);
+          }
+          if (clickOutsideHandler) {
+            document.removeEventListener("click", clickOutsideHandler, true);
+          }
+        });
+
+        escapeHandler = createEscapeKeyHandler(closeLoadModal);
+        clickOutsideHandler = createClickOutsideHandler(
+          loadModal,
+          closeLoadModal,
+        );
+
+        const fromFileButton = document.createElement("button");
+        fromFileButton.textContent = "File";
+        fromFileButton.classList.add("ytls-save-modal-button");
+        fromFileButton.onclick = () => {
+          // Create a hidden file input element
+          const fileInput = document.createElement("input");
+          fileInput.type = "file";
+          fileInput.accept = ".json,.txt";
+          fileInput.classList.add("ytls-hidden-file-input");
+
+          fileInput.onchange = (event) => {
+            const file = (event.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+
+            // Close modal as soon as file is selected
+            if (escapeHandler) {
+              document.removeEventListener("keydown", escapeHandler);
             }
-            settingsModalInstance = null;
-            document.removeEventListener('click', handleClickOutsideSettingsModal, true);
-            document.removeEventListener('keydown', handleSettingsModalEscape);
-          }, 300); // Match animation duration
-        }
-      }
-    }
+            if (clickOutsideHandler) {
+              document.removeEventListener("click", clickOutsideHandler, true);
+            }
+            closeLoadModal();
 
-    // Add a save button to the buttons section
-    const saveBtn = document.createElement("button");
-    setIconLabel(saveBtn, 'device-floppy', 'Save');
-    saveBtn.classList.add("ytls-file-operation-button");
-    saveBtn.onclick = () => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const content = String(reader.result).trim();
+              processImportedData(content);
+            };
+            reader.readAsText(file);
+          };
+          fileInput.click();
+        };
 
-      // Create a styled modal for the save format choice
-      const modal = document.createElement("div");
-      modal.id = "ytls-save-modal";
-      modal.classList.remove("ytls-fade-out");
-      modal.classList.add("ytls-fade-in");
+        const fromClipboardButton = document.createElement("button");
+        fromClipboardButton.textContent = "Clipboard";
+        fromClipboardButton.classList.add("ytls-save-modal-button");
+        fromClipboardButton.onclick = async () => {
+          if (escapeHandler) {
+            document.removeEventListener("keydown", escapeHandler);
+          }
+          if (clickOutsideHandler) {
+            document.removeEventListener("click", clickOutsideHandler, true);
+          }
+          createModalCloseHandler(loadModal, async () => {
+            try {
+              const clipboardText = await navigator.clipboard.readText();
+              if (clipboardText) {
+                processImportedData(clipboardText.trim());
+              } else {
+                alert("Clipboard is empty.");
+              }
+            } catch (err) {
+              log("Failed to read from clipboard: ", err, "error");
+              alert(
+                "Failed to read from clipboard. Ensure you have granted permission.",
+              );
+            }
+          })();
+        };
 
-      const message = document.createElement("p");
-      message.textContent = "Save as:";
+        const cancelLoadButton = document.createElement("button");
+        cancelLoadButton.textContent = "Cancel";
+        cancelLoadButton.classList.add("ytls-save-modal-cancel-button");
+        cancelLoadButton.onclick = closeLoadModal;
 
-      let escapeHandler: ((event: KeyboardEvent) => void) | null = null;
-      let clickOutsideHandler: ((event: MouseEvent) => void) | null = null;
-      const closeSaveModal = createModalCloseHandler(modal, () => {
-        if (escapeHandler) {
-          document.removeEventListener('keydown', escapeHandler);
-        }
-        if (clickOutsideHandler) {
-          document.removeEventListener('click', clickOutsideHandler, true);
-        }
-      });
+        loadModal.appendChild(loadMessage);
+        loadModal.appendChild(fromFileButton);
+        loadModal.appendChild(fromClipboardButton);
+        loadModal.appendChild(cancelLoadButton);
+        document.body.appendChild(loadModal);
 
-      escapeHandler = createEscapeKeyHandler(closeSaveModal);
-      clickOutsideHandler = createClickOutsideHandler(modal, closeSaveModal);
-
-      const jsonButton = document.createElement("button");
-      jsonButton.textContent = "JSON";
-      jsonButton.classList.add("ytls-save-modal-button");
-      jsonButton.onclick = () => {
-        if (escapeHandler) {
-          document.removeEventListener('keydown', escapeHandler);
-        }
-        if (clickOutsideHandler) {
-          document.removeEventListener('click', clickOutsideHandler, true);
-        }
-        createModalCloseHandler(modal, () => saveTimestampsAs("json"))();
+        registerModalEscapeHandler(escapeHandler);
+        registerModalClickOutsideHandler(clickOutsideHandler);
       };
 
-      const textButton = document.createElement("button");
-      textButton.textContent = "Plain Text";
-      textButton.classList.add("ytls-save-modal-button");
-      textButton.onclick = () => {
-        if (escapeHandler) {
-          document.removeEventListener('keydown', escapeHandler);
+      // Add export button to the buttons section
+      const exportBtn = document.createElement("button");
+      setIconLabel(exportBtn, "file-export", "Export");
+      exportBtn.classList.add("ytls-file-operation-button");
+      exportBtn.onclick = async () => {
+        try {
+          await exportAllTimestamps();
+        } catch (err) {
+          alert("Failed to export data: Could not read from database.");
         }
-        if (clickOutsideHandler) {
-          document.removeEventListener('click', clickOutsideHandler, true);
-        }
-        createModalCloseHandler(modal, () => saveTimestampsAs("text"))();
       };
 
-      const cancelButton = document.createElement("button");
-      cancelButton.textContent = "Cancel";
-      cancelButton.classList.add("ytls-save-modal-cancel-button");
-      cancelButton.onclick = closeSaveModal;
-
-      modal.appendChild(message);
-      modal.appendChild(jsonButton);
-      modal.appendChild(textButton);
-      modal.appendChild(cancelButton);
-      document.body.appendChild(modal);
-
-      registerModalEscapeHandler(escapeHandler);
-      registerModalClickOutsideHandler(clickOutsideHandler);
-    };
-
-    // Add a load button to the buttons section
-    const loadBtn = document.createElement("button");
-    setIconLabel(loadBtn, 'folder-open', 'Load');
-    loadBtn.classList.add("ytls-file-operation-button");
-    loadBtn.onclick = () => {
-      // Create a modal for choosing load source
-      const loadModal = document.createElement("div");
-      loadModal.id = "ytls-load-modal";
-      loadModal.classList.remove("ytls-fade-out");
-      loadModal.classList.add("ytls-fade-in");
-
-      const loadMessage = document.createElement("p");
-      loadMessage.textContent = "Load from:";
-
-      let escapeHandler: ((event: KeyboardEvent) => void) | null = null;
-      let clickOutsideHandler: ((event: MouseEvent) => void) | null = null;
-      const closeLoadModal = createModalCloseHandler(loadModal, () => {
-        if (escapeHandler) {
-          document.removeEventListener('keydown', escapeHandler);
-        }
-        if (clickOutsideHandler) {
-          document.removeEventListener('click', clickOutsideHandler, true);
-        }
-      });
-
-      escapeHandler = createEscapeKeyHandler(closeLoadModal);
-      clickOutsideHandler = createClickOutsideHandler(loadModal, closeLoadModal);
-
-      const fromFileButton = document.createElement("button");
-      fromFileButton.textContent = "File";
-      fromFileButton.classList.add("ytls-save-modal-button");
-      fromFileButton.onclick = () => {
-        // Create a hidden file input element
+      // Add import button to the buttons section
+      const importBtn = document.createElement("button");
+      setIconLabel(importBtn, "file-import", "Import");
+      importBtn.classList.add("ytls-file-operation-button");
+      importBtn.onclick = () => {
         const fileInput = document.createElement("input");
         fileInput.type = "file";
-        fileInput.accept = ".json,.txt";
-        fileInput.classList.add("ytls-hidden-file-input");
+        fileInput.accept = ".json";
+        fileInput.classList.add("ytls-hidden-file-input"); // Added class
 
         fileInput.onchange = (event) => {
           const file = (event.target as HTMLInputElement).files?.[0];
           if (!file) return;
 
-          // Close modal as soon as file is selected
-          if (escapeHandler) {
-            document.removeEventListener('keydown', escapeHandler);
-          }
-          if (clickOutsideHandler) {
-            document.removeEventListener('click', clickOutsideHandler, true);
-          }
-          closeLoadModal();
-
           const reader = new FileReader();
           reader.onload = () => {
-            const content = String(reader.result).trim();
-            processImportedData(content);
+            try {
+              const importedData = JSON.parse(String(reader.result));
+              const importPromises = [] as Promise<unknown>[];
+
+              for (const key in importedData) {
+                if (
+                  Object.prototype.hasOwnProperty.call(importedData, key) &&
+                  key.startsWith("ytls-")
+                ) {
+                  const videoId = key.substring(5); // Extract videoId from "ytls-videoId"
+                  const videoData = importedData[key];
+
+                  // Ensure videoData has the expected structure before saving
+                  if (
+                    videoData &&
+                    typeof videoData.video_id === "string" &&
+                    Array.isArray(videoData.timestamps)
+                  ) {
+                    // Ensure each timestamp has a guid
+                    const timestampsWithGuids = videoData.timestamps.map(
+                      (ts) => ({
+                        ...ts,
+                        guid: ts.guid || crypto.randomUUID(),
+                      }),
+                    );
+                    // Save to IndexedDB
+                    const promise = saveToIndexedDB(
+                      videoId,
+                      timestampsWithGuids,
+                    )
+                      .then(() => log(`Imported ${videoId} to IndexedDB`))
+                      .catch((err) =>
+                        log(
+                          `Failed to import ${videoId} to IndexedDB:`,
+                          err,
+                          "error",
+                        ),
+                      );
+                    importPromises.push(promise);
+                  } else {
+                    log(
+                      `Skipping key ${key} during import due to unexpected data format.`,
+                      "warn",
+                    );
+                  }
+                }
+              }
+              Promise.all(importPromises)
+                .then(() => {
+                  // alert("Data imported successfully! Refreshing tool...");
+                  handleUrlChange(); // Refresh the tool to reflect imported data
+                })
+                .catch((err) => {
+                  alert(
+                    "An error occurred during import to IndexedDB. Check console for details.",
+                  );
+                  log("Overall import error:", err, "error");
+                });
+            } catch (e) {
+              alert(
+                "Failed to import data. Please ensure the file is in the correct format.\n" +
+                  (e as Error).message,
+              );
+              log("Import error:", e, "error");
+            }
           };
+
           reader.readAsText(file);
         };
+
         fileInput.click();
       };
 
-      const fromClipboardButton = document.createElement("button");
-      fromClipboardButton.textContent = "Clipboard";
-      fromClipboardButton.classList.add("ytls-save-modal-button");
-      fromClipboardButton.onclick = async () => {
-        if (escapeHandler) {
-          document.removeEventListener('keydown', escapeHandler);
-        }
-        if (clickOutsideHandler) {
-          document.removeEventListener('click', clickOutsideHandler, true);
-        }
-        createModalCloseHandler(loadModal, async () => {
-          try {
-            const clipboardText = await navigator.clipboard.readText();
-            if (clipboardText) {
-              processImportedData(clipboardText.trim());
-            } else {
-              alert("Clipboard is empty.");
-            }
-          } catch (err) {
-            log("Failed to read from clipboard: ", err, 'error');
-            alert("Failed to read from clipboard. Ensure you have granted permission.");
-          }
-        })();
+      style.textContent = PANE_STYLES;
+
+      list.onclick = (e) => {
+        handleClick(e);
+      };
+      list.ontouchstart = (e) => {
+        handleClick(e);
       };
 
-      const cancelLoadButton = document.createElement("button");
-      cancelLoadButton.textContent = "Cancel";
-      cancelLoadButton.classList.add("ytls-save-modal-cancel-button");
-      cancelLoadButton.onclick = closeLoadModal;
+      // Pane helpers are declared at module scope above
 
-      loadModal.appendChild(loadMessage);
-      loadModal.appendChild(fromFileButton);
-      loadModal.appendChild(fromClipboardButton);
-      loadModal.appendChild(cancelLoadButton);
-      document.body.appendChild(loadModal);
-
-      registerModalEscapeHandler(escapeHandler);
-      registerModalClickOutsideHandler(clickOutsideHandler);
-    };
-
-    // Add export button to the buttons section
-    const exportBtn = document.createElement("button");
-    setIconLabel(exportBtn, 'file-export', 'Export');
-    exportBtn.classList.add("ytls-file-operation-button");
-    exportBtn.onclick = async () => {
-      try {
-        await exportAllTimestamps();
-      } catch (err) {
-        alert("Failed to export data: Could not read from database.");
-      }
-    };
-
-    // Add import button to the buttons section
-    const importBtn = document.createElement("button");
-    setIconLabel(importBtn, 'file-import', 'Import');
-    importBtn.classList.add("ytls-file-operation-button");
-    importBtn.onclick = () => {
-      const fileInput = document.createElement("input");
-      fileInput.type = "file";
-      fileInput.accept = ".json";
-      fileInput.classList.add("ytls-hidden-file-input"); // Added class
-
-      fileInput.onchange = (event) => {
-        const file = (event.target as HTMLInputElement).files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = () => {
-          try {
-            const importedData = JSON.parse(String(reader.result));
-            const importPromises = [] as Promise<unknown>[];
-
-            for (const key in importedData) {
-              if (Object.prototype.hasOwnProperty.call(importedData, key) && key.startsWith("ytls-")) {
-                const videoId = key.substring(5); // Extract videoId from "ytls-videoId"
-                const videoData = importedData[key];
-
-                // Ensure videoData has the expected structure before saving
-                if (videoData && typeof videoData.video_id === 'string' && Array.isArray(videoData.timestamps)) {
-                  // Ensure each timestamp has a guid
-                  const timestampsWithGuids = videoData.timestamps.map(ts => ({
-                    ...ts,
-                    guid: ts.guid || crypto.randomUUID()
-                  }));
-                  // Save to IndexedDB
-                  const promise = saveToIndexedDB(videoId, timestampsWithGuids)
-                    .then(() => log(`Imported ${videoId} to IndexedDB`))
-                    .catch(err => log(`Failed to import ${videoId} to IndexedDB:`, err, 'error'));
-                  importPromises.push(promise);
-                } else {
-                  log(`Skipping key ${key} during import due to unexpected data format.`, 'warn');
-                }
+      // Load pane position from IndexedDB settings
+      function loadPanePosition() {
+        if (!pane) return;
+        log("Loading window position from IndexedDB");
+        loadGlobalSettings("windowPosition")
+          .then((value) => {
+            const parsed = PanePositionSchema.safeParse(value);
+            if (parsed.success) {
+              const pos = parsed.data;
+              pane.style.left = `${pos.x}px`;
+              pane.style.top = `${pos.y}px`;
+              pane.style.right = "auto";
+              pane.style.bottom = "auto";
+              // Apply stored size when provided, otherwise fall back to defaults
+              if (typeof pos.width === "number" && pos.width > 0) {
+                pane.style.width = `${pos.width}px`;
+              } else {
+                pane.style.width = `${DEFAULT_PANE_WIDTH}px`;
+                log(
+                  `No stored window width found, using default width ${DEFAULT_PANE_WIDTH}px`,
+                );
               }
+              if (typeof pos.height === "number" && pos.height > 0) {
+                pane.style.height = `${pos.height}px`;
+              } else {
+                pane.style.height = `${DEFAULT_PANE_HEIGHT}px`;
+                log(
+                  `No stored window height found, using default height ${DEFAULT_PANE_HEIGHT}px`,
+                );
+              }
+              // Get rect after applying position and size
+              const rect = getPaneRect();
+              updateLastSavedPanePositionFromRect(rect, pos.x, pos.y);
+              log(
+                "Restored window position from IndexedDB:",
+                getPanePositionState(),
+              );
+            } else {
+              if (!parsed.success) {
+                log(
+                  "Window position in IndexedDB failed validation:",
+                  parsed.error.format(),
+                  "warn",
+                );
+              } else {
+                log(
+                  "No window position found in IndexedDB, applying default size and leaving default position",
+                );
+              }
+              // Ensure default size is applied when no stored position exists
+              pane.style.width = `${DEFAULT_PANE_WIDTH}px`;
+              pane.style.height = `${DEFAULT_PANE_HEIGHT}px`;
+              setPanePositionState(null);
             }
-            Promise.all(importPromises).then(() => {
-              // alert("Data imported successfully! Refreshing tool...");
-              handleUrlChange(); // Refresh the tool to reflect imported data
-            }).catch(err => {
-              alert("An error occurred during import to IndexedDB. Check console for details.");
-              log("Overall import error:", err, 'error');
-            });
-          } catch (e) {
-            alert("Failed to import data. Please ensure the file is in the correct format.\n" + (e as Error).message);
-            log("Import error:", e, 'error');
-          }
+            clampPaneToViewport();
+            const rect = getPaneRect();
+            if (rect && (rect.width || rect.height)) {
+              updateLastSavedPanePositionFromRect(rect);
+            }
+            // Ensure the scroll area is sized after restoring position/size
+            recalculateTimestampsAreaFn?.();
+          })
+          .catch((err) => {
+            log("failed to load pane position from IndexedDB:", err, "warn");
+            clampPaneToViewport();
+            const rect = getPaneRect();
+            if (rect && (rect.width || rect.height)) {
+              setPanePositionState({
+                x: Math.max(0, Math.round(rect.left)),
+                y: 0, // Fixed at bottom
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+              });
+            }
+            recalculateTimestampsAreaFn?.();
+          });
+      }
+
+      function savePanePosition() {
+        if (!pane) return;
+
+        const rect = getPaneRect();
+        if (!rect) return;
+
+        const positionData = {
+          x: Math.max(0, Math.round(rect.left)),
+          y: Math.max(0, Math.round(rect.top)),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
         };
 
-        reader.readAsText(file);
-      };
-
-      fileInput.click();
-    };
-
-  style.textContent = PANE_STYLES;
-
-    list.onclick = (e) => {
-      handleClick(e);
-    };
-    list.ontouchstart = (e) => {
-      handleClick(e);
-    };
-
-    // Pane helpers are declared at module scope above
-
-    // Load pane position from IndexedDB settings
-    function loadPanePosition() {
-      if (!pane) return;
-      log('Loading window position from IndexedDB');
-      loadGlobalSettings('windowPosition').then(value => {
-        const parsed = PanePositionSchema.safeParse(value);
-        if (parsed.success) {
-          const pos = parsed.data;
-          pane.style.left = `${pos.x}px`;
-          pane.style.top = `${pos.y}px`;
-          pane.style.right = "auto";
-          pane.style.bottom = "auto";
-          // Apply stored size when provided, otherwise fall back to defaults
-          if (typeof pos.width === 'number' && pos.width > 0) {
-            pane.style.width = `${pos.width}px`;
-          } else {
-            pane.style.width = `${DEFAULT_PANE_WIDTH}px`;
-            log(`No stored window width found, using default width ${DEFAULT_PANE_WIDTH}px`);
-          }
-          if (typeof pos.height === 'number' && pos.height > 0) {
-            pane.style.height = `${pos.height}px`;
-          } else {
-            pane.style.height = `${DEFAULT_PANE_HEIGHT}px`;
-            log(`No stored window height found, using default height ${DEFAULT_PANE_HEIGHT}px`);
-          }
-          // Get rect after applying position and size
-          const rect = getPaneRect();
-          updateLastSavedPanePositionFromRect(rect, pos.x, pos.y);
-          log('Restored window position from IndexedDB:', getPanePositionState());
-        } else {
-          if (!parsed.success) {
-            log('Window position in IndexedDB failed validation:', parsed.error.format(), 'warn');
-          } else {
-            log('No window position found in IndexedDB, applying default size and leaving default position');
-          }
-          // Ensure default size is applied when no stored position exists
-          pane.style.width = `${DEFAULT_PANE_WIDTH}px`;
-          pane.style.height = `${DEFAULT_PANE_HEIGHT}px`;
-          setPanePositionState(null);
-        }
-        clampPaneToViewport();
-        const rect = getPaneRect();
-        if (rect && (rect.width || rect.height)) {
-          updateLastSavedPanePositionFromRect(rect);
-        }
-        // Ensure the scroll area is sized after restoring position/size
-        recalculateTimestampsAreaFn?.();
-      }).catch(err => {
-        log("failed to load pane position from IndexedDB:", err, 'warn');
-        clampPaneToViewport();
-        const rect = getPaneRect();
-        if (rect && (rect.width || rect.height)) {
-          setPanePositionState({
-            x: Math.max(0, Math.round(rect.left)),
-            y: 0, // Fixed at bottom
-            width: Math.round(rect.width),
-            height: Math.round(rect.height)
-          });
-        }
-        recalculateTimestampsAreaFn?.();
-      });
-    }
-
-    function savePanePosition() {
-      if (!pane) return;
-
-      const rect = getPaneRect();
-      if (!rect) return;
-
-      const positionData = {
-        x: Math.max(0, Math.round(rect.left)),
-        y: Math.max(0, Math.round(rect.top)),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height)
-      };
-
-      const savedPos = getPanePositionState();
-      if (savedPos &&
-        savedPos.x === positionData.x &&
-        savedPos.y === positionData.y &&
-        savedPos.width === positionData.width &&
-        savedPos.height === positionData.height) {
-        log('Skipping window position save; position and size unchanged');
-        return;
-      }
-
-      setPanePositionState({ ...positionData });
-      log(`Saving window position and size to IndexedDB: x=${positionData.x}, y=${positionData.y}, width=${positionData.width}, height=${positionData.height}`);
-      saveGlobalSettings('windowPosition', positionData);
-
-      safePostMessage({
-        type: 'window_position_updated',
-        position: positionData,
-        timestamp: Date.now()
-      });
-    }
-    // Enable dragging for the pane
-    pane.style.position = "fixed";
-    pane.style.bottom = "0";
-    pane.style.right = "0";
-    pane.style.transition = "none"; // Disable transition during initial position restore
-    loadPanePosition();
-    // Ensure initial position is clamped to viewport
-    setTimeout(() => clampPaneToViewport(), 10);
-
-    let isDragging = false;
-    let offsetX = 0; let offsetY = 0;
-    let dragCachedPaneWidth = 0; let dragCachedPaneHeight = 0;
-    let dragCachedViewportWidth = 0; let dragCachedViewportHeight = 0;
-    let dragRafId: number | null = null;
-    let dragOccurredSinceLastMouseDown = false; // Flag to track if a drag occurred
-
-    pane.addEventListener("mousedown", (e) => {
-      const target = e.target;
-      if (!(target instanceof Element)) {
-        return;
-      }
-
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-        return;
-      }
-
-      // Prevent starting a drag when clicking inside the playback speed controls (they should not move the pane)
-      if (target instanceof Element && (target.closest('#ytls-playback-speed-group') || target.closest('#ytls-playback-speed'))) {
-        return;
-      }
-
-      // Allow dragging from the header region
-      if (target !== header && !header.contains(target) && window.getComputedStyle(target).cursor === 'pointer') {
-        return;
-      }
-
-      isDragging = true;
-      dragOccurredSinceLastMouseDown = false;
-      // Read layout once at drag start; reuse for clamping throughout the drag
-      const rect = pane.getBoundingClientRect();
-      offsetX = e.clientX - rect.left;
-      offsetY = e.clientY - rect.top;
-      dragCachedPaneWidth = rect.width;
-      dragCachedPaneHeight = rect.height;
-      dragCachedViewportWidth = document.documentElement.clientWidth;
-      dragCachedViewportHeight = document.documentElement.clientHeight;
-
-      pane.style.transition = "none";
-    });
-
-    document.addEventListener("mousemove", documentMousemoveHandler = (e) => {
-      if (!isDragging) return;
-
-      dragOccurredSinceLastMouseDown = true;
-
-      // Capture coordinates before yielding to RAF to get the latest pointer position
-      const clientX = e.clientX;
-      const clientY = e.clientY;
-
-      // Skip if a frame is already queued; the captured coords will be applied next frame
-      if (dragRafId !== null) return;
-
-      dragRafId = requestAnimationFrame(() => {
-        dragRafId = null;
-        if (!isDragging) return;
-
-        let x = Math.max(0, Math.min(clientX - offsetX, dragCachedViewportWidth - dragCachedPaneWidth));
-        let y = Math.max(0, Math.min(clientY - offsetY, dragCachedViewportHeight - dragCachedPaneHeight));
-
-        pane.style.left = `${x}px`;
-        pane.style.top = `${y}px`;
-        pane.style.right = "auto";
-        pane.style.bottom = "auto";
-      });
-    });
-
-    document.addEventListener("mouseup", documentMouseupHandler = () => {
-      if (!isDragging) return;
-
-      isDragging = false;
-      if (dragRafId !== null) {
-        cancelAnimationFrame(dragRafId);
-        dragRafId = null;
-      }
-      const didDrag = dragOccurredSinceLastMouseDown;
-      setTimeout(() => {
-        dragOccurredSinceLastMouseDown = false; // Reset the flag after a short delay
-      }, 50);
-
-      // Ensure the pane remains fully visible and persist its position
-      clampPaneToViewport();
-      setTimeout(() => {
-        if (didDrag) {
-          savePanePosition();
-        }
-      }, 200);
-    });
-
-    // Prevent text selection during drag
-    pane.addEventListener("dragstart", (e) => e.preventDefault());
-
-    // Create corner resize handles (top-left, top-right, bottom-left, bottom-right)
-    const resizeTL = document.createElement("div");
-    const resizeTR = document.createElement("div");
-    const resizeBL = document.createElement("div");
-    const resizeBR = document.createElement("div");
-    resizeTL.id = "ytls-resize-tl";
-    resizeTR.id = "ytls-resize-tr";
-    resizeBL.id = "ytls-resize-bl";
-    resizeBR.id = "ytls-resize-br";
-
-    // Resize state
-    let isResizing = false;
-    let resizeStartX: number = 0;
-    let resizeStartY: number = 0;
-    let resizeStartWidth: number = 0;
-    let resizeStartHeight: number = 0;
-    let resizeStartLeft: number = 0;
-    let resizeStartTop: number = 0;
-    let resizeCachedViewportWidth: number = 0;
-    let resizeCachedViewportHeight: number = 0;
-    let resizeRafId: number | null = null;
-    let resizeEdge: "top-left" | "top-right" | "bottom-left" | "bottom-right" | null = null;
-
-    function setupCorner(handle: HTMLElement, edge: "top-left" | "top-right" | "bottom-left" | "bottom-right") {
-      handle.addEventListener("dblclick", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        if (pane) {
-          pane.style.width = "300px";
-          pane.style.height = "300px";
-          savePanePosition();
-          recalculateTimestampsArea();
-        }
-      });
-      handle.addEventListener("mousedown", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        isResizing = true;
-        resizeEdge = edge;
-        resizeStartX = ev.clientX;
-        resizeStartY = ev.clientY;
-        const rect = pane.getBoundingClientRect();
-        resizeStartWidth = rect.width;
-        resizeStartHeight = rect.height;
-        resizeStartLeft = rect.left;
-        resizeStartTop = rect.top;
-        // Cache viewport dimensions once at resize start
-        resizeCachedViewportWidth = document.documentElement.clientWidth;
-        resizeCachedViewportHeight = document.documentElement.clientHeight;
-        // Set diagonal cursor indicator
-        if (edge === "top-left" || edge === "bottom-right") document.body.style.cursor = "nwse-resize";
-        else document.body.style.cursor = "nesw-resize";
-      });
-    }
-
-    setupCorner(resizeTL, "top-left");
-    setupCorner(resizeTR, "top-right");
-    setupCorner(resizeBL, "bottom-left");
-    setupCorner(resizeBR, "bottom-right");
-
-    document.addEventListener("mousemove", (e) => {
-      if (!isResizing || !pane || !resizeEdge) return;
-
-      const clientX = e.clientX;
-      const clientY = e.clientY;
-
-      if (resizeRafId !== null) return;
-
-      resizeRafId = requestAnimationFrame(() => {
-        resizeRafId = null;
-        if (!isResizing || !pane || !resizeEdge) return;
-
-        const deltaX = clientX - resizeStartX;
-        const deltaY = clientY - resizeStartY;
-        const vw = resizeCachedViewportWidth;
-        const vh = resizeCachedViewportHeight;
-
-        let newWidth = resizeStartWidth;
-        let newHeight = resizeStartHeight;
-        let newLeft = resizeStartLeft;
-        let newTop = resizeStartTop;
-
-        if (resizeEdge === "bottom-right") {
-          newWidth = Math.max(200, Math.min(800, resizeStartWidth + deltaX));
-          newHeight = Math.max(250, Math.min(vh, resizeStartHeight + deltaY));
-        } else if (resizeEdge === "top-left") {
-          newWidth = Math.max(200, Math.min(800, resizeStartWidth - deltaX));
-          newLeft = resizeStartLeft + deltaX;
-          newHeight = Math.max(250, Math.min(vh, resizeStartHeight - deltaY));
-          newTop = resizeStartTop + deltaY;
-        } else if (resizeEdge === "top-right") {
-          newWidth = Math.max(200, Math.min(800, resizeStartWidth + deltaX));
-          newHeight = Math.max(250, Math.min(vh, resizeStartHeight - deltaY));
-          newTop = resizeStartTop + deltaY;
-        } else if (resizeEdge === "bottom-left") {
-          newWidth = Math.max(200, Math.min(800, resizeStartWidth - deltaX));
-          newLeft = resizeStartLeft + deltaX;
-          newHeight = Math.max(250, Math.min(vh, resizeStartHeight + deltaY));
+        const savedPos = getPanePositionState();
+        if (
+          savedPos &&
+          savedPos.x === positionData.x &&
+          savedPos.y === positionData.y &&
+          savedPos.width === positionData.width &&
+          savedPos.height === positionData.height
+        ) {
+          log("Skipping window position save; position and size unchanged");
+          return;
         }
 
-        // Clamp to viewport
-        newLeft = Math.max(0, Math.min(newLeft, vw - newWidth));
-        newTop = Math.max(0, Math.min(newTop, vh - newHeight));
+        setPanePositionState({ ...positionData });
+        log(
+          `Saving window position and size to IndexedDB: x=${positionData.x}, y=${positionData.y}, width=${positionData.width}, height=${positionData.height}`,
+        );
+        saveGlobalSettings("windowPosition", positionData);
 
-        pane.style.width = `${newWidth}px`;
-        pane.style.height = `${newHeight}px`;
-        pane.style.left = `${newLeft}px`;
-        pane.style.top = `${newTop}px`;
-        pane.style.right = "auto";
-        pane.style.bottom = "auto";
-      });
-    });
-
-    document.addEventListener("mouseup", () => {
-      if (isResizing) {
-        isResizing = false;
-        if (resizeRafId !== null) {
-          cancelAnimationFrame(resizeRafId);
-          resizeRafId = null;
-        }
-        resizeEdge = null;
-        document.body.style.cursor = "";
-        clampAndSavePanePosition(true);
-      }
-    });
-
-    // Ensure the timestamps window is fully onscreen after resizing
-    let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
-    window.addEventListener("resize", windowResizeHandler = () => {
-      // Debounce position save - only save after resize is finished
-      if (resizeTimeout) {
-        clearTimeout(resizeTimeout);
-      }
-      resizeTimeout = setTimeout(() => {
-        // After resize finishes, clamp, save, and recalculate layout in a single debounced pass
-        clampAndSavePanePosition(true);
-        recalculateTimestampsAreaFn?.();
-        resizeTimeout = null;
-      }, 200);
-    });
-
-
-    header.appendChild(timeDisplay); // Add timeDisplay
-    // Add playback speed display
-    const playbackGroup = document.createElement('span');
-    playbackGroup.id = 'ytls-playback-speed-group';
-    playbackGroup.style.display = 'inline-flex';
-    playbackGroup.style.alignItems = 'center';
-    playbackGroup.style.marginLeft = '4px'; // spacing from timeDisplay
-    if (playbackSpeedDisplay) playbackGroup.appendChild(playbackSpeedDisplay);
-
-    header.appendChild(playbackGroup);
-
-    header.appendChild(versionWrapper); // Add version wrapper with indicator to header
-
-    const listWrapper = document.createElement("div");
-    listWrapper.id = "ytls-list-wrapper";
-    scrollbarTrack = document.createElement("div");
-    scrollbarTrack.className = "ytls-scrollbar-track";
-    scrollbarThumb = document.createElement("div");
-    scrollbarThumb.className = "ytls-scrollbar-thumb";
-    scrollbarTrack.append(scrollbarThumb);
-    listWrapper.append(list, scrollbarTrack);
-
-    const content = document.createElement("div");
-    content.id = "ytls-content";
-    content.append(listWrapper); // list is inside its own positioned wrapper
-    content.append(btns); // Buttons are always at the bottom of content
-
-    pane.append(header, content, style, resizeTL, resizeTR, resizeBL, resizeBR); // Append header, content, style, and corner resize handles to the pane
-
-    // Show diagonal cursors only on corners (no edge cursors)
-    let lastPaneCursor = '';
-    pane.addEventListener('mousemove', (ev) => {
-      if (isDragging || isResizing) return;
-      const rect = pane.getBoundingClientRect();
-      const threshold = 20; // matches corner grab size
-      const x = ev.clientX;
-      const y = ev.clientY;
-      const inLeft = x - rect.left <= threshold;
-      const inRight = rect.right - x <= threshold;
-      const inTop = y - rect.top <= threshold;
-      const inBottom = rect.bottom - y <= threshold;
-      let c = '';
-      if ((inTop && inLeft) || (inBottom && inRight)) c = 'nwse-resize';
-      else if ((inTop && inRight) || (inBottom && inLeft)) c = 'nesw-resize';
-      if (c !== lastPaneCursor) {
-        lastPaneCursor = c;
-        document.body.style.cursor = c;
-      }
-    });
-
-    let scrollThumbRafId: number | null = null;
-
-    function updateScrollbarThumb() {
-      if (!list || !scrollbarThumb) return;
-      const { scrollTop, scrollHeight, clientHeight } = list;
-      if (scrollHeight <= clientHeight) return;
-      const thumbHeight = Math.max(30, (clientHeight / scrollHeight) * clientHeight);
-      const thumbTop = (scrollTop / (scrollHeight - clientHeight)) * (clientHeight - thumbHeight);
-      scrollbarThumb.style.height = `${thumbHeight}px`;
-      scrollbarThumb.style.top = `${thumbTop}px`;
-    }
-
-    function showScrollbar() {
-      if (!scrollbarTrack) return;
-      // Batch thumb geometry update with the next paint
-      if (scrollThumbRafId === null) {
-        scrollThumbRafId = requestAnimationFrame(() => {
-          scrollThumbRafId = null;
-          updateScrollbarThumb();
+        safePostMessage({
+          type: "window_position_updated",
+          position: positionData,
+          timestamp: Date.now(),
         });
       }
-      scrollbarTrack.classList.add('ytls-scrollbar-visible');
-      if (scrollbarHideTimeoutId) clearTimeout(scrollbarHideTimeoutId);
-      scrollbarHideTimeoutId = setTimeout(() => {
-        scrollbarTrack?.classList.remove('ytls-scrollbar-visible');
-        scrollbarHideTimeoutId = null;
-      }, 500);
-    }
+      // Enable dragging for the pane
+      pane.style.position = "fixed";
+      pane.style.bottom = "0";
+      pane.style.right = "0";
+      pane.style.transition = "none"; // Disable transition during initial position restore
+      loadPanePosition();
+      // Ensure initial position is clamped to viewport
+      setTimeout(() => clampPaneToViewport(), 10);
 
-    pane.addEventListener('mouseenter', () => {
-      isMouseOverTimestamps = true;
-      TimestampView.setMouseOverTimestamps(true);
-      showScrollbar();
-    });
+      let isDragging = false;
+      let offsetX = 0;
+      let offsetY = 0;
+      let dragCachedPaneWidth = 0;
+      let dragCachedPaneHeight = 0;
+      let dragCachedViewportWidth = 0;
+      let dragCachedViewportHeight = 0;
+      let dragRafId: number | null = null;
+      let dragOccurredSinceLastMouseDown = false; // Flag to track if a drag occurred
 
-    list.addEventListener('scroll', showScrollbar);
-
-    pane.addEventListener('mouseleave', () => {
-      if (!isResizing && !isDragging) document.body.style.cursor = '';
-      isMouseOverTimestamps = false;
-      TimestampView.setMouseOverTimestamps(false);
-      // Hide any visible tooltips when leaving the pane
-      try { hideActiveTooltip(); } catch (_) {}
-      // Restore highlight when leaving the pane
-      try {
-        autoHighlightNearest(false);
-      } catch (e) {
-        // ignore
-      }
-    });
-
-    // Dynamically set min-height: header + buttons + 1 li row
-    function recalculateTimestampsArea() {
-      if (pane && header && btns && list) {
-        // Get bounding rectangles
-        const paneRect = pane.getBoundingClientRect();
-        const headerRect = header.getBoundingClientRect();
-        const btnsRect = btns.getBoundingClientRect();
-        // Calculate available height for the list
-        const available = paneRect.height - (headerRect.height + btnsRect.height);
-        list.style.maxHeight = available > 0 ? available + 'px' : '0px';
-        list.style.overflowY = available > 0 ? 'auto' : 'hidden';
-      }
-    }
-    recalculateTimestampsAreaFn = recalculateTimestampsArea;
-
-    setTimeout(() => {
-      recalculateTimestampsArea();
-      // Also set minPaneHeight for drag/resize logic
-      if (pane && header && btns && list) {
-        let liH = 40;
-        const itemsForSize = getTimestampItems();
-        if (itemsForSize.length > 0) {
-          liH = (itemsForSize[0] as HTMLElement).offsetHeight;
-        } else {
-          const tempLi = document.createElement('li');
-          tempLi.style.visibility = 'hidden';
-          tempLi.style.position = 'absolute';
-          tempLi.textContent = '00:00 Example';
-          // Append temporarily so we can measure
-          list.appendChild(tempLi);
-          liH = tempLi.offsetHeight;
-          list.removeChild(tempLi);
+      pane.addEventListener("mousedown", (e) => {
+        const target = e.target;
+        if (!(target instanceof Element)) {
+          return;
         }
-        setMinPaneHeight(header.offsetHeight + btns.offsetHeight + liH);
-        pane.style.minHeight = getMinPaneHeight() + 'px';
+
+        if (
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement
+        ) {
+          return;
+        }
+
+        // Prevent starting a drag when clicking inside the playback speed controls (they should not move the pane)
+        if (
+          target instanceof Element &&
+          (target.closest("#ytls-playback-speed-group") ||
+            target.closest("#ytls-playback-speed"))
+        ) {
+          return;
+        }
+
+        // Allow dragging from the header region
+        if (
+          target !== header &&
+          !header.contains(target) &&
+          window.getComputedStyle(target).cursor === "pointer"
+        ) {
+          return;
+        }
+
+        isDragging = true;
+        dragOccurredSinceLastMouseDown = false;
+        // Read layout once at drag start; reuse for clamping throughout the drag
+        const rect = pane.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        dragCachedPaneWidth = rect.width;
+        dragCachedPaneHeight = rect.height;
+        dragCachedViewportWidth = document.documentElement.clientWidth;
+        dragCachedViewportHeight = document.documentElement.clientHeight;
+
+        pane.style.transition = "none";
+      });
+
+      document.addEventListener(
+        "mousemove",
+        (documentMousemoveHandler = (e) => {
+          if (!isDragging) return;
+
+          dragOccurredSinceLastMouseDown = true;
+
+          // Capture coordinates before yielding to RAF to get the latest pointer position
+          const clientX = e.clientX;
+          const clientY = e.clientY;
+
+          // Skip if a frame is already queued; the captured coords will be applied next frame
+          if (dragRafId !== null) return;
+
+          dragRafId = requestAnimationFrame(() => {
+            dragRafId = null;
+            if (!isDragging) return;
+
+            let x = Math.max(
+              0,
+              Math.min(
+                clientX - offsetX,
+                dragCachedViewportWidth - dragCachedPaneWidth,
+              ),
+            );
+            let y = Math.max(
+              0,
+              Math.min(
+                clientY - offsetY,
+                dragCachedViewportHeight - dragCachedPaneHeight,
+              ),
+            );
+
+            pane.style.left = `${x}px`;
+            pane.style.top = `${y}px`;
+            pane.style.right = "auto";
+            pane.style.bottom = "auto";
+          });
+        }),
+      );
+
+      document.addEventListener(
+        "mouseup",
+        (documentMouseupHandler = () => {
+          if (!isDragging) return;
+
+          isDragging = false;
+          if (dragRafId !== null) {
+            cancelAnimationFrame(dragRafId);
+            dragRafId = null;
+          }
+          const didDrag = dragOccurredSinceLastMouseDown;
+          setTimeout(() => {
+            dragOccurredSinceLastMouseDown = false; // Reset the flag after a short delay
+          }, 50);
+
+          // Ensure the pane remains fully visible and persist its position
+          clampPaneToViewport();
+          setTimeout(() => {
+            if (didDrag) {
+              savePanePosition();
+            }
+          }, 200);
+        }),
+      );
+
+      // Prevent text selection during drag
+      pane.addEventListener("dragstart", (e) => e.preventDefault());
+
+      // Create corner resize handles (top-left, top-right, bottom-left, bottom-right)
+      const resizeTL = document.createElement("div");
+      const resizeTR = document.createElement("div");
+      const resizeBL = document.createElement("div");
+      const resizeBR = document.createElement("div");
+      resizeTL.id = "ytls-resize-tl";
+      resizeTR.id = "ytls-resize-tr";
+      resizeBL.id = "ytls-resize-bl";
+      resizeBR.id = "ytls-resize-br";
+
+      // Resize state
+      let isResizing = false;
+      let resizeStartX: number = 0;
+      let resizeStartY: number = 0;
+      let resizeStartWidth: number = 0;
+      let resizeStartHeight: number = 0;
+      let resizeStartLeft: number = 0;
+      let resizeStartTop: number = 0;
+      let resizeCachedViewportWidth: number = 0;
+      let resizeCachedViewportHeight: number = 0;
+      let resizeRafId: number | null = null;
+      let resizeEdge:
+        | "top-left"
+        | "top-right"
+        | "bottom-left"
+        | "bottom-right"
+        | null = null;
+
+      function setupCorner(
+        handle: HTMLElement,
+        edge: "top-left" | "top-right" | "bottom-left" | "bottom-right",
+      ) {
+        handle.addEventListener("dblclick", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (pane) {
+            pane.style.width = "300px";
+            pane.style.height = "300px";
+            savePanePosition();
+            recalculateTimestampsArea();
+          }
+        });
+        handle.addEventListener("mousedown", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          isResizing = true;
+          resizeEdge = edge;
+          resizeStartX = ev.clientX;
+          resizeStartY = ev.clientY;
+          const rect = pane.getBoundingClientRect();
+          resizeStartWidth = rect.width;
+          resizeStartHeight = rect.height;
+          resizeStartLeft = rect.left;
+          resizeStartTop = rect.top;
+          // Cache viewport dimensions once at resize start
+          resizeCachedViewportWidth = document.documentElement.clientWidth;
+          resizeCachedViewportHeight = document.documentElement.clientHeight;
+          // Set diagonal cursor indicator
+          if (edge === "top-left" || edge === "bottom-right")
+            document.body.style.cursor = "nwse-resize";
+          else document.body.style.cursor = "nesw-resize";
+        });
       }
-    }, 0);
 
-    // Recalculate when the pane itself changes size (drag-resize); window resize is handled
-    // by the debounced windowResizeHandler above which already calls recalculateTimestampsAreaFn.
-    if (paneResizeObserver) {
-      try { paneResizeObserver.disconnect(); } catch (_) {}
-      paneResizeObserver = null;
-    }
-    paneResizeObserver = new ResizeObserver(recalculateTimestampsArea);
-    paneResizeObserver.observe(pane);
+      setupCorner(resizeTL, "top-left");
+      setupCorner(resizeTR, "top-right");
+      setupCorner(resizeBL, "bottom-left");
+      setupCorner(resizeBR, "bottom-right");
 
-    // Track pointer interactions globally to differentiate user-initiated focus changes
-    if (!docPointerDownHandler) {
-      document.addEventListener("pointerdown", docPointerDownHandler = () => {
-        lastPointerDownTs = Date.now();
-      }, true);
-    }
-    if (!docPointerUpHandler) {
-      document.addEventListener("pointerup", docPointerUpHandler = () => {
-        // no-op placeholder; reserved for future heuristics
-      }, true);
-    }
+      document.addEventListener("mousemove", (e) => {
+        if (!isResizing || !pane || !resizeEdge) return;
+
+        const clientX = e.clientX;
+        const clientY = e.clientY;
+
+        if (resizeRafId !== null) return;
+
+        resizeRafId = requestAnimationFrame(() => {
+          resizeRafId = null;
+          if (!isResizing || !pane || !resizeEdge) return;
+
+          const deltaX = clientX - resizeStartX;
+          const deltaY = clientY - resizeStartY;
+          const vw = resizeCachedViewportWidth;
+          const vh = resizeCachedViewportHeight;
+
+          let newWidth = resizeStartWidth;
+          let newHeight = resizeStartHeight;
+          let newLeft = resizeStartLeft;
+          let newTop = resizeStartTop;
+
+          if (resizeEdge === "bottom-right") {
+            newWidth = Math.max(200, Math.min(800, resizeStartWidth + deltaX));
+            newHeight = Math.max(250, Math.min(vh, resizeStartHeight + deltaY));
+          } else if (resizeEdge === "top-left") {
+            newWidth = Math.max(200, Math.min(800, resizeStartWidth - deltaX));
+            newLeft = resizeStartLeft + deltaX;
+            newHeight = Math.max(250, Math.min(vh, resizeStartHeight - deltaY));
+            newTop = resizeStartTop + deltaY;
+          } else if (resizeEdge === "top-right") {
+            newWidth = Math.max(200, Math.min(800, resizeStartWidth + deltaX));
+            newHeight = Math.max(250, Math.min(vh, resizeStartHeight - deltaY));
+            newTop = resizeStartTop + deltaY;
+          } else if (resizeEdge === "bottom-left") {
+            newWidth = Math.max(200, Math.min(800, resizeStartWidth - deltaX));
+            newLeft = resizeStartLeft + deltaX;
+            newHeight = Math.max(250, Math.min(vh, resizeStartHeight + deltaY));
+          }
+
+          // Clamp to viewport
+          newLeft = Math.max(0, Math.min(newLeft, vw - newWidth));
+          newTop = Math.max(0, Math.min(newTop, vh - newHeight));
+
+          pane.style.width = `${newWidth}px`;
+          pane.style.height = `${newHeight}px`;
+          pane.style.left = `${newLeft}px`;
+          pane.style.top = `${newTop}px`;
+          pane.style.right = "auto";
+          pane.style.bottom = "auto";
+        });
+      });
+
+      document.addEventListener("mouseup", () => {
+        if (isResizing) {
+          isResizing = false;
+          if (resizeRafId !== null) {
+            cancelAnimationFrame(resizeRafId);
+            resizeRafId = null;
+          }
+          resizeEdge = null;
+          document.body.style.cursor = "";
+          clampAndSavePanePosition(true);
+        }
+      });
+
+      // Ensure the timestamps window is fully onscreen after resizing
+      let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
+      window.addEventListener(
+        "resize",
+        (windowResizeHandler = () => {
+          // Debounce position save - only save after resize is finished
+          if (resizeTimeout) {
+            clearTimeout(resizeTimeout);
+          }
+          resizeTimeout = setTimeout(() => {
+            // After resize finishes, clamp, save, and recalculate layout in a single debounced pass
+            clampAndSavePanePosition(true);
+            recalculateTimestampsAreaFn?.();
+            resizeTimeout = null;
+          }, 200);
+        }),
+      );
+
+      header.appendChild(timeDisplay); // Add timeDisplay
+      // Add playback speed display
+      const playbackGroup = document.createElement("span");
+      playbackGroup.id = "ytls-playback-speed-group";
+      playbackGroup.style.display = "inline-flex";
+      playbackGroup.style.alignItems = "center";
+      playbackGroup.style.marginLeft = "4px"; // spacing from timeDisplay
+      if (playbackSpeedDisplay) playbackGroup.appendChild(playbackSpeedDisplay);
+
+      header.appendChild(playbackGroup);
+
+      header.appendChild(versionWrapper); // Add version wrapper with indicator to header
+
+      const listWrapper = document.createElement("div");
+      listWrapper.id = "ytls-list-wrapper";
+      scrollbarTrack = document.createElement("div");
+      scrollbarTrack.className = "ytls-scrollbar-track";
+      scrollbarThumb = document.createElement("div");
+      scrollbarThumb.className = "ytls-scrollbar-thumb";
+      scrollbarTrack.append(scrollbarThumb);
+      listWrapper.append(list, scrollbarTrack);
+
+      const content = document.createElement("div");
+      content.id = "ytls-content";
+      content.append(listWrapper); // list is inside its own positioned wrapper
+      content.append(btns); // Buttons are always at the bottom of content
+
+      pane.append(
+        header,
+        content,
+        style,
+        resizeTL,
+        resizeTR,
+        resizeBL,
+        resizeBR,
+      ); // Append header, content, style, and corner resize handles to the pane
+
+      // Show diagonal cursors only on corners (no edge cursors)
+      let lastPaneCursor = "";
+      pane.addEventListener("mousemove", (ev) => {
+        if (isDragging || isResizing) return;
+        const rect = pane.getBoundingClientRect();
+        const threshold = 20; // matches corner grab size
+        const x = ev.clientX;
+        const y = ev.clientY;
+        const inLeft = x - rect.left <= threshold;
+        const inRight = rect.right - x <= threshold;
+        const inTop = y - rect.top <= threshold;
+        const inBottom = rect.bottom - y <= threshold;
+        let c = "";
+        if ((inTop && inLeft) || (inBottom && inRight)) c = "nwse-resize";
+        else if ((inTop && inRight) || (inBottom && inLeft)) c = "nesw-resize";
+        if (c !== lastPaneCursor) {
+          lastPaneCursor = c;
+          document.body.style.cursor = c;
+        }
+      });
+
+      let scrollThumbRafId: number | null = null;
+
+      function updateScrollbarThumb() {
+        if (!list || !scrollbarThumb) return;
+        const { scrollTop, scrollHeight, clientHeight } = list;
+        if (scrollHeight <= clientHeight) return;
+        const thumbHeight = Math.max(
+          30,
+          (clientHeight / scrollHeight) * clientHeight,
+        );
+        const thumbTop =
+          (scrollTop / (scrollHeight - clientHeight)) *
+          (clientHeight - thumbHeight);
+        scrollbarThumb.style.height = `${thumbHeight}px`;
+        scrollbarThumb.style.top = `${thumbTop}px`;
+      }
+
+      function showScrollbar() {
+        if (!scrollbarTrack) return;
+        // Batch thumb geometry update with the next paint
+        if (scrollThumbRafId === null) {
+          scrollThumbRafId = requestAnimationFrame(() => {
+            scrollThumbRafId = null;
+            updateScrollbarThumb();
+          });
+        }
+        scrollbarTrack.classList.add("ytls-scrollbar-visible");
+        if (scrollbarHideTimeoutId) clearTimeout(scrollbarHideTimeoutId);
+        scrollbarHideTimeoutId = setTimeout(() => {
+          scrollbarTrack?.classList.remove("ytls-scrollbar-visible");
+          scrollbarHideTimeoutId = null;
+        }, 500);
+      }
+
+      pane.addEventListener("mouseenter", () => {
+        isMouseOverTimestamps = true;
+        TimestampView.setMouseOverTimestamps(true);
+        showScrollbar();
+      });
+
+      list.addEventListener("scroll", showScrollbar);
+
+      pane.addEventListener("mouseleave", () => {
+        if (!isResizing && !isDragging) document.body.style.cursor = "";
+        isMouseOverTimestamps = false;
+        TimestampView.setMouseOverTimestamps(false);
+        // Hide any visible tooltips when leaving the pane
+        try {
+          hideActiveTooltip();
+        } catch (_) {}
+        // Restore highlight when leaving the pane
+        try {
+          autoHighlightNearest(false);
+        } catch (e) {
+          // ignore
+        }
+      });
+
+      // Dynamically set min-height: header + buttons + 1 li row
+      function recalculateTimestampsArea() {
+        if (pane && header && btns && list) {
+          // Get bounding rectangles
+          const paneRect = pane.getBoundingClientRect();
+          const headerRect = header.getBoundingClientRect();
+          const btnsRect = btns.getBoundingClientRect();
+          // Calculate available height for the list
+          const available =
+            paneRect.height - (headerRect.height + btnsRect.height);
+          list.style.maxHeight = available > 0 ? available + "px" : "0px";
+          list.style.overflowY = available > 0 ? "auto" : "hidden";
+        }
+      }
+      recalculateTimestampsAreaFn = recalculateTimestampsArea;
+
+      setTimeout(() => {
+        recalculateTimestampsArea();
+        // Also set minPaneHeight for drag/resize logic
+        if (pane && header && btns && list) {
+          let liH = 40;
+          const itemsForSize = getTimestampItems();
+          if (itemsForSize.length > 0) {
+            liH = (itemsForSize[0] as HTMLElement).offsetHeight;
+          } else {
+            const tempLi = document.createElement("li");
+            tempLi.style.visibility = "hidden";
+            tempLi.style.position = "absolute";
+            tempLi.textContent = "00:00 Example";
+            // Append temporarily so we can measure
+            list.appendChild(tempLi);
+            liH = tempLi.offsetHeight;
+            list.removeChild(tempLi);
+          }
+          setMinPaneHeight(header.offsetHeight + btns.offsetHeight + liH);
+          pane.style.minHeight = getMinPaneHeight() + "px";
+        }
+      }, 0);
+
+      // Recalculate when the pane itself changes size (drag-resize); window resize is handled
+      // by the debounced windowResizeHandler above which already calls recalculateTimestampsAreaFn.
+      if (paneResizeObserver) {
+        try {
+          paneResizeObserver.disconnect();
+        } catch (_) {}
+        paneResizeObserver = null;
+      }
+      paneResizeObserver = new ResizeObserver(recalculateTimestampsArea);
+      paneResizeObserver.observe(pane);
+
+      // Track pointer interactions globally to differentiate user-initiated focus changes
+      if (!docPointerDownHandler) {
+        document.addEventListener(
+          "pointerdown",
+          (docPointerDownHandler = () => {
+            lastPointerDownTs = Date.now();
+          }),
+          true,
+        );
+      }
+      if (!docPointerUpHandler) {
+        document.addEventListener(
+          "pointerup",
+          (docPointerUpHandler = () => {
+            // no-op placeholder; reserved for future heuristics
+          }),
+          true,
+        );
+      }
     } finally {
       isPaneInitializing = false;
     }
@@ -4480,16 +5258,16 @@ function safePostMessage(message: unknown) {
 
     // Remove any existing panes in the DOM (safety check)
     const existingPanes = document.querySelectorAll("#ytls-pane");
-    existingPanes.forEach(el => {
+    existingPanes.forEach((el) => {
       if (el !== pane) {
-        log('Removing duplicate pane element from DOM');
+        log("Removing duplicate pane element from DOM");
         el.remove();
       }
     });
 
     // Prevent duplicate pane instances in the DOM
     if (document.body.contains(pane)) {
-      log('Pane already in DOM, skipping append');
+      log("Pane already in DOM, skipping append");
       return;
     }
 
@@ -4515,19 +5293,21 @@ function safePostMessage(message: unknown) {
     // Aggressively ensure no duplicate panes exist before appending
     const allExistingPanes = document.querySelectorAll("#ytls-pane");
     if (allExistingPanes.length > 0) {
-      log(`WARNING: Found ${allExistingPanes.length} existing pane(s) in DOM, removing all`);
-      allExistingPanes.forEach(el => el.remove());
+      log(
+        `WARNING: Found ${allExistingPanes.length} existing pane(s) in DOM, removing all`,
+      );
+      allExistingPanes.forEach((el) => el.remove());
     }
 
     // Final safety check before append
     if (document.body.contains(pane)) {
-      log('ERROR: Pane already in body, aborting append');
+      log("ERROR: Pane already in body, aborting append");
       return;
     }
 
     // Now append the pane with the correct minimized state already applied
     document.body.appendChild(pane);
-    log('Pane successfully appended to DOM');
+    log("Pane successfully appended to DOM");
     // Hide timestamps until the initial display animation completes and schedule final sizing
     startShowAnimation();
     // Also schedule a follow-up after animation to catch final layout
@@ -4546,13 +5326,17 @@ function safePostMessage(message: unknown) {
 
     // Install mutation observer to detect and prevent duplicate panes
     if (paneObserver) {
-      try { paneObserver.disconnect(); } catch (_) {}
+      try {
+        paneObserver.disconnect();
+      } catch (_) {}
       paneObserver = null;
     }
     paneObserver = new MutationObserver(() => {
       const panes = document.querySelectorAll("#ytls-pane");
       if (panes.length > 1) {
-        log(`CRITICAL: Multiple panes detected (${panes.length}), removing duplicates`);
+        log(
+          `CRITICAL: Multiple panes detected (${panes.length}), removing duplicates`,
+        );
         panes.forEach((el, index) => {
           if (index > 0 || (pane && el !== pane)) {
             el.remove();
@@ -4605,7 +5389,7 @@ function safePostMessage(message: unknown) {
     headerButton.addEventListener("click", () => {
       // Ensure pane is in DOM before toggling
       if (pane && !document.body.contains(pane)) {
-        log('Pane not in DOM, re-appending before toggle');
+        log("Pane not in DOM, re-appending before toggle");
         document.body.appendChild(pane);
       }
       togglePaneVisibility();
@@ -4616,8 +5400,6 @@ function safePostMessage(message: unknown) {
     log("Timekeeper header button added next to YouTube logo");
   }
 
-
-
   function setupUrlChangeHandlers() {
     if (getUrlChangeHandlersSetup()) return;
     setUrlChangeHandlersSetup(true);
@@ -4627,7 +5409,7 @@ function safePostMessage(message: unknown) {
 
     function dispatchLocationChange() {
       try {
-        const ev = new Event('locationchange');
+        const ev = new Event("locationchange");
         window.dispatchEvent(ev);
       } catch (e) {
         // ignore
@@ -4646,11 +5428,13 @@ function safePostMessage(message: unknown) {
       return res;
     } as any;
 
-    window.addEventListener('popstate', dispatchLocationChange);
+    window.addEventListener("popstate", dispatchLocationChange);
 
-    window.addEventListener('locationchange', () => {
+    window.addEventListener("locationchange", () => {
       if (window.location.href !== lastHandledUrl) {
-        log('Location changed (locationchange event) — deferring UI update until navigation finish');
+        log(
+          "Location changed (locationchange event) — deferring UI update until navigation finish",
+        );
       }
     });
   }
@@ -4724,7 +5508,12 @@ function safePostMessage(message: unknown) {
 
   // Keyboard shortcut: Ctrl+Alt+Shift+T to toggle Timekeeper UI
   keydownHandler = (e: KeyboardEvent) => {
-    if (e.ctrlKey && e.altKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
+    if (
+      e.ctrlKey &&
+      e.altKey &&
+      e.shiftKey &&
+      (e.key === "T" || e.key === "t")
+    ) {
       e.preventDefault();
       togglePaneVisibility();
       log("Timekeeper UI toggled via keyboard shortcut (Ctrl+Alt+Shift+T)");
