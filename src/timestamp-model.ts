@@ -85,8 +85,8 @@ export function loadGlobalSettings(key: string): Promise<unknown> {
 /**
  * Build JSON export payload
  */
-export function buildExportPayload() {
-  return TimestampService.buildExportPayload();
+export function buildExportPayload(opts?: { includeDeleted?: boolean }) {
+  return TimestampService.buildExportPayload(opts);
 }
 
 /**

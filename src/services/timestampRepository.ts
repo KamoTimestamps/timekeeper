@@ -32,11 +32,9 @@ function getDB(): Promise<IDBDatabase> {
   // If we have a valid connection, return it
   if (dbConnection) {
     try {
-      // Verify the connection is actually usable
-      const isValid = dbConnection.objectStoreNames.length >= 0;
-      if (isValid) {
-        return Promise.resolve(dbConnection);
-      }
+      // Accessing objectStoreNames throws if the connection has been closed
+      dbConnection.objectStoreNames;
+      return Promise.resolve(dbConnection);
     } catch (err) {
       // Connection is closed/invalid, clear it
       log('IndexedDB connection is no longer usable:', err, 'warn');
@@ -342,6 +340,30 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error ?? new Error('Failed to save single timestamp to IndexedDB'));
       tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted during single timestamp save'));
+    });
+  });
+}
+
+/**
+ * Additive batch insert: puts all supplied records in one transaction.
+ * Does not soft-delete anything — use saveTimestamps for replace semantics.
+ */
+export function saveTimestampsBatch(records: Array<{ guid: string; video_id: string; start: number; comment: string }>): Promise<void> {
+  if (records.length === 0) return Promise.resolve();
+  return getDB().then(db => {
+    return new Promise<void>((resolve, reject) => {
+      let tx: IDBTransaction;
+      try {
+        tx = db.transaction([STORE_NAME_V2], 'readwrite');
+      } catch (err) {
+        reject(new Error(`Failed to create transaction: ${err}`));
+        return;
+      }
+      const store = tx.objectStore(STORE_NAME_V2);
+      records.forEach(record => store.put(record));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error('Batch save failed'));
+      tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted during batch save'));
     });
   });
 }

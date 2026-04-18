@@ -17,7 +17,7 @@ import * as TimestampRepository from './timestampRepository';
 /**
  * Build a complete export payload with all timestamps
  */
-export async function buildExportPayload(): Promise<{
+export async function buildExportPayload({ includeDeleted = false }: { includeDeleted?: boolean } = {}): Promise<{
   json: string;
   filename: string;
   totalVideos: number;
@@ -25,7 +25,6 @@ export async function buildExportPayload(): Promise<{
 }> {
   const exportData = {} as Record<string, unknown>;
 
-  // Get all timestamps from repository
   const allTimestamps = await TimestampRepository.getAllTimestamps();
   const parsedRows = TimestampRowSchema.array().safeParse(allTimestamps);
 
@@ -34,7 +33,8 @@ export async function buildExportPayload(): Promise<{
     return { json: '{}', filename: 'timekeeper-data.json', totalVideos: 0, totalTimestamps: 0 };
   }
 
-  const sortedRows = [...parsedRows.data].sort((a, b) => {
+  const rows = includeDeleted ? parsedRows.data : parsedRows.data.filter(r => !r.deleted_at);
+  const sortedRows = [...rows].sort((a, b) => {
     const videoCompare = a.video_id.localeCompare(b.video_id);
     if (videoCompare !== 0) return videoCompare;
     const startCompare = a.start - b.start;
@@ -99,8 +99,10 @@ export async function buildExportCsvPayload(): Promise<{
   totalVideos: number;
   totalTimestamps: number;
 }> {
-  // Get all timestamps from repository
-  const allTimestampsResult = TimestampRowSchema.array().safeParse(await TimestampRepository.getAllTimestamps());
+  // Get all timestamps from repository, excluding soft-deleted records
+  const allTimestampsResult = TimestampRowSchema.array().safeParse(
+    (await TimestampRepository.getAllTimestamps()).filter(r => !r.deleted_at)
+  );
 
   // Early return with header when no timestamps or parse failure
   if (!allTimestampsResult.success || allTimestampsResult.data.length === 0) {
@@ -260,13 +262,14 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
 
   let mergedVideos = 0;
   let mergedTimestamps = 0;
+  const batch: Array<{ guid: string; video_id: string; start: number; comment: string }> = [];
 
   for (const [, videoEntry] of Object.entries(result.data)) {
     const { video_id, timestamps } = videoEntry;
     let videoMerged = 0;
     for (const ts of timestamps) {
       if (existingGuids.has(ts.guid)) continue;
-      await TimestampRepository.saveTimestamp(video_id, ts);
+      batch.push({ guid: ts.guid, video_id, start: ts.start, comment: ts.comment });
       existingGuids.add(ts.guid);
       videoMerged++;
       mergedTimestamps++;
@@ -274,6 +277,7 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
     if (videoMerged > 0) mergedVideos++;
   }
 
+  await TimestampRepository.saveTimestampsBatch(batch);
   return { mergedVideos, mergedTimestamps };
 }
 

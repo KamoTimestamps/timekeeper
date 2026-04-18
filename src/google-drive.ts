@@ -1218,7 +1218,9 @@ export async function exportAllTimestampsToGoogleDrive(opts?: { silent?: boolean
     throw new Error('unauthorized');
   }
 
-  const payload = await buildExportPayload();
+  await mergeFromAllRemotesBeforeBackup();
+
+  const payload = await buildExportPayload({ includeDeleted: true });
   if (payload.totalTimestamps === 0) {
     return;
   }
@@ -1265,7 +1267,7 @@ async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boo
 
   await mergeFromAllRemotesBeforeBackup();
 
-  const payload = await buildExportPayload();
+  const payload = await buildExportPayload({ includeDeleted: true });
   if (payload.totalTimestamps === 0) {
     if (!opts?.silent) {
       log('Skipping export: no timestamps to back up');
