@@ -2,3 +2,5 @@ dist/
 assets/
 node_modules/
 .claude/
+timekeeper.user.js
+ts.user.js
