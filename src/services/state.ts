@@ -97,7 +97,7 @@ export function getState(): AppState {
  * Update state with partial changes
  */
 export function setState(updates: Partial<AppState>): void {
-  const previousState = JSON.parse(JSON.stringify(appState));
+  const previousState = listeners.size > 0 ? JSON.parse(JSON.stringify(appState)) : appState;
 
   appState = {
     ...appState,
@@ -111,168 +111,102 @@ export function setState(updates: Partial<AppState>): void {
 }
 
 /**
+ * Private helper: update a single key inside appState.auth
+ */
+function setAuth<K extends keyof AppState['auth']>(key: K, value: AppState['auth'][K]): void {
+  setState({ auth: { ...appState.auth, [key]: value } });
+}
+
+/**
+ * Private helper: update a single key inside appState.ui
+ */
+function setUi<K extends keyof AppState['ui']>(key: K, value: AppState['ui'][K]): void {
+  setState({ ui: { ...appState.ui, [key]: value } });
+}
+
+/**
  * Auth State Getters/Setters
  */
 export function getGoogleAuthState(): GoogleAuthStateParsed {
-  return getState().auth.googleAuthState;
+  return appState.auth.googleAuthState;
 }
 
 export function setGoogleAuthState(authState: GoogleAuthStateParsed): void {
-  setState({
-    auth: {
-      ...appState.auth,
-      googleAuthState: authState,
-    },
-  });
+  setAuth('googleAuthState', authState);
 }
 
 export function setAutoBackupEnabled(enabled: boolean): void {
-  setState({
-    auth: {
-      ...appState.auth,
-      autoBackupEnabled: enabled,
-    },
-  });
+  setAuth('autoBackupEnabled', enabled);
 }
 
 export function setAutoBackupIntervalMinutes(minutes: number): void {
-  setState({
-    auth: {
-      ...appState.auth,
-      autoBackupIntervalMinutes: minutes,
-    },
-  });
+  setAuth('autoBackupIntervalMinutes', minutes);
 }
 
 export function setAutoBackupRunning(running: boolean): void {
-  setState({
-    auth: {
-      ...appState.auth,
-      isAutoBackupRunning: running,
-    },
-  });
+  setAuth('isAutoBackupRunning', running);
 }
 
 export function setAutoBackupRetryAttempts(attempts: number): void {
-  setState({
-    auth: {
-      ...appState.auth,
-      autoBackupRetryAttempts: attempts,
-    },
-  });
+  setAuth('autoBackupRetryAttempts', attempts);
 }
 
 export function setAutoBackupBackoffMs(backoff: number | null): void {
-  setState({
-    auth: {
-      ...appState.auth,
-      autoBackupBackoffMs: backoff,
-    },
-  });
+  setAuth('autoBackupBackoffMs', backoff);
 }
 
 export function setLastAutoBackupAt(timestamp: number | null): void {
-  setState({
-    auth: {
-      ...appState.auth,
-      lastAutoBackupAt: timestamp,
-    },
-  });
+  setAuth('lastAutoBackupAt', timestamp);
 }
 
 export function setTimekeeperBackendBackupEnabled(enabled: boolean): void {
-  setState({
-    auth: {
-      ...appState.auth,
-      timekeeperBackendBackupEnabled: enabled,
-    },
-  });
+  setAuth('timekeeperBackendBackupEnabled', enabled);
 }
 
 export function setTimekeeperBackendHost(host: string): void {
-  setState({
-    auth: {
-      ...appState.auth,
-      timekeeperBackendHost: host,
-    },
-  });
+  setAuth('timekeeperBackendHost', host);
 }
 
 export function setTimekeeperBackendPort(port: number): void {
-  setState({
-    auth: {
-      ...appState.auth,
-      timekeeperBackendPort: port,
-    },
-  });
+  setAuth('timekeeperBackendPort', port);
 }
 
 export function setTimekeeperBackendBearerToken(token: string | null): void {
-  setState({
-    auth: {
-      ...appState.auth,
-      timekeeperBackendBearerToken: token,
-    },
-  });
+  setAuth('timekeeperBackendBearerToken', token);
 }
 
 /**
  * UI State Getters/Setters
  */
 export function getUiState() {
-  return getState().ui;
+  return appState.ui;
 }
 
 export function setCurrentVideoId(videoId: string): void {
-  setState({
-    ui: {
-      ...appState.ui,
-      currentVideoId: videoId,
-    },
-  });
+  setUi('currentVideoId', videoId);
 }
 
 export function setMinPaneHeight(height: number): void {
-  setState({
-    ui: {
-      ...appState.ui,
-      minPaneHeight: height,
-    },
-  });
+  setUi('minPaneHeight', height);
 }
 
 export function setPanePosition(position: PanePosition | null): void {
-  setState({
-    ui: {
-      ...appState.ui,
-      panePosition: position,
-    },
-  });
+  setUi('panePosition', position);
 }
 
 export function setLastHandledUrl(url: string | null): void {
-  setState({
-    ui: {
-      ...appState.ui,
-      lastHandledUrl: url,
-    },
-  });
+  setUi('lastHandledUrl', url);
 }
 
 export function setUrlChangeHandlersSetup(setup: boolean): void {
-  setState({
-    ui: {
-      ...appState.ui,
-      urlChangeHandlersSetup: setup,
-    },
-  });
+  setUi('urlChangeHandlersSetup', setup);
 }
 
 /**
  * Timestamps State Getters/Setters
  */
 export function getTimestamps(): TimestampRecord[] {
-  return getState().timestamps.items;
+  return appState.timestamps.items;
 }
 
 export function setTimestamps(items: TimestampRecord[]): void {

@@ -189,6 +189,26 @@ function openIndexedDB(): Promise<IDBDatabase> {
 }
 
 /**
+ * Run an operation inside a readwrite or readonly transaction on STORE_NAME_V2.
+ * Resolves when the transaction completes, rejects on error or abort.
+ */
+function withV2Transaction(mode: IDBTransactionMode, op: (store: IDBObjectStore) => void): Promise<void> {
+  return getDB().then(db => new Promise<void>((resolve, reject) => {
+    let tx: IDBTransaction;
+    try {
+      tx = db.transaction([STORE_NAME_V2], mode);
+    } catch (err) {
+      reject(new Error(`Failed to open transaction: ${err}`));
+      return;
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error('Transaction failed'));
+    tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted'));
+    op(tx.objectStore(STORE_NAME_V2));
+  }));
+}
+
+/**
  * Execute a transaction with error handling
  */
 function executeTransaction<T>(
@@ -252,57 +272,38 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
   }
 
   const timestamps = parsed.data;
-  return getDB().then(db => {
-    return new Promise<void>((resolve, reject) => {
-      let tx: IDBTransaction;
+  return withV2Transaction('readwrite', store => {
+    const v2Index = store.index('video_id');
+
+    // Get existing records for this video
+    const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
+
+    getRequest.onsuccess = () => {
       try {
-        tx = db.transaction([STORE_NAME_V2], 'readwrite');
+        const existingRecords = getRequest.result as TimestampRow[];
+        const newGuids = new Set(timestamps.map(ts => ts.guid));
+        const now = Date.now();
+
+        // Soft-delete removed timestamps
+        existingRecords.forEach(record => {
+          if (!newGuids.has(record.guid) && !record.deleted_at) {
+            store.put({ ...record, deleted_at: now });
+          }
+        });
+
+        // Add/update timestamps
+        timestamps.forEach(ts => {
+          store.put({
+            guid: ts.guid,
+            video_id: videoId,
+            start: ts.start,
+            comment: ts.comment
+          });
+        });
       } catch (err) {
-        reject(new Error(`Failed to create transaction: ${err}`));
-        return;
+        log('Error during save operation:', err, 'error');
       }
-
-      const v2Store = tx.objectStore(STORE_NAME_V2);
-      const v2Index = v2Store.index('video_id');
-
-      // Get existing records for this video
-      const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
-
-      getRequest.onsuccess = () => {
-        try {
-          const existingRecords = getRequest.result as TimestampRow[];
-          const newGuids = new Set(timestamps.map(ts => ts.guid));
-          const now = Date.now();
-
-          // Soft-delete removed timestamps
-          existingRecords.forEach(record => {
-            if (!newGuids.has(record.guid) && !record.deleted_at) {
-              v2Store.put({ ...record, deleted_at: now });
-            }
-          });
-
-          // Add/update timestamps
-          timestamps.forEach(ts => {
-            v2Store.put({
-              guid: ts.guid,
-              video_id: videoId,
-              start: ts.start,
-              comment: ts.comment
-            });
-          });
-        } catch (err) {
-          log('Error during save operation:', err, 'error');
-        }
-      };
-
-      getRequest.onerror = () => {
-        reject(getRequest.error ?? new Error('Failed to get existing records'));
-      };
-
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error('Failed to save to IndexedDB'));
-      tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted during save'));
-    });
+    };
   });
 }
 
@@ -315,31 +316,12 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
     return Promise.reject(new Error(`Invalid timestamp: ${parsed.error.message}`));
   }
   const ts = parsed.data;
-  return getDB().then(db => {
-    return new Promise<void>((resolve, reject) => {
-      let tx: IDBTransaction;
-      try {
-        tx = db.transaction([STORE_NAME_V2], 'readwrite');
-      } catch (err) {
-        reject(new Error(`Failed to create transaction: ${err}`));
-        return;
-      }
-
-      const v2Store = tx.objectStore(STORE_NAME_V2);
-      const putRequest = v2Store.put({
-        guid: ts.guid,
-        video_id: videoId,
-        start: ts.start,
-        comment: ts.comment
-      });
-
-      putRequest.onerror = () => {
-        reject(putRequest.error ?? new Error('Failed to put timestamp'));
-      };
-
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error('Failed to save single timestamp to IndexedDB'));
-      tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted during single timestamp save'));
+  return withV2Transaction('readwrite', store => {
+    store.put({
+      guid: ts.guid,
+      video_id: videoId,
+      start: ts.start,
+      comment: ts.comment
     });
   });
 }
@@ -350,21 +332,8 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
  */
 export function saveTimestampsBatch(records: Array<{ guid: string; video_id: string; start: number; comment: string }>): Promise<void> {
   if (records.length === 0) return Promise.resolve();
-  return getDB().then(db => {
-    return new Promise<void>((resolve, reject) => {
-      let tx: IDBTransaction;
-      try {
-        tx = db.transaction([STORE_NAME_V2], 'readwrite');
-      } catch (err) {
-        reject(new Error(`Failed to create transaction: ${err}`));
-        return;
-      }
-      const store = tx.objectStore(STORE_NAME_V2);
-      records.forEach(record => store.put(record));
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error('Batch save failed'));
-      tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted during batch save'));
-    });
+  return withV2Transaction('readwrite', store => {
+    records.forEach(record => store.put(record));
   });
 }
 
@@ -373,34 +342,14 @@ export function saveTimestampsBatch(records: Array<{ guid: string; video_id: str
  */
 export function deleteTimestamp(guid: string): Promise<void> {
   log(`Soft-deleting timestamp ${guid}`);
-  return getDB().then(db => {
-    return new Promise<void>((resolve, reject) => {
-      let tx: IDBTransaction;
-      try {
-        tx = db.transaction([STORE_NAME_V2], 'readwrite');
-      } catch (err) {
-        reject(new Error(`Failed to create transaction: ${err}`));
-        return;
+  return withV2Transaction('readwrite', store => {
+    const getRequest = store.get(guid);
+    getRequest.onsuccess = () => {
+      const record = getRequest.result as TimestampRow | undefined;
+      if (record) {
+        store.put({ ...record, deleted_at: Date.now() });
       }
-
-      const v2Store = tx.objectStore(STORE_NAME_V2);
-      const getRequest = v2Store.get(guid);
-
-      getRequest.onsuccess = () => {
-        const record = getRequest.result as TimestampRow | undefined;
-        if (record) {
-          v2Store.put({ ...record, deleted_at: Date.now() });
-        }
-      };
-
-      getRequest.onerror = () => {
-        reject(getRequest.error ?? new Error('Failed to get timestamp for deletion'));
-      };
-
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error('Failed to soft-delete timestamp from IndexedDB'));
-      tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted during timestamp deletion'));
-    });
+    };
   });
 }
 
@@ -408,100 +357,75 @@ export function deleteTimestamp(guid: string): Promise<void> {
  * Load all timestamps for a video
  */
 export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | null> {
-  return getDB().then(db => {
-    return new Promise<TimestampRecord[] | null>((resolve) => {
-      let tx: IDBTransaction;
-      try {
-        tx = db.transaction([STORE_NAME_V2], 'readonly');
-      } catch (err) {
-        log('Failed to create read transaction:', err, 'warn');
+  return getDB().then(db => new Promise<TimestampRecord[] | null>(resolve => {
+    let tx: IDBTransaction;
+    try {
+      tx = db.transaction([STORE_NAME_V2], 'readonly');
+    } catch (err) {
+      log('Failed to create read transaction:', err, 'warn');
+      resolve(null);
+      return;
+    }
+
+    tx.onabort = () => {
+      log('Transaction aborted during load:', tx.error, 'warn');
+      resolve(null);
+    };
+
+    const v2Request = tx.objectStore(STORE_NAME_V2).index('video_id').getAll(IDBKeyRange.only(videoId));
+
+    v2Request.onsuccess = () => {
+      const v2Records = (v2Request.result as TimestampRow[]).filter(r => !r.deleted_at);
+
+      if (v2Records.length === 0) {
         resolve(null);
         return;
       }
 
-      const v2Store = tx.objectStore(STORE_NAME_V2);
-      const v2Index = v2Store.index('video_id');
+      const mapped = v2Records.map(r => ({
+        guid: r.guid,
+        start: r.start,
+        comment: r.comment
+      }));
 
-      const v2Request = v2Index.getAll(IDBKeyRange.only(videoId));
-
-      v2Request.onsuccess = () => {
-        const v2Records = (v2Request.result as TimestampRow[]).filter(r => !r.deleted_at);
-
-        if (v2Records.length === 0) {
-          resolve(null);
-          return;
-        }
-
-        const mapped = v2Records.map(r => ({
-          guid: r.guid,
-          start: r.start,
-          comment: r.comment
-        }));
-
-        const parsed = TimestampRecordArraySchema.safeParse(mapped);
-        if (!parsed.success) {
-          log('Failed to parse timestamps from IndexedDB:', parsed.error.format(), 'warn');
-          resolve(null);
-          return;
-        }
-
-        const timestamps = [...parsed.data].sort((a, b) => a.start - b.start);
-        resolve(timestamps);
-      };
-
-      v2Request.onerror = () => {
-        log('Failed to load timestamps:', v2Request.error, 'warn');
+      const parsed = TimestampRecordArraySchema.safeParse(mapped);
+      if (!parsed.success) {
+        log('Failed to parse timestamps from IndexedDB:', parsed.error.format(), 'warn');
         resolve(null);
-      };
+        return;
+      }
 
-      tx.onabort = () => {
-        log('Transaction aborted during load:', tx.error, 'warn');
-        resolve(null);
-      };
-    });
-  });
+      resolve([...parsed.data].sort((a, b) => a.start - b.start));
+    };
+
+    v2Request.onerror = () => {
+      log('Failed to load timestamps:', v2Request.error, 'warn');
+      resolve(null);
+    };
+  }));
 }
 
 /**
  * Delete all timestamps for a video
  */
 export function deleteTimestampsForVideo(videoId: string): Promise<void> {
-  return getDB().then(db => {
-    return new Promise<void>((resolve, reject) => {
-      let tx: IDBTransaction;
+  return withV2Transaction('readwrite', store => {
+    const v2Index = store.index('video_id');
+    const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
+
+    getRequest.onsuccess = () => {
       try {
-        tx = db.transaction([STORE_NAME_V2], 'readwrite');
+        const records = getRequest.result as TimestampRow[];
+        const now = Date.now();
+        records.forEach(record => {
+          if (!record.deleted_at) {
+            store.put({ ...record, deleted_at: now });
+          }
+        });
       } catch (err) {
-        reject(new Error(`Failed to create transaction: ${err}`));
-        return;
+        log('Error during remove operation:', err, 'error');
       }
-
-      const v2Store = tx.objectStore(STORE_NAME_V2);
-      const v2Index = v2Store.index('video_id');
-      const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
-
-      getRequest.onsuccess = () => {
-        try {
-          const records = getRequest.result as TimestampRow[];
-          const now = Date.now();
-          records.forEach(record => {
-            if (!record.deleted_at) {
-              v2Store.put({ ...record, deleted_at: now });
-            }
-          });
-        } catch (err) {
-          log('Error during remove operation:', err, 'error');
-        }
-      };
-
-      getRequest.onerror = () => {
-        reject(getRequest.error ?? new Error('Failed to get records for removal'));
-      };
-
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error('Failed to remove timestamps'));
-      tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted during timestamp removal'));
-    });
+    };
   });
 }
 

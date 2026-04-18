@@ -30,10 +30,6 @@ export function getGoogleAuthState() {
   return AppState.getGoogleAuthState();
 }
 
-export function setGoogleAuthStateInternal(state: any) {
-  AppState.setGoogleAuthState(state);
-}
-
 // For backwards compatibility, export as a getter object
 export const googleAuthState: any = {
   get isSignedIn() { return AppState.getGoogleAuthState().isSignedIn; },
@@ -62,80 +58,24 @@ export function getAutoBackupEnabled() {
   return AppState.getState().auth.autoBackupEnabled;
 }
 
-export function setAutoBackupEnabledInternal(enabled: boolean) {
-  AppState.setAutoBackupEnabled(enabled);
-}
-
 export function getAutoBackupIntervalMinutes() {
   return AppState.getState().auth.autoBackupIntervalMinutes;
-}
-
-export function setAutoBackupIntervalMinutesInternal(minutes: number) {
-  AppState.setAutoBackupIntervalMinutes(minutes);
-}
-
-export function getLastAutoBackupAt() {
-  return AppState.getState().auth.lastAutoBackupAt;
-}
-
-export function setLastAutoBackupAtInternal(timestamp: number | null) {
-  AppState.setLastAutoBackupAt(timestamp);
-}
-
-export function getIsAutoBackupRunning() {
-  return AppState.getState().auth.isAutoBackupRunning;
-}
-
-export function setIsAutoBackupRunningInternal(running: boolean) {
-  AppState.setAutoBackupRunning(running);
-}
-
-export function getAutoBackupRetryAttempts() {
-  return AppState.getState().auth.autoBackupRetryAttempts;
-}
-
-export function setAutoBackupRetryAttemptsInternal(attempts: number) {
-  AppState.setAutoBackupRetryAttempts(attempts);
-}
-
-export function getAutoBackupBackoffMs() {
-  return AppState.getState().auth.autoBackupBackoffMs;
-}
-
-export function setAutoBackupBackoffMsInternal(backoff: number | null) {
-  AppState.setAutoBackupBackoffMs(backoff);
 }
 
 export function getTimekeeperBackendBackupEnabled() {
   return AppState.getState().auth.timekeeperBackendBackupEnabled;
 }
 
-export function setTimekeeperBackendBackupEnabledInternal(enabled: boolean) {
-  AppState.setTimekeeperBackendBackupEnabled(enabled);
-}
-
 export function getTimekeeperBackendHost() {
   return AppState.getState().auth.timekeeperBackendHost;
-}
-
-export function setTimekeeperBackendHostInternal(host: string) {
-  AppState.setTimekeeperBackendHost(host);
 }
 
 export function getTimekeeperBackendPort() {
   return AppState.getState().auth.timekeeperBackendPort;
 }
 
-export function setTimekeeperBackendPortInternal(port: number) {
-  AppState.setTimekeeperBackendPort(port);
-}
-
 export function getTimekeeperBackendBearerToken() {
   return AppState.getState().auth.timekeeperBackendBearerToken;
-}
-
-export function setTimekeeperBackendBearerTokenInternal(token: string | null) {
-  AppState.setTimekeeperBackendBearerToken(token);
 }
 
 // Display elements (set from main script)
@@ -242,7 +182,7 @@ export async function loadGoogleAuthState() {
     const parsed = GoogleAuthStateSchema.safeParse(stored);
     if (parsed.success) {
       const currentState = getGoogleAuthState();
-      setGoogleAuthStateInternal({ ...currentState, ...parsed.data });
+      AppState.setGoogleAuthState({ ...currentState, ...parsed.data });
 
       // Log when reusing stored auth token
       const updatedState = getGoogleAuthState();
@@ -779,7 +719,7 @@ export async function handleOAuthRedirect() {
 }
 // Sign out from Google Drive
 export async function signOutFromGoogle() {
-  setGoogleAuthStateInternal({
+  AppState.setGoogleAuthState({
     isSignedIn: false,
     accessToken: null,
     userName: null,
@@ -865,6 +805,19 @@ function getTimekeeperBackendBaseUrl(): string {
   return `https://${host}:${getTimekeeperBackendPort()}`;
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 30000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err: any) {
+    if (err.name === 'AbortError') throw new Error('request timed out');
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function sendUserscriptRequest(details: {
   method: string;
   url: string;
@@ -872,28 +825,26 @@ async function sendUserscriptRequest(details: {
   data?: string | ArrayBuffer | Blob | FormData;
   timeout?: number;
 }): Promise<{ status: number; responseText: string }> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), details.timeout ?? 30000);
   try {
-    const response = await fetch(details.url, {
+    const response = await fetchWithTimeout(details.url, {
       method: details.method,
       headers: {
         'User-Agent': `Timekeeper/${TIMEKEEPER_VERSION}`,
         ...(details.headers || {}),
       },
       body: details.data as BodyInit | null | undefined,
-      signal: controller.signal,
-    });
+    }, details.timeout);
     const responseText = await response.text();
     return { status: response.status, responseText };
   } catch (err: any) {
-    if (err.name === 'AbortError') {
-      throw new Error('request timed out');
-    }
     throw new Error(err.message || 'request failed');
-  } finally {
-    clearTimeout(timeoutId);
   }
+}
+
+function decodeFirstZipEntry(buffer: ArrayBuffer): string | null {
+  const unzipped = unzipSync(new Uint8Array(buffer));
+  const firstFile = Object.values(unzipped)[0];
+  return firstFile ? new TextDecoder().decode(firstFile) : null;
 }
 
 async function uploadJsonToTimekeeperBackend(filename: string, json: string): Promise<void> {
@@ -979,11 +930,7 @@ async function fetchLatestDriveBackup(accessToken: string): Promise<string | nul
     if (resp.status === 401) throw new Error('unauthorized');
     if (!resp.ok) return null;
 
-    const zipData = new Uint8Array(await resp.arrayBuffer());
-    const unzipped = unzipSync(zipData);
-    const firstFile = Object.values(unzipped)[0];
-    if (!firstFile) return null;
-    return new TextDecoder().decode(firstFile);
+    return decodeFirstZipEntry(await resp.arrayBuffer());
   } catch (err: any) {
     if (err.message === 'unauthorized') throw err;
     log('Failed to fetch latest Drive backup for merge:', err, 'warn');
@@ -996,26 +943,17 @@ async function fetchLatestBackendBackup(): Promise<string | null> {
   const bearerToken = getTimekeeperBackendBearerTokenNormalized();
   if (!bearerToken) return null;
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    const response = await fetch(`${getTimekeeperBackendBaseUrl()}/api/v1/backups/latest`, {
+    const response = await fetchWithTimeout(`${getTimekeeperBackendBaseUrl()}/api/v1/backups/latest`, {
       headers: {
         Authorization: `Bearer ${bearerToken}`,
         'User-Agent': `Timekeeper/${TIMEKEEPER_VERSION}`,
       },
-      signal: controller.signal,
     });
-    clearTimeout(timeoutId);
     if (response.status === 401 || response.status === 403) throw new Error('unauthorized');
     if (!response.ok) return null;
-
-    const zipData = new Uint8Array(await response.arrayBuffer());
-    const unzipped = unzipSync(zipData);
-    const firstFile = Object.values(unzipped)[0];
-    if (!firstFile) return null;
-    return new TextDecoder().decode(firstFile);
+    return decodeFirstZipEntry(await response.arrayBuffer());
   } catch (err: any) {
-    if (err.name === 'AbortError') return null;
+    if (err.message === 'request timed out') return null;
     if (err.message === 'unauthorized') throw err;
     log('Failed to fetch latest backend backup for merge:', err, 'warn');
     return null;
@@ -1346,14 +1284,14 @@ export async function loadAutoBackupSettings() {
     });
 
     if (parsed.success) {
-      if (typeof parsed.data.autoBackupEnabled === 'boolean') setAutoBackupEnabledInternal(parsed.data.autoBackupEnabled);
-      if (typeof parsed.data.autoBackupIntervalMinutes === 'number') setAutoBackupIntervalMinutesInternal(parsed.data.autoBackupIntervalMinutes);
-      if (typeof parsed.data.lastAutoBackupAt === 'number') setLastAutoBackupAtInternal(parsed.data.lastAutoBackupAt);
-      if (typeof parsed.data.timekeeperBackendBackupEnabled === 'boolean') setTimekeeperBackendBackupEnabledInternal(parsed.data.timekeeperBackendBackupEnabled);
-      if (typeof parsed.data.timekeeperBackendHost === 'string') setTimekeeperBackendHostInternal(parsed.data.timekeeperBackendHost);
-      if (typeof parsed.data.timekeeperBackendPort === 'number') setTimekeeperBackendPortInternal(parsed.data.timekeeperBackendPort);
+      if (typeof parsed.data.autoBackupEnabled === 'boolean') AppState.setAutoBackupEnabled(parsed.data.autoBackupEnabled);
+      if (typeof parsed.data.autoBackupIntervalMinutes === 'number') AppState.setAutoBackupIntervalMinutes(parsed.data.autoBackupIntervalMinutes);
+      if (typeof parsed.data.lastAutoBackupAt === 'number') AppState.setLastAutoBackupAt(parsed.data.lastAutoBackupAt);
+      if (typeof parsed.data.timekeeperBackendBackupEnabled === 'boolean') AppState.setTimekeeperBackendBackupEnabled(parsed.data.timekeeperBackendBackupEnabled);
+      if (typeof parsed.data.timekeeperBackendHost === 'string') AppState.setTimekeeperBackendHost(parsed.data.timekeeperBackendHost);
+      if (typeof parsed.data.timekeeperBackendPort === 'number') AppState.setTimekeeperBackendPort(parsed.data.timekeeperBackendPort);
       if (typeof parsed.data.timekeeperBackendBearerToken === 'string' || parsed.data.timekeeperBackendBearerToken === null) {
-        setTimekeeperBackendBearerTokenInternal(parsed.data.timekeeperBackendBearerToken);
+        AppState.setTimekeeperBackendBearerToken(parsed.data.timekeeperBackendBearerToken);
       }
     } else {
       log('Failed to validate auto backup settings:', parsed.error.format(), 'warn');
@@ -1366,13 +1304,14 @@ export async function loadAutoBackupSettings() {
 export async function saveAutoBackupSettings() {
   try {
     // Validate settings before saving
+    const auth = AppState.getState().auth;
     const settings = {
-      autoBackupEnabled: getAutoBackupEnabled(),
-      autoBackupIntervalMinutes: getAutoBackupIntervalMinutes(),
-      lastAutoBackupAt: getLastAutoBackupAt(),
-      timekeeperBackendBackupEnabled: getTimekeeperBackendBackupEnabled(),
+      autoBackupEnabled: auth.autoBackupEnabled,
+      autoBackupIntervalMinutes: auth.autoBackupIntervalMinutes,
+      lastAutoBackupAt: auth.lastAutoBackupAt,
+      timekeeperBackendBackupEnabled: auth.timekeeperBackendBackupEnabled,
       timekeeperBackendHost: getTimekeeperBackendHostNormalized(),
-      timekeeperBackendPort: getTimekeeperBackendPort(),
+      timekeeperBackendPort: auth.timekeeperBackendPort,
       timekeeperBackendBearerToken: getTimekeeperBackendBearerTokenNormalized(),
     };
 
@@ -1383,12 +1322,12 @@ export async function saveAutoBackupSettings() {
     }
 
     await Promise.all([
-      saveGlobalSettings('autoBackupEnabled', getAutoBackupEnabled()),
-      saveGlobalSettings('autoBackupIntervalMinutes', getAutoBackupIntervalMinutes()),
-      saveGlobalSettings('lastAutoBackupAt', getLastAutoBackupAt()),
-      saveGlobalSettings('timekeeperBackendBackupEnabled', getTimekeeperBackendBackupEnabled()),
+      saveGlobalSettings('autoBackupEnabled', auth.autoBackupEnabled),
+      saveGlobalSettings('autoBackupIntervalMinutes', auth.autoBackupIntervalMinutes),
+      saveGlobalSettings('lastAutoBackupAt', auth.lastAutoBackupAt),
+      saveGlobalSettings('timekeeperBackendBackupEnabled', auth.timekeeperBackendBackupEnabled),
       saveGlobalSettings('timekeeperBackendHost', getTimekeeperBackendHostNormalized()),
-      saveGlobalSettings('timekeeperBackendPort', getTimekeeperBackendPort()),
+      saveGlobalSettings('timekeeperBackendPort', auth.timekeeperBackendPort),
       saveGlobalSettings('timekeeperBackendBearerToken', getTimekeeperBackendBearerTokenNormalized()),
     ]);
   } catch (err) {
@@ -1433,14 +1372,15 @@ function getDestinationSummaryText(): string {
 }
 
 function getBackupStatusColor(): string {
+  const auth = AppState.getState().auth;
   // Determine color consistent with updateBackupStatusIndicator logic
-  if (!getAutoBackupEnabled()) {
+  if (!auth.autoBackupEnabled) {
     return '#ff4d4f'; // Red - off
-  } else if (getIsAutoBackupRunning()) {
+  } else if (auth.isAutoBackupRunning) {
     return '#4285f4'; // Blue - in progress
-  } else if (getAutoBackupBackoffMs() && getAutoBackupBackoffMs()! > 0) {
+  } else if (auth.autoBackupBackoffMs && auth.autoBackupBackoffMs > 0) {
     return '#ffa500'; // Yellow - retrying
-  } else if (hasAnyBackupDestination() && getLastAutoBackupAt()) {
+  } else if (hasAnyBackupDestination() && auth.lastAutoBackupAt) {
     return '#52c41a'; // Green - healthy
   } else if (hasAnyBackupDestination()) {
     return '#ffa500'; // Yellow - no backup yet
@@ -1455,16 +1395,18 @@ export function updateBackupStatusDisplay() {
 
   if (!backupStatusDisplay) return;
 
-  if (!getAutoBackupEnabled()) {
+  const auth = AppState.getState().auth;
+
+  if (!auth.autoBackupEnabled) {
     setIconLabel(backupStatusDisplay, 'refresh', 'Backup: Off');
     backupStatusDisplay.onmouseenter = null;
     backupStatusDisplay.onmouseleave = null;
-  } else if (getIsAutoBackupRunning()) {
+  } else if (auth.isAutoBackupRunning) {
     setIconLabel(backupStatusDisplay, 'refresh', 'Backing up…');
     backupStatusDisplay.onmouseenter = null;
     backupStatusDisplay.onmouseleave = null;
-  } else if (getAutoBackupBackoffMs() && getAutoBackupBackoffMs()! > 0) {
-    const mins = Math.ceil(getAutoBackupBackoffMs()! / 60000);
+  } else if (auth.autoBackupBackoffMs && auth.autoBackupBackoffMs > 0) {
+    const mins = Math.ceil(auth.autoBackupBackoffMs / 60000);
     setIconLabel(backupStatusDisplay, 'alert-triangle', `Retry in ${mins}m`);
     backupStatusDisplay.onmouseenter = null;
     backupStatusDisplay.onmouseleave = null;
@@ -1472,17 +1414,18 @@ export function updateBackupStatusDisplay() {
     setIconLabel(backupStatusDisplay, 'alert-triangle', 'Backup target missing');
     backupStatusDisplay.onmouseenter = null;
     backupStatusDisplay.onmouseleave = null;
-  } else if (getLastAutoBackupAt()) {
-    const nextBackupAt = getLastAutoBackupAt()! + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
+  } else if (auth.lastAutoBackupAt) {
+    const lastAt = auth.lastAutoBackupAt;
+    const nextBackupAt = lastAt + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
     const nextBackupTime = formatBackupTime(nextBackupAt);
 
     backupStatusDisplay.onmouseenter = () => {
       setIconLabel(backupStatusDisplay, 'database', `Next backup: ${nextBackupTime}`);
     };
     backupStatusDisplay.onmouseleave = () => {
-      setIconLabel(backupStatusDisplay, 'database', `Last backup: ${formatBackupTime(getLastAutoBackupAt()!)}`);
+      setIconLabel(backupStatusDisplay, 'database', `Last backup: ${formatBackupTime(lastAt)}`);
     };
-    setIconLabel(backupStatusDisplay, 'database', `Last backup: ${formatBackupTime(getLastAutoBackupAt()!)}`);
+    setIconLabel(backupStatusDisplay, 'database', `Last backup: ${formatBackupTime(lastAt)}`);
   } else {
     const nextBackupAt = Date.now() + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
     const nextBackupTime = formatBackupTime(nextBackupAt);
@@ -1511,20 +1454,21 @@ export function updateBackupStatusIndicator() {
   backupStatusIndicator.style.backgroundColor = color;
   addTooltip(backupStatusIndicator, () => {
     // Recalculate tooltip text dynamically
+    const auth = AppState.getState().auth;
     let tooltipText = '';
-    if (!getAutoBackupEnabled()) {
+    if (!auth.autoBackupEnabled) {
       tooltipText = 'Auto backup is disabled';
-    } else if (getIsAutoBackupRunning()) {
+    } else if (auth.isAutoBackupRunning) {
       tooltipText = 'Backup in progress';
-    } else if (getAutoBackupBackoffMs() && getAutoBackupBackoffMs()! > 0) {
-      const mins = Math.ceil(getAutoBackupBackoffMs()! / 60000);
+    } else if (auth.autoBackupBackoffMs && auth.autoBackupBackoffMs > 0) {
+      const mins = Math.ceil(auth.autoBackupBackoffMs / 60000);
       tooltipText = `Retrying backup in ${mins}m`;
     } else if (!hasAnyBackupDestination()) {
       tooltipText = getDestinationSummaryText();
-    } else if (getLastAutoBackupAt()) {
-      const nextBackupAt = getLastAutoBackupAt()! + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
+    } else if (auth.lastAutoBackupAt) {
+      const nextBackupAt = auth.lastAutoBackupAt + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
       const nextBackupTime = formatBackupTime(nextBackupAt);
-      tooltipText = `Last backup: ${formatBackupTime(getLastAutoBackupAt()!)}\nNext backup: ${nextBackupTime}\n${getDestinationSummaryText()}`;
+      tooltipText = `Last backup: ${formatBackupTime(auth.lastAutoBackupAt)}\nNext backup: ${nextBackupTime}\n${getDestinationSummaryText()}`;
     } else {
       const nextBackupAt = Date.now() + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
       const nextBackupTime = formatBackupTime(nextBackupAt);
@@ -1556,19 +1500,19 @@ export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
 
     clearTimeout(autoBackupBackoffTimeoutId);
     autoBackupBackoffTimeoutId = null;
-    setAutoBackupBackoffMsInternal(null);
+    AppState.setAutoBackupBackoffMs(null);
     log('Auto backup: manual run cleared backoff and will proceed immediately');
   }
 
-  if (getIsAutoBackupRunning()) return;
-  setIsAutoBackupRunningInternal(true);
+  if (AppState.getState().auth.isAutoBackupRunning) return;
+  AppState.setAutoBackupRunning(true);
   updateBackupStatusDisplay();
   try {
     await exportAllTimestampsToConfiguredDestinations({ silent });
     // Only update last backup time if the backup succeeded
-    setLastAutoBackupAtInternal(Date.now());
-    setAutoBackupRetryAttemptsInternal(0);
-    setAutoBackupBackoffMsInternal(null);
+    AppState.setLastAutoBackupAt(Date.now());
+    AppState.setAutoBackupRetryAttempts(0);
+    AppState.setAutoBackupBackoffMs(null);
     if (autoBackupBackoffTimeoutId) {
       clearTimeout(autoBackupBackoffTimeoutId);
       autoBackupBackoffTimeoutId = null;
@@ -1589,19 +1533,19 @@ export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
       updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
       updateBackupStatusDisplay();
       // Reset retry state
-      setAutoBackupRetryAttemptsInternal(0);
-      setAutoBackupBackoffMsInternal(null);
+      AppState.setAutoBackupRetryAttempts(0);
+      AppState.setAutoBackupBackoffMs(null);
       if (autoBackupBackoffTimeoutId) {
         clearTimeout(autoBackupBackoffTimeoutId);
         autoBackupBackoffTimeoutId = null;
       }
-    } else if (getAutoBackupRetryAttempts() < AUTO_BACKUP_MAX_RETRY_ATTEMPTS) {
+    } else if (AppState.getState().auth.autoBackupRetryAttempts < AUTO_BACKUP_MAX_RETRY_ATTEMPTS) {
       // Non-auth error - retry with exponential backoff
-      const nextAttempts = getAutoBackupRetryAttempts() + 1;
-      setAutoBackupRetryAttemptsInternal(nextAttempts);
+      const nextAttempts = AppState.getState().auth.autoBackupRetryAttempts + 1;
+      AppState.setAutoBackupRetryAttempts(nextAttempts);
       const base = AUTO_BACKUP_INITIAL_BACKOFF_MS;
       const next = Math.min(base * Math.pow(2, nextAttempts - 1), AUTO_BACKUP_MAX_BACKOFF_MS);
-      setAutoBackupBackoffMsInternal(next);
+      AppState.setAutoBackupBackoffMs(next);
       if (autoBackupBackoffTimeoutId) clearTimeout(autoBackupBackoffTimeoutId);
       autoBackupBackoffTimeoutId = setTimeout(() => {
         runAutoBackupOnce({ silent: true });
@@ -1610,10 +1554,10 @@ export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
       updateBackupStatusDisplay(); // Update backup status indicator to show retry state
     } else {
       // All retries exhausted for non-auth errors
-      setAutoBackupBackoffMsInternal(null);
+      AppState.setAutoBackupBackoffMs(null);
     }
   } finally {
-    setIsAutoBackupRunningInternal(false);
+    AppState.setAutoBackupRunning(false);
     updateBackupStatusDisplay();
   }
 }
@@ -1631,7 +1575,7 @@ export async function scheduleAutoBackup(skipImmediateCheck = false) {
   if (!skipImmediateCheck) {
     const now = Date.now();
     const intervalMs = Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000;
-    const last = getLastAutoBackupAt();
+    const last = AppState.getState().auth.lastAutoBackupAt;
     if (!last || now - last >= intervalMs) {
       runAutoBackupOnce({ silent: true });
     }
@@ -1641,7 +1585,7 @@ export async function scheduleAutoBackup(skipImmediateCheck = false) {
 
 export async function toggleAutoBackup() {
   const current = getAutoBackupEnabled();
-  setAutoBackupEnabledInternal(!current);
+  AppState.setAutoBackupEnabled(!current);
   await saveAutoBackupSettings();
   await scheduleAutoBackup();
   updateBackupStatusDisplay();
@@ -1656,14 +1600,14 @@ export async function setAutoBackupIntervalPrompt() {
     alert('Please enter a number between 5 and 1440 minutes.');
     return;
   }
-  setAutoBackupIntervalMinutesInternal(minutes);
+  AppState.setAutoBackupIntervalMinutes(minutes);
   await saveAutoBackupSettings();
   await scheduleAutoBackup();
   updateBackupStatusDisplay();
 }
 
 export async function toggleTimekeeperBackendBackup() {
-  setTimekeeperBackendBackupEnabledInternal(!getTimekeeperBackendBackupEnabled());
+  AppState.setTimekeeperBackendBackupEnabled(!getTimekeeperBackendBackupEnabled());
   await saveAutoBackupSettings();
   await scheduleAutoBackup();
   updateBackupStatusDisplay();
@@ -1679,7 +1623,7 @@ export async function setTimekeeperBackendHostPrompt() {
     return;
   }
 
-  setTimekeeperBackendHostInternal(host);
+  AppState.setTimekeeperBackendHost(host);
   await saveAutoBackupSettings();
   await scheduleAutoBackup();
   updateBackupStatusDisplay();
@@ -1695,7 +1639,7 @@ export async function setTimekeeperBackendPortPrompt() {
     return;
   }
 
-  setTimekeeperBackendPortInternal(port);
+  AppState.setTimekeeperBackendPort(port);
   await saveAutoBackupSettings();
   await scheduleAutoBackup();
   updateBackupStatusDisplay();
@@ -1710,7 +1654,7 @@ export async function setTimekeeperBackendBearerTokenPrompt() {
   if (input === null) return;
 
   const token = input.trim();
-  setTimekeeperBackendBearerTokenInternal(token.length > 0 ? token : null);
+  AppState.setTimekeeperBackendBearerToken(token.length > 0 ? token : null);
   await saveAutoBackupSettings();
   await scheduleAutoBackup();
   updateBackupStatusDisplay();
