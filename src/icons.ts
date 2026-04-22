@@ -30,6 +30,8 @@ import keySvg from '@tabler/icons/outline/key.svg';
 import xSvg from '@tabler/icons/outline/x.svg';
 import indentIncreaseSvg from '@tabler/icons/outline/indent-increase.svg';
 import indentDecreaseSvg from '@tabler/icons/outline/indent-decrease.svg';
+import caretLeftSvg from '@tabler/icons/filled/caret-left.svg';
+import caretRightSvg from '@tabler/icons/filled/caret-right.svg';
 
 /**
  * Tabler icons sourced directly from the official @tabler/icons package.
@@ -68,7 +70,9 @@ export type TablerIconName =
   | 'key'
   | 'x'
   | 'indent-increase'
-  | 'indent-decrease';
+  | 'indent-decrease'
+  | 'caret-left'
+  | 'caret-right';
 
 const ICON_SVGS: Record<TablerIconName, string> = {
   'plus': plusSvg,
@@ -103,6 +107,8 @@ const ICON_SVGS: Record<TablerIconName, string> = {
   'x': xSvg,
   'indent-increase': indentIncreaseSvg,
   'indent-decrease': indentDecreaseSvg,
+  'caret-left': caretLeftSvg,
+  'caret-right': caretRightSvg,
 };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';

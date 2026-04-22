@@ -15,9 +15,12 @@ import * as TimestampView from "./timestamp-view";
 import * as AppState from "./services/state";
 import { initializeDvrEnablement } from "./dvr-enablement";
 
-function getExtensionStorageValue<T = unknown>(key: string, defaultValue?: T): Promise<T | undefined> {
+function getExtensionStorageValue<T = unknown>(
+  key: string,
+  defaultValue?: T,
+): Promise<T | undefined> {
   return TimestampModel.loadGlobalSettings(key).then(
-    v => (v !== undefined ? v : defaultValue) as T | undefined
+    (v) => (v !== undefined ? v : defaultValue) as T | undefined,
   );
 }
 
@@ -161,6 +164,18 @@ initializeDvrEnablement();
   let btns: HTMLDivElement | null = null;
   let timeDisplay: HTMLSpanElement | null = null;
   let playbackSpeedDisplay: HTMLSpanElement | null = null;
+  let lastSavedSpeed: number = (() => {
+    try {
+      const v = parseFloat(localStorage.getItem("ytls-last-speed") ?? "");
+      return Number.isFinite(v) && v > 0 && v !== 1 ? Math.min(v, 4) : 2;
+    } catch {
+      return 2;
+    }
+  })();
+  const SPEED_STEPS = [
+    0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75,
+    4,
+  ];
   let versionDisplay: HTMLSpanElement | null = null;
   let backupStatusIndicator: HTMLSpanElement | null = null;
   // Used for dynamic min-height calculation
@@ -661,7 +676,8 @@ initializeDvrEnablement();
     await setExtensionStorageValue(OFFSET_KEY, configuredOffset);
   }
 
-  let configuredShiftSkip = await getExtensionStorageValue<number>(SHIFT_SKIP_KEY);
+  let configuredShiftSkip =
+    await getExtensionStorageValue<number>(SHIFT_SKIP_KEY);
   if (
     typeof configuredShiftSkip !== "number" ||
     Number.isNaN(configuredShiftSkip)
@@ -948,10 +964,6 @@ initializeDvrEnablement();
       timeInSeconds,
       getLatestTimestampValue(),
     );
-    anchor.href = buildYouTubeUrlWithTimestamp(
-      timeInSeconds,
-      window.location.href,
-    );
   }
 
   // Debounce state for seeking
@@ -1205,7 +1217,10 @@ initializeDvrEnablement();
       event.preventDefault();
       const newTime = Number(timeTarget.dataset.time);
       if (Number.isFinite(newTime)) {
+        log(`Seeking to timestamp ${newTime}`);
         isSeeking = true;
+        const vid3 = getVideoElement();
+        if (vid3) vid3.playbackRate = 1;
         const player = getActivePlayer();
         if (player) player.seekTo(newTime);
         setTimeout(() => {
@@ -1252,6 +1267,8 @@ initializeDvrEnablement();
       log(
         `Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`,
       );
+      const vid1 = getVideoElement();
+      if (vid1) vid1.playbackRate = 1;
       invalidateLatestTimestampValue();
       formatTime(timeLink, newTime);
 
@@ -1555,7 +1572,9 @@ initializeDvrEnablement();
       const player = getActivePlayer();
       const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
       if (Number.isFinite(currentTime)) {
-        log(`Timestamps changedset to current playback time ${currentTime}`);
+        log(`Timestamps changed: set to current playback time ${currentTime}`);
+        const vid2 = getVideoElement();
+        if (vid2) vid2.playbackRate = 1;
         invalidateLatestTimestampValue();
         formatTime(anchor, currentTime);
         updateTimeDifferences();
@@ -1572,6 +1591,35 @@ initializeDvrEnablement();
 
     invalidateLatestTimestampValue();
     formatTime(anchor, sanitizedStart);
+
+    anchor.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const newTime = Number(anchor.dataset.time);
+      if (!Number.isFinite(newTime)) return;
+      log(`Seeking to timestamp ${newTime}`);
+      isSeeking = true;
+      const vid = getVideoElement();
+      if (vid) vid.playbackRate = 1;
+      pendingSeekTime = newTime;
+      if (seekTimeoutId) clearTimeout(seekTimeoutId);
+      seekTimeoutId = setTimeout(() => {
+        if (pendingSeekTime !== null) {
+          const player = getActivePlayer();
+          if (player) player.seekTo(pendingSeekTime);
+        }
+        seekTimeoutId = null;
+        pendingSeekTime = null;
+        setTimeout(() => { isSeeking = false; }, 500);
+      }, 500);
+      list
+        ?.querySelectorAll<HTMLElement>(`.${TIMESTAMP_HIGHLIGHT_CLASS}`)
+        .forEach((item) => item.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS));
+      if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
+        li.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
+        li.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
 
     setIcon(del, "trash", 16);
     del.classList.add("ytls-row-control");
@@ -2611,15 +2659,13 @@ initializeDvrEnablement();
         updateTimeDisplay(currentTime, player);
       }
 
-      // Update playback speed display to stay in sync with player
+      // Update playback speed display to stay in sync with video element
       try {
         if (playbackSpeedDisplay) {
-          const rate = player ? Number(player.getPlaybackRate()) || 1 : 1;
-          const rateFormatted = Math.round(rate * 100) / 100;
-          const display = rateFormatted
-            .toFixed(2)
-            .replace(/\.0+?$|(?<=\.[0-9])0+$/g, "");
-          playbackSpeedDisplay.textContent = `${display}x`;
+          const video = getVideoElement();
+          const rate = video ? video.playbackRate : 1;
+          const r = Math.round(rate * 100) / 100;
+          playbackSpeedDisplay.textContent = `${r.toFixed(2).replace(/\.0+?$|(?<=\.[0-9])0+$/g, "")}x`;
         }
       } catch (_) {}
 
@@ -3129,18 +3175,13 @@ initializeDvrEnablement();
       header.id = "ytls-pane-header";
 
       header.addEventListener("dblclick", (event) => {
-        const target =
-          event.target instanceof HTMLElement ? event.target : null;
-        if (
-          target &&
-          (target.closest("a") ||
-            target.closest("button") ||
-            target.closest("#ytls-current-time") ||
-            target.closest("#ytls-playback-speed") ||
-            target.closest(".ytls-version-display") ||
-            target.closest(".ytls-backup-indicator"))
-        ) {
-          return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (target) {
+          let el: Element | null = target;
+          while (el && el !== pane) {
+            if (window.getComputedStyle(el).cursor === "pointer") return;
+            el = el.parentElement;
+          }
         }
         event.preventDefault();
         togglePaneVisibility(false);
@@ -3232,24 +3273,17 @@ initializeDvrEnablement();
       playbackSpeedDisplay.style.userSelect = "none";
       addTooltip(
         playbackSpeedDisplay,
-        () => `Current playback speed. Click to toggle between 1x and 2x.`,
+        () =>
+          `Current playback speed. Click to toggle between 1x and last saved speed.`,
       );
       playbackSpeedDisplay.onclick = () => {
-        const player = getActivePlayer();
-        if (player) {
-          try {
-            const currentRate = Number(player.getPlaybackRate()) || 1;
-            const newRate = currentRate === 1 ? 2 : 1;
-            player.setPlaybackRate(newRate);
-            updatePlaybackSpeedUI();
-          } catch (_) {}
-        }
+        const video = getVideoElement();
+        if (!video) return;
+        const currentRate = video.playbackRate;
+        setVideoSpeed(currentRate === 1 ? lastSavedSpeed : 1);
       };
       // Prevent dragging and double-click from the clickable text itself
       playbackSpeedDisplay.addEventListener("mousedown", (e) => {
-        e.stopPropagation();
-      });
-      playbackSpeedDisplay.addEventListener("dblclick", (e) => {
         e.stopPropagation();
       });
       playbackSpeedDisplay.addEventListener("click", (e) => {
@@ -3281,17 +3315,30 @@ initializeDvrEnablement();
         timeDisplay.style.cursor = isLive ? "pointer" : "default";
       };
 
-      // Sync playback speed display with current player rate
+      // Sync playback speed display with current video rate
       function updatePlaybackSpeedUI() {
         if (!playbackSpeedDisplay) return;
-        const player = getActivePlayer();
-        const rate = player ? Number(player.getPlaybackRate()) || 1 : 1;
+        const video = getVideoElement();
+        const rate = video ? video.playbackRate : 1;
         const display = formatSpeed(rate);
         playbackSpeedDisplay.textContent = `${display}x`;
         playbackSpeedDisplay.setAttribute(
           "aria-label",
           `Playback speed ${display}x`,
         );
+      }
+
+      function setVideoSpeed(rate: number) {
+        const video = getVideoElement();
+        if (!video) return;
+        video.playbackRate = rate;
+        if (rate !== 1) {
+          lastSavedSpeed = rate;
+          try {
+            localStorage.setItem("ytls-last-speed", String(rate));
+          } catch (_) {}
+        }
+        updatePlaybackSpeedUI();
       }
 
       // Format a speed value to the minimal necessary digits: 2 -> "2", 2.5 -> "2.5", 2.25 -> "2.25"
@@ -5066,13 +5113,56 @@ initializeDvrEnablement();
       );
 
       header.appendChild(timeDisplay); // Add timeDisplay
-      // Add playback speed display
+      // Add playback speed display with arrow buttons
       const playbackGroup = document.createElement("span");
       playbackGroup.id = "ytls-playback-speed-group";
       playbackGroup.style.display = "inline-flex";
       playbackGroup.style.alignItems = "center";
-      playbackGroup.style.marginLeft = "4px"; // spacing from timeDisplay
+      playbackGroup.style.marginLeft = "4px";
+
+      const speedDecreaseBtn = document.createElement("span");
+      speedDecreaseBtn.id = "ytls-playback-speed-decrease";
+      speedDecreaseBtn.appendChild(createIcon("caret-left", 24));
+      speedDecreaseBtn.title = "Decrease playback speed";
+      addTooltip(speedDecreaseBtn, () => "Decrease playback speed");
+      speedDecreaseBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const video = getVideoElement();
+        if (!video) return;
+        const cur = video.playbackRate;
+        let idx = -1;
+        for (let i = SPEED_STEPS.length - 1; i >= 0; i--) {
+          if (SPEED_STEPS[i] < cur - 0.01) {
+            idx = i;
+            break;
+          }
+        }
+        if (idx >= 0) setVideoSpeed(SPEED_STEPS[idx]);
+      });
+      speedDecreaseBtn.addEventListener("mousedown", (e) =>
+        e.stopPropagation(),
+      );
+
+      const speedIncreaseBtn = document.createElement("span");
+      speedIncreaseBtn.id = "ytls-playback-speed-increase";
+      speedIncreaseBtn.appendChild(createIcon("caret-right", 24));
+      speedIncreaseBtn.title = "Increase playback speed";
+      addTooltip(speedIncreaseBtn, () => "Increase playback speed");
+      speedIncreaseBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const video = getVideoElement();
+        if (!video) return;
+        const cur = video.playbackRate;
+        const idx = SPEED_STEPS.findIndex((s) => s > cur + 0.01);
+        if (idx >= 0) setVideoSpeed(SPEED_STEPS[idx]);
+      });
+      speedIncreaseBtn.addEventListener("mousedown", (e) =>
+        e.stopPropagation(),
+      );
+
+      playbackGroup.appendChild(speedDecreaseBtn);
       if (playbackSpeedDisplay) playbackGroup.appendChild(playbackSpeedDisplay);
+      playbackGroup.appendChild(speedIncreaseBtn);
 
       header.appendChild(playbackGroup);
 
@@ -5092,14 +5182,7 @@ initializeDvrEnablement();
       content.append(listWrapper); // list is inside its own positioned wrapper
       content.append(btns); // Buttons are always at the bottom of content
 
-      pane.append(
-        header,
-        content,
-        resizeTL,
-        resizeTR,
-        resizeBL,
-        resizeBR,
-      ); // Append header, content, and corner resize handles to the pane
+      pane.append(header, content, resizeTL, resizeTR, resizeBL, resizeBR); // Append header, content, and corner resize handles to the pane
 
       // Show diagonal cursors only on corners (no edge cursors)
       let lastPaneCursor = "";
