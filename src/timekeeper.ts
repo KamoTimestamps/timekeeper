@@ -497,6 +497,77 @@ initializeDvrEnablement();
     return null;
   }
 
+  function formatPlaybackSpeed(rate: number): string {
+    const roundedRate = Math.round(rate * 100) / 100;
+    return roundedRate
+      .toFixed(2)
+      .replace(/\.0+?$|(?<=\.[0-9])0+$/g, "");
+  }
+
+  function syncPlaybackSpeedState(rate: number) {
+    // If speed would be saved as 1x, save 2x instead
+    const speedToSave = rate === 1 ? 2 : rate;
+    lastSavedSpeed = speedToSave;
+    try {
+      localStorage.setItem("ytls-last-speed", String(speedToSave));
+    } catch (_) { }
+  }
+
+  function updatePlaybackSpeedUI(rateOverride?: number) {
+    if (!playbackSpeedDisplay) return;
+
+    const rate =
+      typeof rateOverride === "number"
+        ? rateOverride
+        : getVideoElement()?.playbackRate ?? 1;
+    const display = formatPlaybackSpeed(rate);
+
+    playbackSpeedDisplay.textContent = `${display}x`;
+    playbackSpeedDisplay.setAttribute("aria-label", `Playback speed ${display}x`);
+
+    // Add active class when speed is not 1x for glow effect
+    if (Math.abs(rate - 1.0) > 0.01) {
+      playbackSpeedDisplay.classList.add("ytls-playback-speed-active");
+    } else {
+      playbackSpeedDisplay.classList.remove("ytls-playback-speed-active");
+    }
+  }
+
+  function setVideoSpeed(rate: number): boolean {
+    const player = getActivePlayer();
+    const video = getVideoElement();
+
+    if (player && typeof player.setPlaybackRate === "function") {
+      player.setPlaybackRate(rate);
+    } else if (video) {
+      video.playbackRate = rate;
+    } else {
+      return false;
+    }
+
+    syncPlaybackSpeedState(rate);
+    updatePlaybackSpeedUI(rate);
+    return true;
+  }
+
+  function togglePlaybackSpeed(): boolean {
+    const currentRate = getVideoElement()?.playbackRate;
+    if (!Number.isFinite(currentRate)) {
+      return false;
+    }
+
+    return setVideoSpeed(Math.abs(currentRate - 1) <= 0.001 ? lastSavedSpeed : 1);
+  }
+
+  function isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) {
+      return false;
+    }
+    return !!target.closest(
+      'input, textarea, select, [contenteditable], [role="textbox"]',
+    );
+  }
+
   function hasRequiredPlayerMethods(playerInstance) {
     return REQUIRED_PLAYER_METHODS.every((method) => {
       if (typeof playerInstance?.[method] === "function") {
@@ -892,11 +963,11 @@ initializeDvrEnablement();
 
           const timestamps = list
             ? getTimestampItems().map((li) => {
-                const timeLink = li.querySelector("[data-time]");
-                return timeLink
-                  ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
-                  : 0;
-              })
+              const timeLink = li.querySelector("[data-time]");
+              return timeLink
+                ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
+                : 0;
+            })
             : [];
 
           let timestampDisplay = "";
@@ -1104,7 +1175,7 @@ initializeDvrEnablement();
           // Be defensive: if geometry checks fail for any reason, fallback to scrolling
           try {
             li.scrollIntoView({ behavior: "smooth", block: "center" });
-          } catch (_) {}
+          } catch (_) { }
         }
       }
     }
@@ -1453,15 +1524,21 @@ initializeDvrEnablement();
     commentInput.autocomplete = "off";
     commentInput.spellcheck = false;
     requestAnimationFrame(syncIndentGutterPosition);
+
+    // Track when Escape key is used to blur, to prevent auto-refocus
+    let blurredViaEscape = false;
+
     commentInput.addEventListener("focusin", () => {
       suppressSortUntilRefocus = false;
+      blurredViaEscape = false; // Reset flag when input is focused
     });
     // If blur occurs without recent pointer interaction and without a local focus target, restore focus
     commentInput.addEventListener("focusout", (ev) => {
       const rt = (ev as FocusEvent).relatedTarget as Element | null;
       const recentPointer = Date.now() - lastPointerDownTs < 250;
       const movingWithinPane = !!rt && !!pane && pane.contains(rt);
-      if (!recentPointer && !movingWithinPane) {
+      // Don't refocus if user pressed Escape to blur
+      if (!recentPointer && !movingWithinPane && !blurredViaEscape) {
         suppressSortUntilRefocus = true;
         setTimeout(() => {
           // If nothing else took focus, restore here
@@ -1473,6 +1550,14 @@ initializeDvrEnablement();
             suppressSortUntilRefocus = false;
           }
         }, 0);
+      }
+    });
+    // Remove focus on Escape key so hotkeys can be used
+    commentInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" || ev.key === "Esc") {
+        ev.preventDefault();
+        blurredViaEscape = true; // Set flag before blurring
+        commentInput.blur();
       }
     });
     // Save on input, but avoid saving mid-composition (IME/emoji picker)
@@ -1594,7 +1679,8 @@ initializeDvrEnablement();
       isSeeking = true;
       const player = getActivePlayer();
       if (player) { player.setPlaybackRate(1); player.seekTo(newTime); }
-      if (vid?.paused) vid.play();
+      const videoElement = getVideoElement();
+      if (videoElement?.paused) videoElement.play();
       setTimeout(() => { isSeeking = false; }, 500);
       list
         ?.querySelectorAll<HTMLElement>(`.${TIMESTAMP_HIGHLIGHT_CLASS}`)
@@ -1622,14 +1708,14 @@ initializeDvrEnablement();
       const cleanupDeleteListeners = () => {
         try {
           li.removeEventListener("click", cancelDeleteOnClick!, true);
-        } catch (_) {}
+        } catch (_) { }
         try {
           document.removeEventListener("click", cancelDeleteOnClick!, true);
-        } catch (_) {}
+        } catch (_) { }
         if (list) {
           try {
             list.removeEventListener("mouseleave", cancelDeleteOnMouseLeave!);
-          } catch (_) {}
+          } catch (_) { }
         }
         if (cancelTimeoutId) {
           clearTimeout(cancelTimeoutId);
@@ -1675,7 +1761,7 @@ initializeDvrEnablement();
           const currentTime = player ? player.getCurrentTime() : 0;
           const itemTime = Number.parseInt(
             li.querySelector<HTMLElement>("[data-time]")?.dataset.time ??
-              "0",
+            "0",
             10,
           );
           if (
@@ -2249,13 +2335,13 @@ initializeDvrEnablement();
     if (paneObserver) {
       try {
         paneObserver.disconnect();
-      } catch (_) {}
+      } catch (_) { }
       paneObserver = null;
     }
     if (paneResizeObserver) {
       try {
         paneResizeObserver.disconnect();
-      } catch (_) {}
+      } catch (_) { }
       paneResizeObserver = null;
     }
 
@@ -2329,13 +2415,13 @@ initializeDvrEnablement();
     if (paneObserver) {
       try {
         paneObserver.disconnect();
-      } catch (_) {}
+      } catch (_) { }
       paneObserver = null;
     }
     if (paneResizeObserver) {
       try {
         paneResizeObserver.disconnect();
-      } catch (_) {}
+      } catch (_) { }
       paneResizeObserver = null;
     }
     if (pane && pane.parentNode) {
@@ -2590,11 +2676,11 @@ initializeDvrEnablement();
 
     const timestamps = list
       ? getTimestampItems().map((li) => {
-          const timeLink = li.querySelector("[data-time]");
-          return timeLink
-            ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
-            : 0;
-        })
+        const timeLink = li.querySelector("[data-time]");
+        return timeLink
+          ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
+          : 0;
+      })
       : [];
 
     let timestampDisplay = "";
@@ -2723,16 +2809,8 @@ initializeDvrEnablement();
 
     const handleRatechange = () => {
       const rate = video.playbackRate;
-      if (rate !== 1) {
-        lastSavedSpeed = rate;
-        try { localStorage.setItem("ytls-last-speed", String(rate)); } catch (_) {}
-      }
-      if (playbackSpeedDisplay) {
-        const r = Math.round(rate * 100) / 100;
-        const display = r.toFixed(2).replace(/\.0+?$|(?<=\.[0-9])0+$/g, "");
-        playbackSpeedDisplay.textContent = `${display}x`;
-        playbackSpeedDisplay.setAttribute("aria-label", `Playback speed ${display}x`);
-      }
+      syncPlaybackSpeedState(rate);
+      updatePlaybackSpeedUI(rate);
     };
 
     // Store handlers for cleanup
@@ -3137,7 +3215,7 @@ initializeDvrEnablement();
         // Hide any visible tooltips when leaving the list
         try {
           hideActiveTooltip();
-        } catch (_) {}
+        } catch (_) { }
         if (suppressSortUntilRefocus) {
           return;
         }
@@ -3195,7 +3273,7 @@ initializeDvrEnablement();
       const stopPropagation = (e: Event) => {
         try {
           e.stopPropagation();
-        } catch (_) {}
+        } catch (_) { }
       };
       // Don't block 'mouseup'/'pointerup'/'touchend' so document-level handlers (drag end) still run.
       [
@@ -3212,12 +3290,12 @@ initializeDvrEnablement();
       pane.addEventListener("keydown", (e) => {
         try {
           e.stopPropagation();
-        } catch (_) {}
+        } catch (_) { }
       });
       pane.addEventListener("keyup", (e) => {
         try {
           e.stopPropagation();
-        } catch (_) {}
+        } catch (_) { }
       });
       // focus/blur don't bubble reliably - keep capture to prevent page from reacting
       pane.addEventListener(
@@ -3225,7 +3303,7 @@ initializeDvrEnablement();
         (e) => {
           try {
             e.stopPropagation();
-          } catch (_) {}
+          } catch (_) { }
         },
         true,
       );
@@ -3234,7 +3312,7 @@ initializeDvrEnablement();
         (e) => {
           try {
             e.stopPropagation();
-          } catch (_) {}
+          } catch (_) { }
         },
         true,
       );
@@ -3266,7 +3344,7 @@ initializeDvrEnablement();
       // Add tooltip to timeDisplay with dynamic text
       addTooltip(timeDisplay, getTimeDisplayTooltip);
 
-      // Create playback speed display that shows current speed and toggles between 1x and 2x on click
+      // Create playback speed display that toggles between 1x and the last saved speed
       playbackSpeedDisplay = document.createElement("span");
       playbackSpeedDisplay.id = "ytls-playback-speed";
       playbackSpeedDisplay.textContent = "1x"; // initial display
@@ -3275,13 +3353,10 @@ initializeDvrEnablement();
       addTooltip(
         playbackSpeedDisplay,
         () =>
-          `Current playback speed. Click to toggle between 1x and last saved speed.`,
+          `Current playback speed. Click to toggle between 1x and ${formatPlaybackSpeed(lastSavedSpeed)}x.`,
       );
       playbackSpeedDisplay.onclick = () => {
-        const video = getVideoElement();
-        if (!video) return;
-        const currentRate = video.playbackRate;
-        setVideoSpeed(currentRate === 1 ? lastSavedSpeed : 1);
+        togglePlaybackSpeed();
       };
       // Prevent dragging and double-click from the clickable text itself
       playbackSpeedDisplay.addEventListener("mousedown", (e) => {
@@ -3316,38 +3391,6 @@ initializeDvrEnablement();
         timeDisplay.style.cursor = isLive ? "pointer" : "default";
       };
 
-      // Sync playback speed display with current video rate
-      function updatePlaybackSpeedUI() {
-        if (!playbackSpeedDisplay) return;
-        const video = getVideoElement();
-        const rate = video ? video.playbackRate : 1;
-        const display = formatSpeed(rate);
-        playbackSpeedDisplay.textContent = `${display}x`;
-        playbackSpeedDisplay.setAttribute(
-          "aria-label",
-          `Playback speed ${display}x`,
-        );
-      }
-
-      function setVideoSpeed(rate: number) {
-        const player = getActivePlayer();
-        if (!player) return;
-        player.setPlaybackRate(rate);
-        if (rate !== 1) {
-          lastSavedSpeed = rate;
-          try {
-            localStorage.setItem("ytls-last-speed", String(rate));
-          } catch (_) {}
-        }
-        updatePlaybackSpeedUI();
-      }
-
-      // Format a speed value to the minimal necessary digits: 2 -> "2", 2.5 -> "2.5", 2.25 -> "2.25"
-      function formatSpeed(n: number): string {
-        const r = Math.round(n * 100) / 100;
-        return r.toFixed(2).replace(/\.0+?$|(?<=\.[0-9])0+$/g, "");
-      }
-
       // Helper function to update time display with current video time
       function updateTimeDisplay(
         currentSeconds: number | null = null,
@@ -3380,11 +3423,11 @@ initializeDvrEnablement();
 
         const timestamps = list
           ? getTimestampItems().map((li) => {
-              const timeLink = li.querySelector("[data-time]");
-              return timeLink
-                ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
-                : 0;
-            })
+            const timeLink = li.querySelector("[data-time]");
+            return timeLink
+              ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
+              : 0;
+          })
           : [];
 
         let timestampDisplay = "";
@@ -3426,7 +3469,7 @@ initializeDvrEnablement();
         // Update playback speed UI to reflect actual video rate
         try {
           updatePlaybackSpeedUI();
-        } catch (_) {}
+        } catch (_) { }
       }
 
       function updateTime() {
@@ -3785,37 +3828,37 @@ initializeDvrEnablement();
         title: string;
         action: (...args: any[]) => any;
       }[] = [
-        {
-          id: "add",
-          icon: "alarm-plus",
-          title: "Add timestamp",
-          action: handleAddTimestamp,
-        },
-        {
-          id: "settings",
-          icon: "settings",
-          title: "Settings",
-          action: () => toggleSettingsModal(),
-        },
-        {
-          id: "copy",
-          icon: "clipboard",
-          title: "Copy timestamps to clipboard",
-          action: handleCopyTimestamps,
-        },
-        {
-          id: "offset",
-          icon: "clock-plus",
-          title: "Offset all timestamps",
-          action: handleBulkOffset,
-        },
-        {
-          id: "delete",
-          icon: "trash",
-          title: "Delete all timestamps for current video",
-          action: handleDeleteAll,
-        },
-      ];
+          {
+            id: "add",
+            icon: "alarm-plus",
+            title: "Add timestamp",
+            action: handleAddTimestamp,
+          },
+          {
+            id: "settings",
+            icon: "settings",
+            title: "Settings",
+            action: () => toggleSettingsModal(),
+          },
+          {
+            id: "copy",
+            icon: "clipboard",
+            title: "Copy timestamps to clipboard",
+            action: handleCopyTimestamps,
+          },
+          {
+            id: "offset",
+            icon: "clock-plus",
+            title: "Offset all timestamps",
+            action: handleBulkOffset,
+          },
+          {
+            id: "delete",
+            icon: "trash",
+            title: "Delete all timestamps for current video",
+            action: handleDeleteAll,
+          },
+        ];
 
       // Create and append main buttons
       mainButtonConfigs.forEach((config) => {
@@ -4681,7 +4724,7 @@ initializeDvrEnablement();
             } catch (e) {
               alert(
                 "Failed to import data. Please ensure the file is in the correct format.\n" +
-                  (e as Error).message,
+                (e as Error).message,
               );
               log("Import error:", e, "error");
             }
@@ -5244,7 +5287,7 @@ initializeDvrEnablement();
         // Hide any visible tooltips when leaving the pane
         try {
           hideActiveTooltip();
-        } catch (_) {}
+        } catch (_) { }
         // Restore highlight when leaving the pane
         try {
           autoHighlightNearest(false);
@@ -5297,7 +5340,7 @@ initializeDvrEnablement();
       if (paneResizeObserver) {
         try {
           paneResizeObserver.disconnect();
-        } catch (_) {}
+        } catch (_) { }
         paneResizeObserver = null;
       }
       paneResizeObserver = new ResizeObserver(recalculateTimestampsArea);
@@ -5405,7 +5448,7 @@ initializeDvrEnablement();
     if (paneObserver) {
       try {
         paneObserver.disconnect();
-      } catch (_) {}
+      } catch (_) { }
       paneObserver = null;
     }
     paneObserver = new MutationObserver(() => {
@@ -5585,6 +5628,25 @@ initializeDvrEnablement();
 
   // Keyboard shortcut: Ctrl+Alt+Shift+T to toggle Timekeeper UI
   keydownHandler = (e: KeyboardEvent) => {
+    if (
+      !e.repeat &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.shiftKey &&
+      (e.key === "z" || e.key === "Z")
+    ) {
+      if (isEditableTarget(e.target)) {
+        return;
+      }
+
+      if (togglePlaybackSpeed()) {
+        e.preventDefault();
+        log("Playback speed toggled via keyboard shortcut (Z)");
+      }
+      return;
+    }
+
     if (
       e.ctrlKey &&
       e.altKey &&

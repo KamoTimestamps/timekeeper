@@ -6,8 +6,10 @@
   right: 0;
   padding: 0;
   margin: 0;
-  border-radius: 12px; /* Add rounded corners */
-  border: 1px solid rgba(85, 85, 85, 0.8); /* Add a thin grey border */
+  border-radius: 12px;
+  /* Add rounded corners */
+  border: 1px solid rgba(85, 85, 85, 0.8);
+  /* Add a thin grey border */
   opacity: 0.9;
   z-index: 5000;
   font-family: Arial, sans-serif;
@@ -17,7 +19,8 @@
   max-width: 800px;
   min-height: 400px;
   max-height: 90vh;
-  user-select: none; /* Prevent text selection in pane */
+  user-select: none;
+  /* Prevent text selection in pane */
   display: flex;
   flex-direction: column;
   will-change: width, height;
@@ -26,9 +29,11 @@
   contain: layout style paint;
   overflow: hidden;
 }
+
 #ytls-pane:hover {
   opacity: 1;
 }
+
 /* Legacy corner handle: keep element for resize behavior but hide visual indicator */
 /* Legacy corner handle kept for compatibility but hidden visually */
 #ytls-resize-handle {
@@ -37,15 +42,19 @@
   right: 0;
   width: 20px;
   height: 20px;
-  cursor: auto; /* no visible corner cursor */
+  cursor: auto;
+  /* no visible corner cursor */
   z-index: 10;
-  pointer-events: none; /* legacy handle inactive, corners handle events */
+  pointer-events: none;
+  /* legacy handle inactive, corners handle events */
   background: transparent;
   margin: 0;
   padding: 0;
 }
+
 #ytls-resize-handle::before {
-  display: none; /* remove the triangular corner indicator */
+  display: none;
+  /* remove the triangular corner indicator */
   content: none;
 }
 
@@ -62,10 +71,31 @@
   background: transparent;
   pointer-events: auto;
 }
-#ytls-resize-tl { top: 0; left: 0; cursor: nwse-resize; }
-#ytls-resize-tr { top: 0; right: 0; cursor: nesw-resize; }
-#ytls-resize-bl { bottom: 0; left: 0; cursor: nesw-resize; }
-#ytls-resize-br { bottom: 0; right: 0; cursor: nwse-resize; }
+
+#ytls-resize-tl {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+#ytls-resize-tr {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+#ytls-resize-bl {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+#ytls-resize-br {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
 #ytls-content {
   display: flex;
   flex-direction: column;
@@ -75,6 +105,7 @@
   box-sizing: border-box;
   position: relative;
 }
+
 /* Wrapper that gives the custom scrollbar a positioned ancestor covering only the list area */
 #ytls-list-wrapper {
   position: relative;
@@ -90,11 +121,13 @@
   padding: 0 !important;
   border: none !important;
   box-sizing: border-box;
-  scrollbar-width: none; /* Firefox: hide native scrollbar */
+  scrollbar-width: none;
+  /* Firefox: hide native scrollbar */
 }
 
 #ytls-content ul::-webkit-scrollbar {
-  display: none; /* WebKit: hide native scrollbar */
+  display: none;
+  /* WebKit: hide native scrollbar */
 }
 
 /* Custom overlay scrollbar track */
@@ -144,10 +177,12 @@
   text-align: center;
   box-sizing: border-box;
 }
+
 #ytls-pane-header {
   position: relative;
   z-index: 2;
 }
+
 #ytls-buttons {
   position: relative;
   z-index: 2;
@@ -161,6 +196,7 @@
   border-top: 1px solid #23272b;
   margin-top: auto;
 }
+
 #ytls-pane li {
   display: flex;
   flex-direction: column;
@@ -168,41 +204,56 @@
   margin: 0 !important;
   border: none;
   border-top: 1px solid rgba(85, 85, 85, 0.8);
-  user-select: none; /* Prevent text selection in timestamp items */
+  user-select: none;
+  /* Prevent text selection in timestamp items */
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
 }
+
 #ytls-pane li:first-child {
   border-top: none;
 }
+
 #ytls-pane li.ytls-timestamp-highlight {
   background: rgba(35, 48, 36, 0.8);
 }
+
 #ytls-pane li.ytls-timestamp-pending-delete {
   background: rgba(128, 0, 0, 0.8);
 }
+
 #ytls-pane .time-row {
   display: flex;
   gap: 5px;
   align-items: center;
 }
+
 #ytls-pane .time-row a {
-  flex: 0 0 8ch; /* Reserve fixed hh:mm:ss width so controls don't shift */
+  flex: 0 0 8ch;
+  /* Reserve fixed hh:mm:ss width so controls don't shift */
   width: 8ch;
   min-width: 8ch;
   max-width: 8ch;
   display: inline-block;
-  text-align: left; /* Align the text to the left */
-  overflow: hidden; /* Prevent overflow */
-  text-overflow: ellipsis; /* Add ellipsis for long text */
-  white-space: nowrap; /* Prevent wrapping */
+  text-align: left;
+  /* Align the text to the left */
+  overflow: hidden;
+  /* Prevent overflow */
+  text-overflow: ellipsis;
+  /* Add ellipsis for long text */
+  white-space: nowrap;
+  /* Prevent wrapping */
   font-variant-numeric: tabular-nums;
 }
+
 #ytls-pane .time-row .time-diff {
-  flex-grow: 1; /* Allow time-diff to fill remaining space */
-  text-align: right; /* Align time diff text to the right, next to trash icon */
+  flex-grow: 1;
+  /* Allow time-diff to fill remaining space */
+  text-align: right;
+  /* Align time diff text to the right, next to trash icon */
 }
+
 #ytls-pane .time-row .ytls-row-controls {
   display: inline-flex;
   align-items: center;
@@ -212,11 +263,13 @@
   visibility: hidden;
   pointer-events: none;
 }
+
 #ytls-pane li:hover .time-row .ytls-row-controls {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
 }
+
 #ytls-pane .ytls-marker {
   position: absolute;
   height: 100%;
@@ -224,9 +277,11 @@
   background-color: #ff0000;
   cursor: pointer;
 }
+
 #ytls-pane [data-time] {
   cursor: pointer;
 }
+
 #ytls-pane span,
 #ytls-pane a,
 #ytls-pane input {
@@ -238,6 +293,7 @@
   border: none;
   outline: none;
 }
+
 /* Ensure editing controls behave like editable fields despite parent user-select:none */
 #ytls-pane input,
 #ytls-pane textarea {
@@ -247,6 +303,7 @@
   user-select: text;
   caret-color: white;
 }
+
 #ytls-buttons {
   flex-shrink: 0;
   display: flex;
@@ -259,6 +316,7 @@
   z-index: 2;
   /* Ensure it stays at the bottom */
 }
+
 #ytls-buttons button:hover {
   background: rgba(255, 255, 255, 0.2);
 }
@@ -280,9 +338,11 @@
   line-height: 1;
   touch-action: manipulation;
 }
+
 .ytls-main-button:hover {
   background: rgb(63, 63, 63);
 }
+
 .ytls-main-button svg {
   display: block;
   width: 24px;
@@ -304,40 +364,45 @@
   flex-shrink: 0;
   color: #fafafa;
 }
+
 #ytls-pane .ytls-version-display {
-  font-size:14px;
-  color:#666;
-  margin-left:auto;
-  padding-right:5px;
-  cursor:default;
+  font-size: 14px;
+  color: #666;
+  margin-left: auto;
+  padding-right: 5px;
+  cursor: default;
 }
+
 #ytls-pane .ytls-google-user-display {
-  font-size:12px;
-  color:#4285f4;
-  margin-left:8px;
-  padding:2px 6px;
-  cursor:default;
-  background:rgba(66, 133, 244, 0.1);
-  border-radius:4px;
+  font-size: 12px;
+  color: #4285f4;
+  margin-left: 8px;
+  padding: 2px 6px;
+  cursor: default;
+  background: rgba(66, 133, 244, 0.1);
+  border-radius: 4px;
 }
+
 #ytls-pane .ytls-backup-status-display {
-  font-size:12px;
-  color:#9acd32; /* yellowgreen */
-  margin-left:8px;
-  padding:2px 6px;
-  cursor:default;
-  background:rgba(154, 205, 50, 0.12);
-  border-radius:4px;
+  font-size: 12px;
+  color: #9acd32;
+  /* yellowgreen */
+  margin-left: 8px;
+  padding: 2px 6px;
+  cursor: default;
+  background: rgba(154, 205, 50, 0.12);
+  border-radius: 4px;
 }
+
 #ytls-current-time {
-  color:white;
-  font-size:14px;
-  cursor:pointer;
-  position:relative;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  position: relative;
 }
 
 #ytls-playback-speed {
-  color: #cfcfcf;
+  color: white;
   font-size: 14px;
   cursor: pointer;
   user-select: none;
@@ -347,17 +412,15 @@
   display: inline-block;
   width: 5ch;
   text-align: center;
-}
-
-#ytls-playback-speed.ytls-playback-speed-active {
-  color: #7ad;
-  text-shadow: 0 0 6px rgba(122,217,255,0.4);
-  font-weight: 700;
-  box-shadow: 0 0 8px rgba(122,217,255,0.08);
+  transition: filter 0.2s ease;
 }
 
 #ytls-playback-speed:hover {
   text-decoration: underline;
+}
+
+#ytls-playback-speed.ytls-playback-speed-active {
+  color: #f4ba78;
 }
 
 #ytls-playback-speed-group {
@@ -369,18 +432,25 @@
 
 /* Backup status indicator (colored dot) */
 .ytls-backup-indicator {
-  display:inline-block;
-  width:8px;
-  height:8px;
-  border-radius:50%;
-  background-color:#666;
-  cursor:help;
-  flex-shrink:0;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #666;
+  cursor: help;
+  flex-shrink: 0;
 }
 
 @keyframes ytls-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.25;
+  }
 }
 
 .ytls-backup-indicator--pulsing {
@@ -389,131 +459,138 @@
 
 /* Shared modal container styles */
 #ytls-settings-modal {
-  position:fixed;
-  top:50%;
-  left:50%;
-  transform:translate(-50%, -50%);
-  background:#1a1a1a;
-  padding:8px;
-  border-radius:10px;
-  z-index:10000;
-  color:white;
-  text-align:center;
-  width:200px;
-  box-shadow:0 0 10px rgba(0,0,0,0.5);
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #1a1a1a;
+  padding: 8px;
+  border-radius: 10px;
+  z-index: 10000;
+  color: white;
+  text-align: center;
+  width: 200px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
 }
+
 #ytls-save-modal,
 #ytls-load-modal,
 #ytls-delete-all-modal {
-  position:fixed;
-  top:50%;
-  left:50%;
-  transform:translate(-50%, -50%);
-  background:#333;
-  padding:8px;
-  border-radius:10px;
-  z-index:10000;
-  color:white;
-  text-align:center;
-  width:fit-content;
-  max-width:90vw;
-  box-shadow:0 0 10px rgba(0,0,0,0.5);
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #333;
+  padding: 8px;
+  border-radius: 10px;
+  z-index: 10000;
+  color: white;
+  text-align: center;
+  width: fit-content;
+  max-width: 90vw;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
 }
 
 /* Modal header with tabs and close button */
 .ytls-modal-header {
-  display:flex;
-  align-items:flex-end;
-  margin-bottom:0;
-  gap:10px;
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: 0;
+  gap: 10px;
 }
 
 /* Modal close button (X in header) */
 .ytls-modal-close-button {
-  position:absolute;
-  top:8px;
-  right:8px;
-  width:20px;
-  height:20px;
-  background:#ff4444;
-  color:white;
-  border:none;
-  border-radius:3px;
-  cursor:pointer;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:0;
-  flex-shrink:0;
-  z-index:1;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  background: #ff4444;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  z-index: 1;
 }
+
 .ytls-modal-close-button:hover {
-  background:#ff6666;
+  background: #ff6666;
 }
 
 /* Styles for settings modal */
 #ytls-settings-content {
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-  align-items:center;
-  background:#2a2a2a;
-  border:2px solid #3a3a3a;
-  border-radius:0 4px 4px 4px;
-  padding:10px;
-  margin-top:-2px;
-  position:relative;
-  z-index:1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  background: #2a2a2a;
+  border: 2px solid #3a3a3a;
+  border-radius: 0 4px 4px 4px;
+  padding: 10px;
+  margin-top: -2px;
+  position: relative;
+  z-index: 1;
 }
 
 /* Section heading */
 .ytls-section-heading {
-  margin:0 0 10px 0;
-  padding:0;
-  font-size:16px;
-  font-weight:bold;
-  color:#fff;
-  text-align:center;
+  margin: 0 0 10px 0;
+  padding: 0;
+  font-size: 16px;
+  font-weight: bold;
+  color: #fff;
+  text-align: center;
 }
 
 /* Settings nav (tabs) */
 #ytls-settings-nav {
-  display:flex;
-  gap:6px;
-  flex:0;
+  display: flex;
+  gap: 6px;
+  flex: 0;
 }
+
 #ytls-settings-nav .ytls-settings-modal-button {
-  flex:0;
-  width:auto;
-  height:24px;
-  margin-bottom:0;
+  flex: 0;
+  width: auto;
+  height: 24px;
+  margin-bottom: 0;
   background: #2a2a2a;
-  font-size:13px;
-  padding:0 8px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  line-height:1;
-  border:2px solid transparent;
-  border-radius:4px 4px 0 0;
-  border-bottom:2px solid transparent;
-  white-space:nowrap;
-  position:relative;
+  font-size: 13px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  border: 2px solid transparent;
+  border-radius: 4px 4px 0 0;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  position: relative;
 }
+
 #ytls-settings-nav .ytls-settings-modal-button .ytls-tab-text {
-  display:none;
+  display: none;
 }
+
 #ytls-settings-nav .ytls-settings-modal-button.active .ytls-tab-text {
-  display:inline;
+  display: inline;
 }
+
 #ytls-settings-nav .ytls-settings-modal-button:hover {
   background: #3a3a3a;
 }
+
 #ytls-settings-nav .ytls-settings-modal-button.active {
-  background:#2a2a2a;
-  border:2px solid #3a3a3a;
-  border-bottom:2px solid #2a2a2a;
-  z-index:2;
+  background: #2a2a2a;
+  border: 2px solid #3a3a3a;
+  border-bottom: 2px solid #2a2a2a;
+  z-index: 2;
 }
 
 /* Button grid container */
@@ -541,8 +618,10 @@
   padding: 0 8px;
   gap: 4px;
 }
+
 .ytls-settings-modal-button:hover {
-  background: #777; /* Example hover effect */
+  background: #777;
+  /* Example hover effect */
 }
 
 /* Tabler icon sizing in pane controls */
@@ -578,31 +657,36 @@
 #ytls-save-modal p,
 #ytls-load-modal p,
 #ytls-delete-all-modal p {
-  margin-bottom:15px;
-  font-size:16px;
+  margin-bottom: 15px;
+  font-size: 16px;
 }
+
 .ytls-save-modal-button {
-  background:#555;
-  color:white;
-  padding:10px 20px;
-  border:none;
-  border-radius:5px;
-  cursor:pointer;
-  margin-right:10px; /* Applied to both JSON and Text buttons, last one will have extra margin if not overridden */
+  background: #555;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-right: 10px;
+  /* Applied to both JSON and Text buttons, last one will have extra margin if not overridden */
 }
-.ytls-save-modal-button:last-of-type { /* Remove margin from the last button of this type in the modal */
-  margin-right:0;
+
+.ytls-save-modal-button:last-of-type {
+  /* Remove margin from the last button of this type in the modal */
+  margin-right: 0;
 }
+
 .ytls-save-modal-cancel-button {
-  background:#444;
-  color:white;
-  padding:10px 20px;
-  border:none;
-  border-radius:5px;
-  cursor:pointer;
-  margin-top:15px;
-  display:block;
-  width:100%;
+  background: #444;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-top: 15px;
+  display: block;
+  width: 100%;
 }
 
 /* Styles for file operation buttons (Save, Load, Export, Import) if they were to be displayed directly */
@@ -617,40 +701,45 @@
   border-radius: 5px;
   cursor: pointer;
 }
+
 .ytls-file-operation-button:hover {
-  background: #777; /* Example hover effect */
+  background: #777;
+  /* Example hover effect */
 }
 
 .ytls-hidden-file-input {
-  display:none;
+  display: none;
 }
 
 #ytls-header-button {
-  align-items:center;
-  background:transparent;
-  border:none;
-  color:var(--yt-spec-text-primary, currentColor);
-  cursor:pointer;
-  display:inline-flex;
-  font-size:20px;
-  height:40px;
-  margin-left:6px;
-  padding:0 6px;
-  text-decoration:none;
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: var(--yt-spec-text-primary, currentColor);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 20px;
+  height: 40px;
+  margin-left: 6px;
+  padding: 0 6px;
+  text-decoration: none;
 }
+
 #ytls-header-button:hover {
-  color:var(--yt-spec-call-to-action, #3ea6ff);
+  color: var(--yt-spec-call-to-action, #3ea6ff);
 }
+
 #ytls-header-button:focus-visible {
-  outline:2px solid var(--yt-spec-call-to-action, #3ea6ff);
-  outline-offset:2px;
+  outline: 2px solid var(--yt-spec-call-to-action, #3ea6ff);
+  outline-offset: 2px;
 }
+
 #ytls-header-button img {
-  display:block;
-  height:32px;
-  max-width:48px;
-  pointer-events:none;
-  width:auto;
+  display: block;
+  height: 32px;
+  max-width: 48px;
+  pointer-events: none;
+  width: auto;
 }
 
 /* Shared fade animations for pane and modals */
@@ -678,6 +767,7 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -688,6 +778,7 @@
   from {
     opacity: 1;
   }
+
   to {
     opacity: 0;
   }
@@ -699,6 +790,7 @@
     opacity: 0;
     transform: scale(0.1);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -711,6 +803,7 @@
     opacity: 1;
     transform: scale(1);
   }
+
   to {
     opacity: 0;
     transform: scale(0.1);
@@ -737,6 +830,7 @@
   opacity: 0;
   transition: opacity 0.2s cubic-bezier(0.0, 0.0, 0.2, 1);
 }
+
 .ytls-tooltip.ytls-tooltip-visible {
   opacity: 1;
 }

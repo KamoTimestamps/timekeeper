@@ -1,3 +1,7 @@
+## Building
+
+Rebuild with `make build` after completing changes
+
 ## graphify
 
 This project has a graphify knowledge graph at graphify-out/.
