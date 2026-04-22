@@ -1217,10 +1217,8 @@ initializeDvrEnablement();
       if (Number.isFinite(newTime)) {
         log(`Seeking to timestamp ${newTime}`);
         isSeeking = true;
-        const vid3 = getVideoElement();
-        if (vid3) vid3.playbackRate = 1;
         const player = getActivePlayer();
-        if (player) player.seekTo(newTime);
+        if (player) { player.setPlaybackRate(1); player.seekTo(newTime); }
         setTimeout(() => {
           isSeeking = false;
         }, 500);
@@ -1265,8 +1263,7 @@ initializeDvrEnablement();
       log(
         `Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`,
       );
-      const vid1 = getVideoElement();
-      if (vid1) vid1.playbackRate = 1;
+      getActivePlayer()?.setPlaybackRate(1);
       invalidateLatestTimestampValue();
       formatTime(timeLink, newTime);
 
@@ -1571,8 +1568,7 @@ initializeDvrEnablement();
       const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
       if (Number.isFinite(currentTime)) {
         log(`Timestamps changed: set to current playback time ${currentTime}`);
-        const vid2 = getVideoElement();
-        if (vid2) vid2.playbackRate = 1;
+        getActivePlayer()?.setPlaybackRate(1);
         invalidateLatestTimestampValue();
         formatTime(anchor, currentTime);
         updateTimeDifferences();
@@ -1597,10 +1593,8 @@ initializeDvrEnablement();
       if (!Number.isFinite(newTime)) return;
       log(`Seeking to timestamp ${newTime}`);
       isSeeking = true;
-      const vid = getVideoElement();
-      if (vid) vid.playbackRate = 1;
       const player = getActivePlayer();
-      if (player) player.seekTo(newTime);
+      if (player) { player.setPlaybackRate(1); player.seekTo(newTime); }
       if (vid?.paused) vid.play();
       setTimeout(() => { isSeeking = false; }, 500);
       list
@@ -2756,8 +2750,8 @@ initializeDvrEnablement();
     video.addEventListener("ratechange", handleRatechange);
 
     if (lastSavedSpeed !== 1) {
-      video.playbackRate = lastSavedSpeed;
-      log(`Restored playback speed to ${lastSavedSpeed}x`);
+      const p = getActivePlayer();
+      if (p) { p.setPlaybackRate(lastSavedSpeed); log(`Restored playback speed to ${lastSavedSpeed}x`); }
     }
   }
 
@@ -3337,9 +3331,9 @@ initializeDvrEnablement();
       }
 
       function setVideoSpeed(rate: number) {
-        const video = getVideoElement();
-        if (!video) return;
-        video.playbackRate = rate;
+        const player = getActivePlayer();
+        if (!player) return;
+        player.setPlaybackRate(rate);
         if (rate !== 1) {
           lastSavedSpeed = rate;
           try {
