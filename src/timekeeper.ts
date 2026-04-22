@@ -1601,6 +1601,7 @@ initializeDvrEnablement();
       if (vid) vid.playbackRate = 1;
       const player = getActivePlayer();
       if (player) player.seekTo(newTime);
+      if (vid?.paused) vid.play();
       setTimeout(() => { isSeeking = false; }, 500);
       list
         ?.querySelectorAll<HTMLElement>(`.${TIMESTAMP_HIGHLIGHT_CLASS}`)
