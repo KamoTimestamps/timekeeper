@@ -105,7 +105,7 @@
   right: 0;
   bottom: 0;
   width: var(--ytls-scrollbar-size);
-  pointer-events: none;
+  pointer-events: auto;
   opacity: 0;
   transition: opacity 0.2s ease;
   z-index: 2;
@@ -287,13 +287,6 @@
   display: block;
   width: 24px;
   height: 24px;
-}
-.ytls-holiday-emoji {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  font-size: 0.25em;
-  pointer-events: none;
 }
 
 /* Pane header and utility styles */

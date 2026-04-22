@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { getHolidayEmoji } from "./holidays";
 import { createIcon, setIcon, setIconLabel, TablerIconName } from "./icons";
 import {
   log,
@@ -3818,9 +3817,6 @@ initializeDvrEnablement();
         },
       ];
 
-      // Check for holiday emoji on load
-      const holidayEmoji = getHolidayEmoji();
-
       // Create and append main buttons
       mainButtonConfigs.forEach((config) => {
         const button = document.createElement("button");
@@ -3828,13 +3824,6 @@ initializeDvrEnablement();
         addTooltip(button, config.title);
         button.classList.add("ytls-main-button");
 
-        // Add holiday emoji overlay to the add-timestamp button if available
-        if (config.id === "add" && holidayEmoji) {
-          const holidayEmojiSpan = document.createElement("span");
-          holidayEmojiSpan.textContent = holidayEmoji;
-          holidayEmojiSpan.classList.add("ytls-holiday-emoji");
-          button.appendChild(holidayEmojiSpan);
-        }
 
         if (config.id === "copy") {
           // For copy button, bind to an event handler that includes the event object
@@ -5198,6 +5187,47 @@ initializeDvrEnablement();
           scrollbarHideTimeoutId = null;
         }, 500);
       }
+
+      // Keep scrollbar visible while hovering the track gutter
+      scrollbarTrack.addEventListener("mouseenter", () => {
+        if (scrollbarHideTimeoutId) {
+          clearTimeout(scrollbarHideTimeoutId);
+          scrollbarHideTimeoutId = null;
+        }
+        scrollbarTrack!.classList.add("ytls-scrollbar-visible");
+      });
+      scrollbarTrack.addEventListener("mouseleave", () => {
+        scrollbarHideTimeoutId = setTimeout(() => {
+          scrollbarTrack?.classList.remove("ytls-scrollbar-visible");
+          scrollbarHideTimeoutId = null;
+        }, 500);
+      });
+
+      // Drag scrollbar thumb
+      scrollbarThumb.addEventListener("mousedown", (e) => {
+        if (!list) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const startY = e.clientY;
+        const startScrollTop = list.scrollTop;
+        const { scrollHeight, clientHeight } = list;
+        const thumbHeight = Math.max(30, (clientHeight / scrollHeight) * clientHeight);
+        const scrollRange = scrollHeight - clientHeight;
+        const thumbRange = clientHeight - thumbHeight;
+
+        function onMouseMove(ev: MouseEvent) {
+          if (!list) return;
+          const delta = ev.clientY - startY;
+          list.scrollTop = Math.max(0, Math.min(scrollRange, startScrollTop + delta * (scrollRange / thumbRange)));
+          updateScrollbarThumb();
+        }
+        function onMouseUp() {
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", onMouseUp);
+        }
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+      });
 
       pane.addEventListener("mouseenter", () => {
         isMouseOverTimestamps = true;
