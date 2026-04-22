@@ -378,6 +378,15 @@
   flex-shrink:0;
 }
 
+@keyframes ytls-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.ytls-backup-indicator--pulsing {
+  animation: ytls-pulse 1.6s ease-in-out infinite;
+}
+
 /* Shared modal container styles */
 #ytls-settings-modal {
   position:fixed;

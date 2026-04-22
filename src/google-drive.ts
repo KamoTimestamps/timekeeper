@@ -1446,12 +1446,40 @@ export function updateBackupStatusDisplay() {
   backupStatusDisplay.style.color = color;
 }
 
+const PULSING_CLASS = 'ytls-backup-indicator--pulsing';
+const BLUE_COLOR = '#4285f4';
+let pendingColorChange: (() => void) | null = null;
+
+function applyIndicatorColor(el: HTMLElement, color: string) {
+  // Cancel any previously scheduled deferred color change
+  if (pendingColorChange) {
+    el.removeEventListener('animationiteration', pendingColorChange);
+    pendingColorChange = null;
+  }
+
+  if (color === BLUE_COLOR) {
+    el.style.backgroundColor = color;
+    el.classList.add(PULSING_CLASS);
+  } else if (el.classList.contains(PULSING_CLASS)) {
+    // Let the current pulse cycle finish before switching color
+    pendingColorChange = () => {
+      if (!backupStatusIndicator) return;
+      backupStatusIndicator.classList.remove(PULSING_CLASS);
+      backupStatusIndicator.style.backgroundColor = color;
+      pendingColorChange = null;
+    };
+    el.addEventListener('animationiteration', pendingColorChange, { once: true });
+  } else {
+    el.style.backgroundColor = color;
+  }
+}
+
 export function updateBackupStatusIndicator() {
   if (!backupStatusIndicator) return;
 
   const color = getBackupStatusColor();
 
-  backupStatusIndicator.style.backgroundColor = color;
+  applyIndicatorColor(backupStatusIndicator, color);
   addTooltip(backupStatusIndicator, () => {
     // Recalculate tooltip text dynamically
     const auth = AppState.getState().auth;
