@@ -172,10 +172,7 @@ initializeDvrEnablement();
       return 2;
     }
   })();
-  const SPEED_STEPS = [
-    0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75,
-    4,
-  ];
+
   let versionDisplay: HTMLSpanElement | null = null;
   let backupStatusIndicator: HTMLSpanElement | null = null;
   // Used for dynamic min-height calculation
@@ -725,6 +722,7 @@ initializeDvrEnablement();
   let videoPauseHandler: (() => void) | null = null;
   let videoPlayHandler: (() => void) | null = null;
   let videoSeekingHandler: (() => void) | null = null;
+  let videoRatechangeHandler: (() => void) | null = null;
   let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
   // Track pointer activity to distinguish intentional blur from OS UI (emoji picker)
   let docPointerDownHandler: ((e: PointerEvent) => void) | null = null;
@@ -895,7 +893,7 @@ initializeDvrEnablement();
 
           const timestamps = list
             ? getTimestampItems().map((li) => {
-                const timeLink = li.querySelector("a[data-time]");
+                const timeLink = li.querySelector("[data-time]");
                 return timeLink
                   ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
                   : 0;
@@ -958,7 +956,7 @@ initializeDvrEnablement();
     return TimestampRecordSchema.safeParse(value).success;
   }
 
-  function formatTime(anchor: HTMLAnchorElement, timeInSeconds: number) {
+  function formatTime(anchor: HTMLElement, timeInSeconds: number) {
     anchor.dataset.time = String(timeInSeconds);
     anchor.textContent = formatTimeString(
       timeInSeconds,
@@ -1053,7 +1051,7 @@ initializeDvrEnablement();
     let largestTimestamp = -Infinity;
 
     for (const li of items) {
-      const timeLink = li.querySelector<HTMLAnchorElement>("a[data-time]");
+      const timeLink = li.querySelector<HTMLElement>("[data-time]");
       const timeValue = timeLink?.dataset.time;
       if (!timeValue) {
         continue;
@@ -1130,7 +1128,7 @@ initializeDvrEnablement();
     let changed = false;
 
     items.forEach((li) => {
-      const anchor = li.querySelector<HTMLAnchorElement>("a[data-time]");
+      const anchor = li.querySelector<HTMLElement>("[data-time]");
       const timeValue = anchor?.dataset.time;
       if (!anchor || !timeValue) {
         return;
@@ -1244,7 +1242,7 @@ initializeDvrEnablement();
 
       const timestampLi = incrementTarget.closest("li");
       const timeLink =
-        timestampLi?.querySelector<HTMLAnchorElement>("a[data-time]");
+        timestampLi?.querySelector<HTMLElement>("[data-time]");
       if (!timeLink || !timeLink.dataset.time) {
         return;
       }
@@ -1342,7 +1340,7 @@ initializeDvrEnablement();
     const record = document.createElement("span");
     const plus = document.createElement("span");
     const controlsWrap = document.createElement("div");
-    const anchor = document.createElement("a");
+    const anchor = document.createElement("span");
     const timeDiff = document.createElement("span");
     const commentInput = document.createElement("input");
     const del = document.createElement("button");
@@ -1601,17 +1599,9 @@ initializeDvrEnablement();
       isSeeking = true;
       const vid = getVideoElement();
       if (vid) vid.playbackRate = 1;
-      pendingSeekTime = newTime;
-      if (seekTimeoutId) clearTimeout(seekTimeoutId);
-      seekTimeoutId = setTimeout(() => {
-        if (pendingSeekTime !== null) {
-          const player = getActivePlayer();
-          if (player) player.seekTo(pendingSeekTime);
-        }
-        seekTimeoutId = null;
-        pendingSeekTime = null;
-        setTimeout(() => { isSeeking = false; }, 500);
-      }, 500);
+      const player = getActivePlayer();
+      if (player) player.seekTo(newTime);
+      setTimeout(() => { isSeeking = false; }, 500);
       list
         ?.querySelectorAll<HTMLElement>(`.${TIMESTAMP_HIGHLIGHT_CLASS}`)
         .forEach((item) => item.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS));
@@ -1690,7 +1680,7 @@ initializeDvrEnablement();
           const player = getActivePlayer();
           const currentTime = player ? player.getCurrentTime() : 0;
           const itemTime = Number.parseInt(
-            li.querySelector<HTMLAnchorElement>("a[data-time]")?.dataset.time ??
+            li.querySelector<HTMLElement>("[data-time]")?.dataset.time ??
               "0",
             10,
           );
@@ -1760,7 +1750,7 @@ initializeDvrEnablement();
       for (let i = 0; i < existingItems.length; i++) {
         const existingLi = existingItems[i];
         const existingLink =
-          existingLi.querySelector<HTMLAnchorElement>("a[data-time]");
+          existingLi.querySelector<HTMLElement>("[data-time]");
         const existingTimeStr = existingLink?.dataset.time;
         if (!existingTimeStr) {
           continue;
@@ -1817,7 +1807,7 @@ initializeDvrEnablement();
     const items = getTimestampItems();
     items.forEach((item, index) => {
       const timeDiffSpan = item.querySelector<HTMLSpanElement>(".time-diff");
-      const timeLink = item.querySelector<HTMLAnchorElement>("a[data-time]");
+      const timeLink = item.querySelector<HTMLElement>("[data-time]");
       const currentTimeStr = timeLink?.dataset.time;
 
       // Reformat anchor text with shared maxTime so all timestamps use consistent width
@@ -1846,7 +1836,7 @@ initializeDvrEnablement();
       }
       const prevItem = items[index - 1];
       const prevLink =
-        prevItem.querySelector<HTMLAnchorElement>("a[data-time]");
+        prevItem.querySelector<HTMLElement>("[data-time]");
       const prevTimeStr = prevLink?.dataset.time;
       if (!prevTimeStr) {
         timeDiffSpan.textContent = "";
@@ -1902,7 +1892,7 @@ initializeDvrEnablement();
 
     const sortedItems = items
       .map((li) => {
-        const timeLink = li.querySelector<HTMLAnchorElement>("a[data-time]");
+        const timeLink = li.querySelector<HTMLElement>("[data-time]");
         const timeValue = timeLink?.dataset.time;
         if (!timeLink || !timeValue) {
           return null;
@@ -2012,7 +2002,7 @@ initializeDvrEnablement();
 
     const timestamps = getTimestampItems()
       .map((li) => {
-        const startLink = li.querySelector<HTMLAnchorElement>("a[data-time]");
+        const startLink = li.querySelector<HTMLElement>("[data-time]");
         const timeValue = startLink?.dataset.time;
         if (!startLink || !timeValue) {
           return null;
@@ -2293,6 +2283,10 @@ initializeDvrEnablement();
       if (videoSeekingHandler) {
         video.removeEventListener("seeking", videoSeekingHandler);
         videoSeekingHandler = null;
+      }
+      if (videoRatechangeHandler) {
+        video.removeEventListener("ratechange", videoRatechangeHandler);
+        videoRatechangeHandler = null;
       }
     }
   }
@@ -2602,7 +2596,7 @@ initializeDvrEnablement();
 
     const timestamps = list
       ? getTimestampItems().map((li) => {
-          const timeLink = li.querySelector("a[data-time]");
+          const timeLink = li.querySelector("[data-time]");
           return timeLink
             ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
             : 0;
@@ -2659,15 +2653,7 @@ initializeDvrEnablement();
         updateTimeDisplay(currentTime, player);
       }
 
-      // Update playback speed display to stay in sync with video element
-      try {
-        if (playbackSpeedDisplay) {
-          const video = getVideoElement();
-          const rate = video ? video.playbackRate : 1;
-          const r = Math.round(rate * 100) / 100;
-          playbackSpeedDisplay.textContent = `${r.toFixed(2).replace(/\.0+?$|(?<=\.[0-9])0+$/g, "")}x`;
-        }
-      } catch (_) {}
+
 
       // Use centralized helper to perform highlight (respects hover and forces scroll when requested)
       autoHighlightNearest(false, currentTime);
@@ -2741,16 +2727,37 @@ initializeDvrEnablement();
       autoHighlightNearest(true, currentTime);
     };
 
+    const handleRatechange = () => {
+      const rate = video.playbackRate;
+      if (rate !== 1) {
+        lastSavedSpeed = rate;
+        try { localStorage.setItem("ytls-last-speed", String(rate)); } catch (_) {}
+      }
+      if (playbackSpeedDisplay) {
+        const r = Math.round(rate * 100) / 100;
+        const display = r.toFixed(2).replace(/\.0+?$|(?<=\.[0-9])0+$/g, "");
+        playbackSpeedDisplay.textContent = `${display}x`;
+        playbackSpeedDisplay.setAttribute("aria-label", `Playback speed ${display}x`);
+      }
+    };
+
     // Store handlers for cleanup
     videoTimeupdateHandler = handleTimeUpdate;
     videoPauseHandler = handlePause;
     videoPlayHandler = handlePlay;
     videoSeekingHandler = handleSeeking;
+    videoRatechangeHandler = handleRatechange;
 
     video.addEventListener("timeupdate", handleTimeUpdate);
     video.addEventListener("pause", handlePause);
     video.addEventListener("play", handlePlay);
     video.addEventListener("seeking", handleSeeking);
+    video.addEventListener("ratechange", handleRatechange);
+
+    if (lastSavedSpeed !== 1) {
+      video.playbackRate = lastSavedSpeed;
+      log(`Restored playback speed to ${lastSavedSpeed}x`);
+    }
   }
 
   // === IndexedDB Helper Functions ===
@@ -3043,7 +3050,7 @@ initializeDvrEnablement();
                   return false;
                 }
                 const timeLink =
-                  li.querySelector<HTMLAnchorElement>("a[data-time]");
+                  li.querySelector<HTMLElement>("[data-time]");
                 const timeValue = timeLink?.dataset.time;
                 if (!timeValue) {
                   return false;
@@ -3379,7 +3386,7 @@ initializeDvrEnablement();
 
         const timestamps = list
           ? getTimestampItems().map((li) => {
-              const timeLink = li.querySelector("a[data-time]");
+              const timeLink = li.querySelector("[data-time]");
               return timeLink
                 ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
                 : 0;
@@ -5120,49 +5127,7 @@ initializeDvrEnablement();
       playbackGroup.style.alignItems = "center";
       playbackGroup.style.marginLeft = "4px";
 
-      const speedDecreaseBtn = document.createElement("span");
-      speedDecreaseBtn.id = "ytls-playback-speed-decrease";
-      speedDecreaseBtn.appendChild(createIcon("caret-left", 24));
-      speedDecreaseBtn.title = "Decrease playback speed";
-      addTooltip(speedDecreaseBtn, () => "Decrease playback speed");
-      speedDecreaseBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const video = getVideoElement();
-        if (!video) return;
-        const cur = video.playbackRate;
-        let idx = -1;
-        for (let i = SPEED_STEPS.length - 1; i >= 0; i--) {
-          if (SPEED_STEPS[i] < cur - 0.01) {
-            idx = i;
-            break;
-          }
-        }
-        if (idx >= 0) setVideoSpeed(SPEED_STEPS[idx]);
-      });
-      speedDecreaseBtn.addEventListener("mousedown", (e) =>
-        e.stopPropagation(),
-      );
-
-      const speedIncreaseBtn = document.createElement("span");
-      speedIncreaseBtn.id = "ytls-playback-speed-increase";
-      speedIncreaseBtn.appendChild(createIcon("caret-right", 24));
-      speedIncreaseBtn.title = "Increase playback speed";
-      addTooltip(speedIncreaseBtn, () => "Increase playback speed");
-      speedIncreaseBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const video = getVideoElement();
-        if (!video) return;
-        const cur = video.playbackRate;
-        const idx = SPEED_STEPS.findIndex((s) => s > cur + 0.01);
-        if (idx >= 0) setVideoSpeed(SPEED_STEPS[idx]);
-      });
-      speedIncreaseBtn.addEventListener("mousedown", (e) =>
-        e.stopPropagation(),
-      );
-
-      playbackGroup.appendChild(speedDecreaseBtn);
       if (playbackSpeedDisplay) playbackGroup.appendChild(playbackSpeedDisplay);
-      playbackGroup.appendChild(speedIncreaseBtn);
 
       header.appendChild(playbackGroup);
 

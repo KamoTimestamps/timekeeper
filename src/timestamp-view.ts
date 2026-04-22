@@ -105,7 +105,7 @@ export function ensureEmptyPlaceholder(
  * Format a timestamp anchor element with time and URL
  */
 export function formatTimeForDisplay(
-  anchor: HTMLAnchorElement,
+  anchor: HTMLElement,
   timeInSeconds: number,
   currentUrl: string
 ): void {
@@ -134,7 +134,7 @@ export function findNearestTimestamp(
   let largestTimestamp = -Infinity;
 
   for (const li of items) {
-    const timeLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
+    const timeLink = li.querySelector<HTMLElement>('[data-time]');
     const timeValue = timeLink?.dataset.time;
     if (!timeValue) {
       continue;
@@ -244,7 +244,7 @@ export function updateSeekbarMarkers(
   const timestamps = getTimestampItems(list);
 
   timestamps.forEach(li => {
-    const startLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
+    const startLink = li.querySelector<HTMLElement>('[data-time]');
     const timeValue = startLink?.dataset.time;
     if (!startLink || !timeValue) {
       return;
@@ -281,7 +281,7 @@ export function extractTimestampRecords(list: HTMLUListElement | null): Timestam
   const records: TimestampRecord[] = [];
 
   items.forEach(li => {
-    const timeLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
+    const timeLink = li.querySelector<HTMLElement>('[data-time]');
     const commentInput = li.querySelector<HTMLInputElement>('input');
     const guid = li.dataset.guid;
 
@@ -389,7 +389,7 @@ export function offsetAllTimestampTimes(
   let changed = false;
 
   items.forEach(li => {
-    const anchor = li.querySelector<HTMLAnchorElement>('a[data-time]');
+    const anchor = li.querySelector<HTMLElement>('[data-time]');
     const timeValue = anchor?.dataset.time;
     if (!anchor || !timeValue) {
       return;
@@ -420,7 +420,7 @@ export function getLatestTimestampValue(list: HTMLUListElement | null): number {
   let maxTime = 0;
 
   items.forEach(li => {
-    const timeLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
+    const timeLink = li.querySelector<HTMLElement>('[data-time]');
     const timeValue = timeLink?.dataset.time;
     if (timeValue) {
       const time = Number.parseInt(timeValue, 10);
@@ -443,7 +443,7 @@ export function updateTimeDifferences(list: HTMLUListElement | null): void {
 
   items.forEach((li, index) => {
     const timeDiff = li.querySelector<HTMLSpanElement>('.time-diff');
-    const timeLink = li.querySelector<HTMLAnchorElement>('a[data-time]');
+    const timeLink = li.querySelector<HTMLElement>('[data-time]');
     const timeValue = timeLink?.dataset.time;
 
     if (!timeDiff || !timeValue) {
@@ -466,7 +466,7 @@ export function updateTimeDifferences(list: HTMLUListElement | null): void {
     } else {
       // Subsequent timestamps show delta from previous
       const prevLi = items[index - 1];
-      const prevTimeLink = prevLi.querySelector<HTMLAnchorElement>('a[data-time]');
+      const prevTimeLink = prevLi.querySelector<HTMLElement>('[data-time]');
       const prevTimeValue = prevTimeLink?.dataset.time;
 
       if (prevTimeValue) {

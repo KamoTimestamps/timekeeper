@@ -224,7 +224,7 @@
   background-color: #ff0000;
   cursor: pointer;
 }
-#ytls-pane a[data-time] {
+#ytls-pane [data-time] {
   cursor: pointer;
 }
 #ytls-pane span,
@@ -367,29 +367,11 @@
   text-decoration: underline;
 }
 
-#ytls-playback-speed-decrease,
-#ytls-playback-speed-increase {
-  color: #cfcfcf;
-  cursor: pointer;
-  user-select: none;
-  margin: 0;
-  height: 0;
-  overflow: visible;
-  display: inline-flex;
-  align-items: center;
-}
-
 #ytls-playback-speed-group {
   display: inline-flex;
   align-items: center;
-  gap: 2px; /* denser spacing between arrows and label */
-  margin-left: 4px; /* smaller spacing from time display */
-  /* Ensure group keeps consistent visual spacing */
+  margin-left: 4px;
   align-self: center;
-}
-#ytls-playback-speed-decrease:hover,
-#ytls-playback-speed-increase:hover {
-  text-decoration: underline;
 }
 
 /* Backup status indicator (colored dot) */
