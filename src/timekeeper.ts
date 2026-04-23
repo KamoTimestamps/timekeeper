@@ -2826,10 +2826,6 @@ initializeDvrEnablement();
     video.addEventListener("seeking", handleSeeking);
     video.addEventListener("ratechange", handleRatechange);
 
-    if (lastSavedSpeed !== 1) {
-      const p = getActivePlayer();
-      if (p) { p.setPlaybackRate(lastSavedSpeed); log(`Restored playback speed to ${lastSavedSpeed}x`); }
-    }
   }
 
   // === IndexedDB Helper Functions ===
