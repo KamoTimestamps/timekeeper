@@ -767,6 +767,7 @@ initializeDvrEnablement();
   let scrollbarHideTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let scrollbarTrack: HTMLDivElement | null = null;
   let scrollbarThumb: HTMLDivElement | null = null;
+  let isScrollbarDragging = false;
   // Module-level ref set by initializePane; avoids polluting window globals
   let recalculateTimestampsAreaFn: (() => void) | null = null;
   // When timestamps are loaded while a show animation is running, build the DOM nodes
@@ -5236,6 +5237,7 @@ initializeDvrEnablement();
         scrollbarTrack!.classList.add("ytls-scrollbar-visible");
       });
       scrollbarTrack.addEventListener("mouseleave", () => {
+        if (isScrollbarDragging) return;
         scrollbarHideTimeoutId = setTimeout(() => {
           scrollbarTrack?.classList.remove("ytls-scrollbar-visible");
           scrollbarHideTimeoutId = null;
@@ -5247,6 +5249,7 @@ initializeDvrEnablement();
         if (!list) return;
         e.preventDefault();
         e.stopPropagation();
+        isScrollbarDragging = true;
         const startY = e.clientY;
         const startScrollTop = list.scrollTop;
         const { scrollHeight, clientHeight } = list;
@@ -5261,8 +5264,16 @@ initializeDvrEnablement();
           updateScrollbarThumb();
         }
         function onMouseUp() {
+          isScrollbarDragging = false;
           document.removeEventListener("mousemove", onMouseMove);
           document.removeEventListener("mouseup", onMouseUp);
+          // If the mouse is no longer over the track, start the hide timer
+          if (!scrollbarTrack?.matches(":hover")) {
+            scrollbarHideTimeoutId = setTimeout(() => {
+              scrollbarTrack?.classList.remove("ytls-scrollbar-visible");
+              scrollbarHideTimeoutId = null;
+            }, 500);
+          }
         }
         document.addEventListener("mousemove", onMouseMove);
         document.addEventListener("mouseup", onMouseUp);

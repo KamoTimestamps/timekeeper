@@ -1,11 +1,11 @@
-# Graph Report - main  (2026-04-21)
+# Graph Report - main  (2026-04-25)
 
 ## Corpus Check
-- 20 files · ~60,493 words
+- 20 files · ~60,255 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 308 nodes · 803 edges · 14 communities detected
+- 308 nodes · 802 edges · 14 communities detected
 - Extraction: 81% EXTRACTED · 19% INFERRED · 0% AMBIGUOUS · INFERRED: 153 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
@@ -60,12 +60,12 @@ Cohesion: 0.07
 Nodes (37): deleteSingleTimestamp(), earlyLoadGlobalSettings(), earlySaveGlobalSettings(), getExtensionStorageValue(), loadUIVisibilityState(), setExtensionStorageValue(), addTimestamp(), deleteSingleTimestampFromIndexedDB() (+29 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.14
-Nodes (24): loadAutoBackupSettings(), notifyListeners(), resetState(), setAuth(), setAutoBackupBackoffMs(), setAutoBackupEnabled(), setAutoBackupIntervalMinutes(), setAutoBackupRetryAttempts() (+16 more)
+Cohesion: 0.11
+Nodes (23): clampAndSavePanePosition(), clampPaneToViewport(), ensureChannel(), ensureMinPaneHeight(), getCurrentTimestampIndexFromState(), getIndentedComment(), getLastHandledUrl(), getMarkerForIndex() (+15 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.11
-Nodes (21): addHeaderButton(), cancelScheduledShowFinalizer(), ensureMinPaneHeight(), getCurrentTimestampIndexFromState(), getIndentedComment(), getLastHandledUrl(), getMarkerForIndex(), getMinPaneHeight() (+13 more)
+Cohesion: 0.14
+Nodes (24): loadAutoBackupSettings(), notifyListeners(), resetState(), setAuth(), setAutoBackupBackoffMs(), setAutoBackupEnabled(), setAutoBackupIntervalMinutes(), setAutoBackupRetryAttempts() (+16 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.11
@@ -76,24 +76,24 @@ Cohesion: 0.16
 Nodes (15): clearTimestampsDisplay(), displayPaneError(), ensureEmptyPlaceholder(), extractTimestampRecords(), findNearestTimestamp(), getLatestTimestampValue(), getTimestampItems(), highlightNearestTimestampAtTime() (+7 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.31
-Nodes (18): addTimestamp(), appendPendingTimestamps(), applyOffsetToAllTimestamps(), findNearestTimestamp(), getTimestampItems(), handleClick(), highlightNearestTimestampAtTime(), highlightTimestamp() (+10 more)
+Cohesion: 0.33
+Nodes (17): addTimestamp(), appendPendingTimestamps(), applyOffsetToAllTimestamps(), findNearestTimestamp(), getTimestampItems(), handleClick(), highlightTimestamp(), invalidateLatestTimestampValue() (+9 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.22
-Nodes (14): autoHighlightNearest(), clearListPlaceholder(), clearTimestampsDisplay(), displayPaneError(), ensureEmptyPlaceholder(), handleUrlChange(), loadTimestamps(), removeSeekbarMarkers() (+6 more)
+Cohesion: 0.21
+Nodes (14): addHeaderButton(), clearListPlaceholder(), clearTimestampsDisplay(), displayPaneError(), ensureEmptyPlaceholder(), handleUrlChange(), loadTimestamps(), setLastHandledUrl() (+6 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.23
-Nodes (12): formatPlaybackSpeed(), getActivePlayer(), getLatestTimestampValue(), getVideoElement(), isBehindLiveEdge(), removeAllEventListeners(), setupVideoEventListeners(), setVideoSpeed() (+4 more)
+Cohesion: 0.22
+Nodes (11): autoHighlightNearest(), getActivePlayer(), getLatestTimestampValue(), getVideoId(), hasRequiredPlayerMethods(), highlightNearestTimestampAtTime(), isBehindLiveEdge(), missingPlayerMethods() (+3 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.22
-Nodes (11): clampAndSavePanePosition(), clampPaneToViewport(), ensureChannel(), getPanePositionState(), getPaneRect(), handleChannelMessage(), isSupportedUrl(), isYouTubeOrigin() (+3 more)
-
-### Community 10 - "Community 10"
 Cohesion: 0.27
 Nodes (5): hideActiveTooltip(), hideTooltip(), positionTooltipNearElement(), removeTooltip(), repositionActiveTooltip()
+
+### Community 10 - "Community 10"
+Cohesion: 0.28
+Nodes (9): formatPlaybackSpeed(), getVideoElement(), removeAllEventListeners(), removeSeekbarMarkers(), setVideoSpeed(), syncPlaybackSpeedState(), togglePlaybackSpeed(), unloadTimekeeper() (+1 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.44
@@ -104,17 +104,17 @@ Cohesion: 0.52
 Nodes (6): buildUserscript(), ensureDistExists(), getInlineStylesConstant(), readHeaderTemplate(), readVersion(), removeExistingHeader()
 
 ### Community 13 - "Community 13"
-Cohesion: 0.5
-Nodes (5): getVideoId(), hasRequiredPlayerMethods(), missingPlayerMethods(), validatePlayerAndVideoId(), waitForPlayerWithMethods()
+Cohesion: 0.29
+Nodes (7): cancelScheduledShowFinalizer(), performSizingAndSave(), saveUIVisibilityState(), scheduleShowFinalizer(), startHideAnimation(), startShowAnimation(), togglePaneVisibility()
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `log()` connect `Community 4` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 11`?**
+- **Why does `log()` connect `Community 4` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 6`, `Community 7`, `Community 11`, `Community 13`?**
   _High betweenness centrality (0.314) - this node is a cross-community bridge._
-- **Why does `getVideoElement()` connect `Community 8` to `Community 3`, `Community 5`, `Community 6`?**
+- **Why does `getVideoElement()` connect `Community 10` to `Community 2`, `Community 5`, `Community 6`, `Community 7`, `Community 8`?**
   _High betweenness centrality (0.088) - this node is a cross-community bridge._
-- **Why does `updateSeekbarMarkers()` connect `Community 5` to `Community 8`?**
+- **Why does `updateSeekbarMarkers()` connect `Community 5` to `Community 10`?**
   _High betweenness centrality (0.082) - this node is a cross-community bridge._
 - **Are the 48 inferred relationships involving `log()` (e.g. with `syncVersion()` and `minifyCSS()`) actually correct?**
   _`log()` has 48 INFERRED edges - model-reasoned connections that need verification._
