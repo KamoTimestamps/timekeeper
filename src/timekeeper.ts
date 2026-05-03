@@ -8,7 +8,7 @@ import {
 } from "./util";
 import { TIMEKEEPER_VERSION } from "./version";
 import { PANE_STYLES } from "./styles";
-import { addTooltip, hideActiveTooltip } from "./tooltip";
+import { addTooltip, hideActiveTooltip, cleanupAllTooltips } from "./tooltip";
 import * as TimestampModel from "./timestamp-model";
 import * as TimestampView from "./timestamp-view";
 import * as AppState from "./services/state";
@@ -2394,6 +2394,10 @@ initializeDvrEnablement();
 
     // Remove all event listeners to prevent memory leaks
     removeAllEventListeners();
+
+    // Disconnect all tooltip MutationObservers to prevent zombie observers accumulating
+    // across navigations (they observed document.body with subtree:true and were never cleaned up)
+    cleanupAllTooltips();
 
     // Close the BroadcastChannel to prevent memory leaks
     try {
@@ -5471,7 +5475,8 @@ initializeDvrEnablement();
         });
       }
     });
-    paneObserver.observe(document.body, { childList: true, subtree: true });
+    // Pane is always a direct child of body — no need to watch the entire subtree
+    paneObserver.observe(document.body, { childList: true });
   }
 
   function addHeaderButton(attempt = 0) {

@@ -12,6 +12,9 @@ let activeTarget: HTMLElement | null = null;
 let elementHovered = false;
 let pendingHideTimeout: ReturnType<typeof setTimeout> | null = null;
 
+// Track all tooltip observers so they can be disconnected on cleanup
+const allTooltipObservers: MutationObserver[] = [];
+
 /**
  * Initialize the tooltip element
  */
@@ -261,29 +264,25 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
   };
   element.addEventListener('click', handleClick, true);
 
-  // Also observe for element being removed or hidden so we can hide tooltip
+  // Observe attribute changes on the element so we can hide tooltip when it is
+  // hidden via class/style changes (e.g. display:none, visibility:hidden).
   const observer = new MutationObserver(() => {
-    // If element is removed from the document or becomes hidden, hide tooltip
+    if (activeTarget !== element) return;
     try {
-      if (!document.body.contains(element)) {
-        if (activeTarget === element) hideTooltip();
-      } else {
-        const cs = window.getComputedStyle(element);
-        if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') {
-          if (activeTarget === element) hideTooltip();
-        }
+      const cs = window.getComputedStyle(element);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') {
+        hideTooltip();
       }
     } catch (e) {
       // ignore
     }
   });
-  // Observe attribute changes on the element (class/style) and DOM changes under body
   try {
     observer.observe(element, { attributes: true, attributeFilter: ['class', 'style'] });
-    observer.observe(document.body, { childList: true, subtree: true });
   } catch (e) {
     // ignore if observer cannot be created
   }
+  allTooltipObservers.push(observer);
 
   // Store cleanup function on element for later removal if needed
   (element as any).__tooltipCleanup = () => {
@@ -292,9 +291,23 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
     element.removeEventListener('mouseleave', handleMouseLeave);
     element.removeEventListener('click', handleClick, true);
     try { observer.disconnect(); } catch (_) {}
+    const idx = allTooltipObservers.indexOf(observer);
+    if (idx !== -1) allTooltipObservers.splice(idx, 1);
     delete (element as any).__tooltipObserver;
   };
   (element as any).__tooltipObserver = observer;
+}
+
+/**
+ * Disconnect all tooltip MutationObservers and remove their event listeners.
+ * Call this when tearing down the Timekeeper UI to prevent zombie observers.
+ */
+export function cleanupAllTooltips() {
+  for (const obs of allTooltipObservers) {
+    try { obs.disconnect(); } catch (_) {}
+  }
+  allTooltipObservers.length = 0;
+  hideTooltip();
 }
 
 /**
