@@ -882,26 +882,20 @@ initializeDvrEnablement();
   function updateIndentMarkers() {
     if (!list) return;
     const items = getTimestampItems();
-    let changed = true;
-    let iterations = 0;
 
-    while (changed && iterations < items.length) {
-      changed = false;
-      iterations++;
+    // Single forward pass is sufficient: each item's marker depends only on whether
+    // the *next* item is indented, which we read but never modify in this pass.
+    items.forEach((item, index) => {
+      const input = item.querySelector<HTMLInputElement>("input");
+      if (!input || !isIndented(input.value)) return;
 
-      items.forEach((item, index) => {
-        const input = item.querySelector<HTMLInputElement>("input");
-        if (!input || !isIndented(input.value)) return;
+      const cleanComment = removeIndentMarker(input.value);
+      const newValue = getIndentedComment(cleanComment, index);
 
-        const cleanComment = removeIndentMarker(input.value);
-        const newValue = getIndentedComment(cleanComment, index);
-
-        if (input.value !== newValue) {
-          input.value = newValue;
-          changed = true;
-        }
-      });
-    }
+      if (input.value !== newValue) {
+        input.value = newValue;
+      }
+    });
   }
 
   function clearTimestampsDisplay() {

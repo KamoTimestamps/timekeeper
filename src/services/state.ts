@@ -87,10 +87,12 @@ type StateListener = (state: AppState, previousState: AppState) => void;
 const listeners: Set<StateListener> = new Set();
 
 /**
- * Get the current complete state
+ * Get the current complete state.
+ * Returns the live state object — callers must not mutate it.
+ * All writes must go through setState() or the typed setters.
  */
 export function getState(): AppState {
-  return JSON.parse(JSON.stringify(appState));
+  return appState;
 }
 
 /**

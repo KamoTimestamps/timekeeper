@@ -28,6 +28,9 @@ const TIMESTAMP_DELETE_CLASS = "ytls-deleting";
 // Track mouse state for scroll behavior
 let isMouseOverTimestamps = false;
 
+// Track the currently highlighted LI so we can clear only it instead of iterating all items
+let lastHighlightedLi: HTMLLIElement | null = null;
+
 /**
  * Get all timestamp list items (excludes placeholders and error messages)
  */
@@ -42,6 +45,7 @@ export function getTimestampItems(list: HTMLUListElement | null): HTMLLIElement[
 export function clearTimestampsDisplay(list: HTMLUListElement | null): void {
   if (!list) return;
   list.replaceChildren();
+  lastHighlightedLi = null;
 }
 
 /**
@@ -163,18 +167,19 @@ export function highlightTimestamp(
 ): void {
   if (!list) return;
 
-  const items = getTimestampItems(list);
-  // Clear any existing highlights
-  items.forEach(item => {
-    if (!item.classList.contains(TIMESTAMP_DELETE_CLASS)) {
-      item.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
+  // Clear only the previously highlighted item instead of iterating the full list
+  if (lastHighlightedLi && lastHighlightedLi !== li) {
+    if (!lastHighlightedLi.classList.contains(TIMESTAMP_DELETE_CLASS)) {
+      lastHighlightedLi.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
     }
-  });
+    lastHighlightedLi = null;
+  }
 
   if (!li) return;
 
   if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
     li.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
+    lastHighlightedLi = li;
 
     if (shouldScroll) {
       try {

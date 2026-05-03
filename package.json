@@ -1,6 +1,6 @@
 {
   "name": "timekeeper",
-  "version": "4.8.20",
+  "version": "4.8.21",
   "private": true,
   "description": "Timekeeper browser extension",
   "scripts": {
