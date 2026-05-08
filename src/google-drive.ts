@@ -8,7 +8,7 @@ import { log } from './util';
 import { TIMEKEEPER_VERSION } from './version';
 import { addTooltip } from './tooltip';
 import { zipSync, unzipSync } from 'fflate';
-import { BackupSettingsSchema, GoogleAuthStateSchema } from './schema';
+import { BackupSettingsSchema, GoogleAuthStateSchema, GoogleAuthStateParsed } from './schema';
 import { createIcon, setIcon, setIconLabel } from './icons';
 import * as AppState from './services/state';
 
@@ -31,7 +31,7 @@ export function getGoogleAuthState() {
 }
 
 // For backwards compatibility, export as a getter object
-export const googleAuthState: any = {
+export const googleAuthState: GoogleAuthStateParsed = {
   get isSignedIn() { return AppState.getGoogleAuthState().isSignedIn; },
   get accessToken() { return AppState.getGoogleAuthState().accessToken; },
   get userName() { return AppState.getGoogleAuthState().userName; },
@@ -79,10 +79,10 @@ export function getTimekeeperBackendBearerToken() {
 }
 
 // Display elements (set from main script)
-export let googleUserDisplay: any = null;
-export let backupStatusDisplay: any = null;
-export let authStatusDisplay: any = null;
-export let backupStatusIndicator: any = null;
+export let googleUserDisplay: HTMLElement | null = null;
+export let backupStatusDisplay: HTMLElement | null = null;
+export let authStatusDisplay: HTMLElement | null = null;
+export let backupStatusIndicator: HTMLElement | null = null;
 
 // Helper functions to set display elements
 export function setGoogleUserDisplay(el: HTMLElement | null) {
@@ -118,30 +118,30 @@ function ensureAuthSpinnerStyles() {
 }
 
 // Callbacks (set from main script)
-export let buildExportPayload: any = null;
-export let mergeBackupData: any = null;
-export let saveGlobalSettings: any = null;
-export let loadGlobalSettings: any = null;
-export let reloadCurrentVideoTimestamps: any = null;
+export let buildExportPayload: ((opts: { includeDeleted: boolean }) => Promise<ExportPayload>) | null = null;
+export let mergeBackupData: ((json: string) => Promise<{ mergedVideos: number; mergedTimestamps: number }>) | null = null;
+export let saveGlobalSettings: ((key: string, value: unknown) => Promise<void>) | null = null;
+export let loadGlobalSettings: ((key: string) => Promise<unknown>) | null = null;
+export let reloadCurrentVideoTimestamps: (() => void) | null = null;
 
 // Helper functions to set callbacks
-export function setBuildExportPayload(fn: any) {
+export function setBuildExportPayload(fn: (opts: { includeDeleted: boolean }) => Promise<ExportPayload>) {
   buildExportPayload = fn;
 }
 
-export function setMergeBackupData(fn: any) {
+export function setMergeBackupData(fn: (json: string) => Promise<{ mergedVideos: number; mergedTimestamps: number }>) {
   mergeBackupData = fn;
 }
 
-export function setSaveGlobalSettings(fn: any) {
+export function setSaveGlobalSettings(fn: (key: string, value: unknown) => Promise<void>) {
   saveGlobalSettings = fn;
 }
 
-export function setLoadGlobalSettings(fn: any) {
+export function setLoadGlobalSettings(fn: (key: string) => Promise<unknown>) {
   loadGlobalSettings = fn;
 }
 
-export function setReloadCurrentVideoTimestamps(fn: any) {
+export function setReloadCurrentVideoTimestamps(fn: () => void) {
   reloadCurrentVideoTimestamps = fn;
 }
 
@@ -810,8 +810,8 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 3000
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
-  } catch (err: any) {
-    if (err.name === 'AbortError') throw new Error('request timed out');
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') throw new Error('request timed out');
     throw err;
   } finally {
     clearTimeout(timeoutId);
@@ -836,8 +836,8 @@ async function sendUserscriptRequest(details: {
     }, details.timeout);
     const responseText = await response.text();
     return { status: response.status, responseText };
-  } catch (err: any) {
-    throw new Error(err.message || 'request failed');
+  } catch (err: unknown) {
+    throw new Error(err instanceof Error ? err.message : 'request failed');
   }
 }
 
@@ -931,8 +931,8 @@ async function fetchLatestDriveBackup(accessToken: string): Promise<string | nul
     if (!resp.ok) return null;
 
     return decodeFirstZipEntry(await resp.arrayBuffer());
-  } catch (err: any) {
-    if (err.message === 'unauthorized') throw err;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message === 'unauthorized') throw err;
     log('Failed to fetch latest Drive backup for merge:', err, 'warn');
     return null;
   }
@@ -952,9 +952,9 @@ async function fetchLatestBackendBackup(): Promise<string | null> {
     if (response.status === 401 || response.status === 403) throw new Error('unauthorized');
     if (!response.ok) return null;
     return decodeFirstZipEntry(await response.arrayBuffer());
-  } catch (err: any) {
-    if (err.message === 'request timed out') return null;
-    if (err.message === 'unauthorized') throw err;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message === 'request timed out') return null;
+    if (err instanceof Error && err.message === 'unauthorized') throw err;
     log('Failed to fetch latest backend backup for merge:', err, 'warn');
     return null;
   }
