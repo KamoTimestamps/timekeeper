@@ -11,16 +11,33 @@ import * as AppState from './services/state';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
+/**
+ * Fixed mtime for deterministic ZIP generation (used for diff-stable backups).
+ */
 export const DETERMINISTIC_ZIP_MTIME = new Date(Date.UTC(2000, 0, 1, 0, 0, 0));
+/**
+ * Default host for the Timekeeper backend server.
+ */
 export const DEFAULT_TIMEKEEPER_BACKEND_HOST = 'localhost';
+/**
+ * Default port for the Timekeeper backend server.
+ */
 export const DEFAULT_TIMEKEEPER_BACKEND_PORT = 8443;
 
 // ── Backend configuration helpers ────────────────────────────────────────────
 
+/**
+ * Get the normalized backend host (trimmed, protocol-stripped, or default).
+ * @returns The backend host string
+ */
 export function getTimekeeperBackendHostNormalized(): string {
   return (AppState.getState().auth.timekeeperBackendHost ?? '').trim() || DEFAULT_TIMEKEEPER_BACKEND_HOST;
 }
 
+/**
+ * Get the normalized backend bearer token, or null if missing.
+ * @returns The bearer token string, or null
+ */
 export function getTimekeeperBackendBearerTokenNormalized(): string | null {
   const token = AppState.getState().auth.timekeeperBackendBearerToken;
   if (typeof token !== 'string') return null;
@@ -28,6 +45,10 @@ export function getTimekeeperBackendBearerTokenNormalized(): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/**
+ * Construct the backend base URL with secure scheme.
+ * @returns The backend base URL
+ */
 export function getTimekeeperBackendBaseUrl(): string {
   const rawHost = getTimekeeperBackendHostNormalized();
   const host = rawHost.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
@@ -36,25 +57,45 @@ export function getTimekeeperBackendBaseUrl(): string {
 
 // ── Destination predicate helpers ────────────────────────────────────────────
 
+/**
+ * Check if Google Drive is configured as a backup destination.
+ * @returns True if signed in with an access token
+ */
 export function hasGoogleDriveBackupDestination(): boolean {
   const authState = AppState.getGoogleAuthState();
   return authState.isSignedIn && !!authState.accessToken;
 }
 
+/**
+ * Check if the Timekeeper backend is fully configured.
+ * @returns True if host, port, and bearer token are set
+ */
 export function hasTimekeeperBackendBackupConfiguration(): boolean {
   const auth = AppState.getState().auth;
   const port = auth.timekeeperBackendPort;
   return !!getTimekeeperBackendHostNormalized() && Number.isInteger(port) && port >= 1 && port <= 65535 && !!getTimekeeperBackendBearerTokenNormalized();
 }
 
+/**
+ * Check if the Timekeeper backend is enabled and configured.
+ * @returns True if backup is enabled and backend is configured
+ */
 export function hasTimekeeperBackendBackupDestination(): boolean {
   return AppState.getState().auth.timekeeperBackendBackupEnabled && hasTimekeeperBackendBackupConfiguration();
 }
 
+/**
+ * Check if any backup destination is available.
+ * @returns True if Google Drive or Timekeeper Backend is available
+ */
 export function hasAnyBackupDestination(): boolean {
   return hasGoogleDriveBackupDestination() || hasTimekeeperBackendBackupDestination();
 }
 
+/**
+ * Get human-readable labels for configured backup destinations.
+ * @returns Array of destination label strings
+ */
 export function getConfiguredDestinationLabels(): string[] {
   const labels: string[] = [];
   if (hasGoogleDriveBackupDestination()) {
@@ -68,6 +109,13 @@ export function getConfiguredDestinationLabels(): string[] {
 
 // ── HTTP utilities ────────────────────────────────────────────────────────────
 
+/**
+ * Fetch with an abort timeout.
+ * @param url - The URL to fetch
+ * @param init - Fetch options
+ * @param timeoutMs - Timeout in milliseconds
+ * @returns The fetch Response
+ */
 export async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 30000): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -81,6 +129,11 @@ export async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs
   }
 }
 
+/**
+ * Send a request via the userscript $fetch API.
+ * @param details - The request details
+ * @returns The response with status and text
+ */
 export async function sendUserscriptRequest(details: {
   method: string;
   url: string;
@@ -106,12 +159,23 @@ export async function sendUserscriptRequest(details: {
 
 // ── ZIP utilities ─────────────────────────────────────────────────────────────
 
+/**
+ * Decode the first entry from a ZIP buffer as text.
+ * @param buffer - The ZIP buffer
+ * @returns The decoded text, or null if empty
+ */
 export function decodeFirstZipEntry(buffer: ArrayBuffer): string | null {
   const unzipped = unzipSync(new Uint8Array(buffer));
   const firstFile = Object.values(unzipped)[0];
   return firstFile ? new TextDecoder().decode(firstFile) : null;
 }
 
+/**
+ * Create a ZIP archive containing a single JSON file.
+ * @param json - The JSON string to archive
+ * @param filename - The filename inside the ZIP
+ * @returns The ZIP data as a Uint8Array
+ */
 export function createZipFromJson(json: string, filename: string): Uint8Array {
   const jsonBytes = new TextEncoder().encode(json);
   let normalizedFilename = filename.replace(/\\/g, '/').replace(/^\/+/, '');
@@ -130,6 +194,11 @@ export function createZipFromJson(json: string, filename: string): Uint8Array {
 
 // ── Google Drive API calls ────────────────────────────────────────────────────
 
+/**
+ * Ensure a 'Timekeeper' folder exists on Drive, returning its ID.
+ * @param accessToken - The OAuth access token
+ * @returns The folder ID
+ */
 export async function ensureDriveFolder(accessToken: string): Promise<string> {
   const headers = { Authorization: `Bearer ${accessToken}` };
   const q = encodeURIComponent("name = 'Timekeeper' and mimeType = 'application/vnd.google-apps.folder' and trashed = false");
@@ -152,6 +221,13 @@ export async function ensureDriveFolder(accessToken: string): Promise<string> {
   return createJson.id;
 }
 
+/**
+ * Find a file by name within a Drive folder.
+ * @param filename - The file name to find
+ * @param folderId - The parent folder ID
+ * @param accessToken - The OAuth access token
+ * @returns The file ID, or null if not found
+ */
 export async function findFileInFolder(filename: string, folderId: string, accessToken: string): Promise<string | null> {
   const query = `name='${filename}' and '${folderId}' in parents and trashed=false`;
   const encodedQuery = encodeURIComponent(query);
@@ -168,6 +244,11 @@ export async function findFileInFolder(filename: string, folderId: string, acces
   return null;
 }
 
+/**
+ * Fetch the latest backup from Google Drive.
+ * @param accessToken - The OAuth access token
+ * @returns The backup JSON string, or null
+ */
 export async function fetchLatestDriveBackup(accessToken: string): Promise<string | null> {
   try {
     const folderId = await ensureDriveFolder(accessToken);
@@ -186,6 +267,10 @@ export async function fetchLatestDriveBackup(accessToken: string): Promise<strin
   }
 }
 
+/**
+ * Fetch the latest backup from the Timekeeper backend.
+ * @returns The backup JSON string, or null
+ */
 export async function fetchLatestBackendBackup(): Promise<string | null> {
   const bearerToken = getTimekeeperBackendBearerTokenNormalized();
   if (!bearerToken) return null;
@@ -207,6 +292,13 @@ export async function fetchLatestBackendBackup(): Promise<string | null> {
   }
 }
 
+/**
+ * Upload JSON data to Google Drive as a ZIP.
+ * @param filename - The filename for the backup
+ * @param json - The JSON data to upload
+ * @param folderId - The Drive folder ID
+ * @param accessToken - The OAuth access token
+ */
 export async function uploadJsonToDrive(filename: string, json: string, folderId: string, accessToken: string): Promise<void> {
   const zipFilename = filename.replace(/\.json$/, '.zip');
   const existingFileId = await findFileInFolder(zipFilename, folderId, accessToken);
@@ -258,6 +350,11 @@ export async function uploadJsonToDrive(filename: string, json: string, folderId
   if (!resp.ok) throw new Error('drive upload failed');
 }
 
+/**
+ * Upload JSON data to the Timekeeper backend.
+ * @param filename - The backup filename
+ * @param json - The JSON data to upload
+ */
 export async function uploadJsonToTimekeeperBackend(filename: string, json: string): Promise<void> {
   const bearerToken = getTimekeeperBackendBearerTokenNormalized();
   if (!bearerToken) throw new Error('unauthorized');

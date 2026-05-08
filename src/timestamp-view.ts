@@ -34,6 +34,8 @@ let lastHighlightedLi: HTMLLIElement | null = null;
 
 /**
  * Get all timestamp list items (excludes placeholders and error messages)
+ * @param list - The timestamp list UL element
+ * @returns Array of timestamp list items
  */
 export function getTimestampItems(list: HTMLUListElement | null): HTMLLIElement[] {
   if (!list) return [];
@@ -42,6 +44,7 @@ export function getTimestampItems(list: HTMLUListElement | null): HTMLLIElement[
 
 /**
  * Clear all timestamps from the display
+ * @param list - The timestamp list UL element
  */
 export function clearTimestampsDisplay(list: HTMLUListElement | null): void {
   if (!list) return;
@@ -51,6 +54,8 @@ export function clearTimestampsDisplay(list: HTMLUListElement | null): void {
 
 /**
  * Show a placeholder message when no timestamps exist
+ * @param list - The timestamp list UL element
+ * @param message - The placeholder text to display
  */
 export function showListPlaceholder(list: HTMLUListElement | null, message: string): void {
   if (!list) return;
@@ -64,6 +69,7 @@ export function showListPlaceholder(list: HTMLUListElement | null, message: stri
 
 /**
  * Clear any placeholder message
+ * @param list - The timestamp list UL element
  */
 export function clearListPlaceholder(list: HTMLUListElement | null): void {
   if (!list) return;
@@ -74,6 +80,8 @@ export function clearListPlaceholder(list: HTMLUListElement | null): void {
 
 /**
  * Show an error message in the timestamp pane
+ * @param list - The timestamp list UL element
+ * @param message - The error message to display
  */
 export function displayPaneError(list: HTMLUListElement | null, message: string): void {
   if (!list) return;
@@ -87,6 +95,8 @@ export function displayPaneError(list: HTMLUListElement | null, message: string)
 
 /**
  * Ensure empty placeholder is shown when no timestamps exist
+ * @param list - The timestamp list UL element
+ * @param isLoading - Whether timestamps are currently loading
  */
 export function ensureEmptyPlaceholder(
   list: HTMLUListElement | null,
@@ -105,6 +115,9 @@ export function ensureEmptyPlaceholder(
 
 /**
  * Format a timestamp anchor element with time and URL
+ * @param anchor - The anchor element to format
+ * @param timeInSeconds - The timestamp in seconds
+ * @param currentUrl - The current YouTube video URL
  */
 export function formatTimeForDisplay(
   anchor: HTMLElement,
@@ -159,6 +172,8 @@ export function findNearestTimestamp(
 /**
  * Highlight a timestamp list item and optionally scroll it into view.
  * Clears the previous highlight first. No-ops if the item is being deleted.
+ * @param list - The timestamp list UL element
+ * @param li - The list item to highlight
  * @param shouldScroll - When true, scrolls the item into view only if it is not already visible.
  */
 export function highlightTimestamp(
@@ -207,6 +222,9 @@ export function highlightTimestamp(
 
 /**
  * Highlight the nearest timestamp at the given time
+ * @param list - The timestamp list UL element
+ * @param currentSeconds - The current playback time in seconds
+ * @param shouldScroll - Whether to scroll the highlighted item into view
  */
 export function highlightNearestTimestampAtTime(
   list: HTMLUListElement | null,
@@ -231,6 +249,10 @@ export function removeSeekbarMarkers(): void {
 
 /**
  * Update seekbar markers based on current timestamps
+ * @param list - The timestamp list UL element
+ * @param getVideoElement - Getter for the video element
+ * @param getActivePlayer - Getter for the active player
+ * @param isLiveStream - Whether the current video is a live stream
  */
 export function updateSeekbarMarkers(
   list: HTMLUListElement | null,
@@ -274,6 +296,8 @@ export function updateSeekbarMarkers(
 
 /**
  * Extract timestamp records from the UI
+ * @param list - The timestamp list UL element
+ * @returns Array of timestamp records sorted by start time
  */
 export function extractTimestampRecords(list: HTMLUListElement | null): TimestampRecord[] {
   if (!list) return [];
@@ -312,6 +336,10 @@ export function extractTimestampRecords(list: HTMLUListElement | null): Timestam
 
 /**
  * Update scroll overflow based on content height
+ * @param pane - The pane container element
+ * @param header - The pane header element
+ * @param list - The timestamp list UL element
+ * @param btns - The button container element
  */
 export function updateScrollOverflow(
   pane: HTMLDivElement | null,
@@ -336,6 +364,7 @@ export function updateScrollOverflow(
 
 /**
  * Set mouse over timestamp state (for scroll behavior)
+ * @param value - Whether the mouse is over the timestamps
  */
 export function setMouseOverTimestamps(value: boolean): void {
   isMouseOverTimestamps = value;
@@ -343,6 +372,7 @@ export function setMouseOverTimestamps(value: boolean): void {
 
 /**
  * Get mouse over timestamp state
+ * @returns Whether the mouse is over the timestamps
  */
 export function getMouseOverTimestamps(): boolean {
   return isMouseOverTimestamps;
@@ -352,6 +382,12 @@ export function getMouseOverTimestamps(): boolean {
  * Sync visibility state across UI toggle buttons.
  * Updates aria-pressed on the header button and resets the button image to
  * the default icon when the pointer is not hovering over it.
+ * @param isVisible - Whether the pane is currently visible
+ * @param headerButton - The header toggle button
+ * @param headerButtonImage - The header button image element
+ * @param isHeaderButtonHovered - Whether the header button is hovered
+ * @param defaultIconUrl - URL for the default (unpressed) icon
+ * @param hoverIconUrl - URL for the hovered icon
  */
 export function syncToggleButtons(
   isVisible: boolean,
@@ -417,6 +453,8 @@ export function offsetAllTimestampTimes(
 
 /**
  * Get the latest (maximum) timestamp value from the UI
+ * @param list - The timestamp list UL element
+ * @returns The maximum timestamp in seconds, or 0
  */
 export function getLatestTimestampValue(list: HTMLUListElement | null): number {
   if (!list) return 0;
@@ -442,6 +480,8 @@ export function getLatestTimestampValue(list: HTMLUListElement | null): number {
  * Calculate and update time differences between consecutive timestamps.
  * When maxTime is provided, also reformats each anchor's text to use a
  * consistent width based on the longest timestamp in the list.
+ * @param list - The timestamp list UL element
+ * @param maxTime - Optional maximum timestamp for width normalization
  */
 export function updateTimeDifferences(list: HTMLUListElement | null, maxTime?: number): void {
   if (!list) return;
@@ -496,6 +536,7 @@ export function updateTimeDifferences(list: HTMLUListElement | null, maxTime?: n
 
 /**
  * Clamp pane position to viewport bounds
+ * @param pane - The pane container element
  */
 export function clampPaneToViewport(pane: HTMLDivElement | null): void {
   if (!pane) return;
