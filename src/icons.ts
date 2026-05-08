@@ -104,7 +104,7 @@ const ICON_SVGS: Record<TablerIconName, string> = {
   'x': xSvg,
   'indent-increase': indentIncreaseSvg,
   'indent-decrease': indentDecreaseSvg,
-};
+} as const;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const SVG_OUTER_REGEX = /^\s*<svg\s+([^>]*)>([\s\S]*?)<\/svg>\s*$/;
