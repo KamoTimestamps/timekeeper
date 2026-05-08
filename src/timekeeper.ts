@@ -25,6 +25,7 @@ import { setupPaneInteractions } from "./pane-interactions";
 import {
   createModalCloseHandler,
   createEscapeKeyHandler,
+  showTextInputModal,
   registerModalEscapeHandler,
   createClickOutsideHandler,
   registerModalClickOutsideHandler,
@@ -3365,7 +3366,7 @@ initializeDvrEnablement();
           });
       };
 
-      const handleBulkOffset = () => {
+      const handleBulkOffset = async () => {
         if (
           !list ||
           list.querySelector(".ytls-error-message") ||
@@ -3380,10 +3381,10 @@ initializeDvrEnablement();
           return;
         }
 
-        const input = prompt(
-          "Enter the number of seconds to offset all timestamps (positive or negative integer):",
-          "0",
-        );
+        const input = await showTextInputModal(
+           "Enter the number of seconds to offset all timestamps (positive or negative integer):",
+           "0",
+         );
         if (input === null) {
           return;
         }

@@ -9,6 +9,7 @@ import { addTooltip } from './tooltip';
 import { BackupSettingsSchema, GoogleAuthStateSchema, GoogleAuthStateParsed } from './schema';
 import { createIcon, setIcon, setIconLabel } from './icons';
 import { showToast } from './toast';
+import { showTextInputModal } from './modals';
 import {
   getTimekeeperBackendHostNormalized,
   getTimekeeperBackendBearerTokenNormalized,
@@ -1308,7 +1309,7 @@ export async function toggleAutoBackup() {
 
 export async function setAutoBackupIntervalPrompt() {
   const currentInterval = getAutoBackupIntervalMinutes();
-  const input = prompt('Set Auto Backup interval (minutes):', String(currentInterval));
+  const input = await showTextInputModal('Set Auto Backup interval (minutes):', String(currentInterval));
   if (input === null) return;
   const minutes = Math.floor(Number(input));
   if (!Number.isFinite(minutes) || minutes < 5 || minutes > 1440) {
@@ -1329,7 +1330,7 @@ export async function toggleTimekeeperBackendBackup() {
 }
 
 export async function setTimekeeperBackendHostPrompt() {
-  const input = prompt('Set the Timekeeper backend host:', getTimekeeperBackendHostNormalized());
+  const input = await showTextInputModal('Set the Timekeeper backend host:', getTimekeeperBackendHostNormalized());
   if (input === null) return;
 
   const host = input.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
@@ -1345,7 +1346,7 @@ export async function setTimekeeperBackendHostPrompt() {
 }
 
 export async function setTimekeeperBackendPortPrompt() {
-  const input = prompt('Set the Timekeeper backend port:', String(getTimekeeperBackendPort()));
+  const input = await showTextInputModal('Set the Timekeeper backend port:', String(getTimekeeperBackendPort()));
   if (input === null) return;
 
   const port = Number.parseInt(input.trim(), 10);
@@ -1365,7 +1366,7 @@ export async function setTimekeeperBackendBearerTokenPrompt() {
   const promptMessage = currentToken
     ? 'Set the Timekeeper backend bearer token (leave blank to clear it):'
     : 'Set the Timekeeper backend bearer token:';
-  const input = prompt(promptMessage, currentToken ?? '');
+  const input = await showTextInputModal(promptMessage, currentToken ?? '');
   if (input === null) return;
 
   const token = input.trim();
