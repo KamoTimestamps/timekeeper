@@ -4863,6 +4863,12 @@ initializeDvrEnablement();
       return;
     }
 
+    // Clear stale interval from previous pane to prevent memory leak
+    if (timeUpdateIntervalId) {
+      clearInterval(timeUpdateIntervalId);
+      timeUpdateIntervalId = null;
+    }
+
     // Track last handled URL so repeated history events don't trigger duplicate work
     setLastHandledUrl(window.location.href);
 
