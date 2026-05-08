@@ -1,3 +1,4 @@
 dist/*
 node_modules/*
-graphify-out/cache
+graphify-out/manifest.json
+graphify-out/cost.json

@@ -1,32 +1,37 @@
-# Graph Report - main  (2026-04-25)
+# Graph Report - .  (2026-05-07)
 
 ## Corpus Check
-- 20 files · ~60,255 words
+- 25 files · ~34,763 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 308 nodes · 802 edges · 14 communities detected
-- Extraction: 81% EXTRACTED · 19% INFERRED · 0% AMBIGUOUS · INFERRED: 153 edges (avg confidence: 0.8)
+- 309 nodes · 801 edges · 19 communities detected
+- Extraction: 81% EXTRACTED · 19% INFERRED · 0% AMBIGUOUS · INFERRED: 151 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
-- [[_COMMUNITY_Community 0|Community 0]]
-- [[_COMMUNITY_Community 1|Community 1]]
-- [[_COMMUNITY_Community 2|Community 2]]
-- [[_COMMUNITY_Community 3|Community 3]]
-- [[_COMMUNITY_Community 4|Community 4]]
-- [[_COMMUNITY_Community 5|Community 5]]
-- [[_COMMUNITY_Community 6|Community 6]]
-- [[_COMMUNITY_Community 7|Community 7]]
-- [[_COMMUNITY_Community 8|Community 8]]
-- [[_COMMUNITY_Community 9|Community 9]]
-- [[_COMMUNITY_Community 10|Community 10]]
-- [[_COMMUNITY_Community 11|Community 11]]
-- [[_COMMUNITY_Community 12|Community 12]]
+- [[_COMMUNITY_Google Drive Backup & Auth|Google Drive Backup & Auth]]
+- [[_COMMUNITY_Timestamp Service & Repo|Timestamp Service & Repo]]
+- [[_COMMUNITY_Timekeeper Main App|Timekeeper Main App]]
+- [[_COMMUNITY_State Management|State Management]]
+- [[_COMMUNITY_Build Tools & DVR|Build Tools & DVR]]
+- [[_COMMUNITY_Timestamp View|Timestamp View]]
+- [[_COMMUNITY_Icons & Tooltip|Icons & Tooltip]]
+- [[_COMMUNITY_Timestamp Operations|Timestamp Operations]]
+- [[_COMMUNITY_Timekeeper UI|Timekeeper UI]]
+- [[_COMMUNITY_Video Playback|Video Playback]]
+- [[_COMMUNITY_Postbuild|Postbuild]]
+- [[_COMMUNITY_Timestamp Extraction|Timestamp Extraction]]
+- [[_COMMUNITY_Timestamp Highlighting|Timestamp Highlighting]]
 - [[_COMMUNITY_Community 13|Community 13]]
+- [[_COMMUNITY_Community 14|Community 14]]
+- [[_COMMUNITY_Community 15|Community 15]]
+- [[_COMMUNITY_Community 16|Community 16]]
+- [[_COMMUNITY_Community 17|Community 17]]
+- [[_COMMUNITY_Community 18|Community 18]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `log()` - 49 edges
+1. `log()` - 48 edges
 2. `updateBackupStatusDisplay()` - 20 edges
 3. `scheduleAutoBackup()` - 19 edges
 4. `runAutoBackupOnce()` - 18 edges
@@ -38,86 +43,120 @@
 10. `handleClick()` - 14 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `syncVersion()` --calls--> `log()`  [INFERRED]
-  build-tools/sync-version.js → src/util.ts
-- `minifyCSS()` --calls--> `log()`  [INFERRED]
-  build-tools/build.js → src/util.ts
-- `buildUserscript()` --calls--> `log()`  [INFERRED]
-  build-tools/build.js → src/util.ts
 - `getLastHandledUrl()` --calls--> `getState()`  [INFERRED]
-  src/timekeeper.ts → src/services/state.ts
+  /Users/localuser/src/github.com/KamoTimestamps/Timekeeper/main/src/timekeeper.ts → /Users/localuser/src/github.com/KamoTimestamps/Timekeeper/main/src/services/state.ts
 - `getTimestampsFromState()` --calls--> `getState()`  [INFERRED]
-  src/timekeeper.ts → src/services/state.ts
+  /Users/localuser/src/github.com/KamoTimestamps/Timekeeper/main/src/timekeeper.ts → /Users/localuser/src/github.com/KamoTimestamps/Timekeeper/main/src/services/state.ts
+- `getCurrentTimestampIndexFromState()` --calls--> `getState()`  [INFERRED]
+  /Users/localuser/src/github.com/KamoTimestamps/Timekeeper/main/src/timekeeper.ts → /Users/localuser/src/github.com/KamoTimestamps/Timekeeper/main/src/services/state.ts
+- `getMinPaneHeight()` --calls--> `getState()`  [INFERRED]
+  /Users/localuser/src/github.com/KamoTimestamps/Timekeeper/main/src/timekeeper.ts → /Users/localuser/src/github.com/KamoTimestamps/Timekeeper/main/src/services/state.ts
+- `getUrlChangeHandlersSetup()` --calls--> `getState()`  [INFERRED]
+  /Users/localuser/src/github.com/KamoTimestamps/Timekeeper/main/src/timekeeper.ts → /Users/localuser/src/github.com/KamoTimestamps/Timekeeper/main/src/services/state.ts
 
 ## Communities
 
-### Community 0 - "Community 0"
+### Community 0 - "Google Drive Backup & Auth"
+Cohesion: 0.09
+Nodes (63): applyIndicatorColor(), blinkAuthStatusDisplay(), clearAutoBackupSchedule(), createZipFromJson(), decodeFirstZipEntry(), ensureAuthSpinnerStyles(), ensureDriveFolder(), exportAllTimestampsToConfiguredDestinations() (+55 more)
+
+### Community 1 - "Timestamp Service & Repo"
+Cohesion: 0.06
+Nodes (39): deleteSingleTimestamp(), earlyLoadGlobalSettings(), earlySaveGlobalSettings(), getExtensionStorageValue(), loadUIVisibilityState(), setExtensionStorageValue(), addTimestamp(), deleteSingleTimestampFromIndexedDB() (+31 more)
+
+### Community 2 - "Timekeeper Main App"
 Cohesion: 0.1
-Nodes (61): applyIndicatorColor(), blinkAuthStatusDisplay(), clearAutoBackupSchedule(), createZipFromJson(), decodeFirstZipEntry(), ensureAuthSpinnerStyles(), exportAllTimestampsToConfiguredDestinations(), fetchLatestBackendBackup() (+53 more)
+Nodes (24): cancelScheduledShowFinalizer(), ensureMinPaneHeight(), getCurrentTimestampIndexFromState(), getIndentedComment(), getLastHandledUrl(), getMarkerForIndex(), getMinPaneHeight(), getTimestampsFromState() (+16 more)
 
-### Community 1 - "Community 1"
-Cohesion: 0.07
-Nodes (37): deleteSingleTimestamp(), earlyLoadGlobalSettings(), earlySaveGlobalSettings(), getExtensionStorageValue(), loadUIVisibilityState(), setExtensionStorageValue(), addTimestamp(), deleteSingleTimestampFromIndexedDB() (+29 more)
-
-### Community 2 - "Community 2"
-Cohesion: 0.11
-Nodes (23): clampAndSavePanePosition(), clampPaneToViewport(), ensureChannel(), ensureMinPaneHeight(), getCurrentTimestampIndexFromState(), getIndentedComment(), getLastHandledUrl(), getMarkerForIndex() (+15 more)
-
-### Community 3 - "Community 3"
+### Community 3 - "State Management"
 Cohesion: 0.14
 Nodes (24): loadAutoBackupSettings(), notifyListeners(), resetState(), setAuth(), setAutoBackupBackoffMs(), setAutoBackupEnabled(), setAutoBackupIntervalMinutes(), setAutoBackupRetryAttempts() (+16 more)
 
-### Community 4 - "Community 4"
+### Community 4 - "Build Tools & DVR"
 Cohesion: 0.11
-Nodes (23): buildUserscript(), minifyCSS(), readHeaderTemplate(), readVersion(), removeExistingHeader(), initializeDvrEnablement(), ensureDriveFolder(), exportAllTimestampsToGoogleDrive() (+15 more)
+Nodes (24): buildUserscript(), minifyCSS(), readHeaderTemplate(), readVersion(), removeExistingHeader(), initializeDvrEnablement(), exportAllTimestampsToGoogleDrive(), handleOAuthPopup() (+16 more)
 
-### Community 5 - "Community 5"
+### Community 5 - "Timestamp View"
 Cohesion: 0.16
 Nodes (15): clearTimestampsDisplay(), displayPaneError(), ensureEmptyPlaceholder(), extractTimestampRecords(), findNearestTimestamp(), getLatestTimestampValue(), getTimestampItems(), highlightNearestTimestampAtTime() (+7 more)
 
-### Community 6 - "Community 6"
-Cohesion: 0.33
-Nodes (17): addTimestamp(), appendPendingTimestamps(), applyOffsetToAllTimestamps(), findNearestTimestamp(), getTimestampItems(), handleClick(), highlightTimestamp(), invalidateLatestTimestampValue() (+9 more)
+### Community 6 - "Icons & Tooltip"
+Cohesion: 0.15
+Nodes (15): buildSvgFromSource(), createIcon(), decodeSvgSource(), getIconTemplate(), parseAttributes(), setIcon(), setIconLabel(), initializePaneIfNeeded() (+7 more)
 
-### Community 7 - "Community 7"
-Cohesion: 0.21
-Nodes (14): addHeaderButton(), clearListPlaceholder(), clearTimestampsDisplay(), displayPaneError(), ensureEmptyPlaceholder(), handleUrlChange(), loadTimestamps(), setLastHandledUrl() (+6 more)
+### Community 7 - "Timestamp Operations"
+Cohesion: 0.38
+Nodes (15): addTimestamp(), appendPendingTimestamps(), formatTime(), getTimestampItems(), handleClick(), invalidateLatestTimestampValue(), offsetAllTimestamps(), processImportedData() (+7 more)
 
-### Community 8 - "Community 8"
+### Community 8 - "Timekeeper UI"
 Cohesion: 0.22
-Nodes (11): autoHighlightNearest(), getActivePlayer(), getLatestTimestampValue(), getVideoId(), hasRequiredPlayerMethods(), highlightNearestTimestampAtTime(), isBehindLiveEdge(), missingPlayerMethods() (+3 more)
+Nodes (14): addHeaderButton(), autoHighlightNearest(), clearListPlaceholder(), clearTimestampsDisplay(), displayPaneError(), ensureEmptyPlaceholder(), handleUrlChange(), loadTimestamps() (+6 more)
 
-### Community 9 - "Community 9"
-Cohesion: 0.27
-Nodes (5): hideActiveTooltip(), hideTooltip(), positionTooltipNearElement(), removeTooltip(), repositionActiveTooltip()
+### Community 9 - "Video Playback"
+Cohesion: 0.24
+Nodes (10): formatPlaybackSpeed(), getVideoElement(), removeAllEventListeners(), removeSeekbarMarkers(), setupVideoEventListeners(), setVideoSpeed(), syncPlaybackSpeedState(), togglePlaybackSpeed() (+2 more)
 
-### Community 10 - "Community 10"
-Cohesion: 0.28
-Nodes (9): formatPlaybackSpeed(), getVideoElement(), removeAllEventListeners(), removeSeekbarMarkers(), setVideoSpeed(), syncPlaybackSpeedState(), togglePlaybackSpeed(), unloadTimekeeper() (+1 more)
-
-### Community 11 - "Community 11"
-Cohesion: 0.44
-Nodes (8): buildSvgFromSource(), createIcon(), decodeSvgSource(), getIconTemplate(), parseAttributes(), setIcon(), setIconLabel(), initializePaneIfNeeded()
-
-### Community 12 - "Community 12"
+### Community 10 - "Postbuild"
 Cohesion: 0.52
 Nodes (6): buildUserscript(), ensureDistExists(), getInlineStylesConstant(), readHeaderTemplate(), readVersion(), removeExistingHeader()
 
+### Community 11 - "Timestamp Extraction"
+Cohesion: 0.33
+Nodes (6): extractTimestampRecords(), getActivePlayer(), getLatestTimestampValue(), isBehindLiveEdge(), saveTimestampsAs(), updateTimeDisplay()
+
+### Community 12 - "Timestamp Highlighting"
+Cohesion: 0.67
+Nodes (4): applyOffsetToAllTimestamps(), findNearestTimestamp(), highlightNearestTimestampAtTime(), highlightTimestamp()
+
 ### Community 13 - "Community 13"
-Cohesion: 0.29
-Nodes (7): cancelScheduledShowFinalizer(), performSizingAndSave(), saveUIVisibilityState(), scheduleShowFinalizer(), startHideAnimation(), startShowAnimation(), togglePaneVisibility()
+Cohesion: 1.0
+Nodes (0): 
+
+### Community 14 - "Community 14"
+Cohesion: 1.0
+Nodes (0): 
+
+### Community 15 - "Community 15"
+Cohesion: 1.0
+Nodes (0): 
+
+### Community 16 - "Community 16"
+Cohesion: 1.0
+Nodes (0): 
+
+### Community 17 - "Community 17"
+Cohesion: 1.0
+Nodes (0): 
+
+### Community 18 - "Community 18"
+Cohesion: 1.0
+Nodes (0): 
+
+## Knowledge Gaps
+- **Thin community `Community 13`** (1 nodes): `extension-env.d.ts`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 14`** (1 nodes): `schema.ts`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 15`** (1 nodes): `styles.ts`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 16`** (1 nodes): `svg.d.ts`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 17`** (1 nodes): `styles.css.d.ts`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 18`** (1 nodes): `version.ts`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `log()` connect `Community 4` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 6`, `Community 7`, `Community 11`, `Community 13`?**
-  _High betweenness centrality (0.314) - this node is a cross-community bridge._
-- **Why does `getVideoElement()` connect `Community 10` to `Community 2`, `Community 5`, `Community 6`, `Community 7`, `Community 8`?**
-  _High betweenness centrality (0.088) - this node is a cross-community bridge._
-- **Why does `updateSeekbarMarkers()` connect `Community 5` to `Community 10`?**
-  _High betweenness centrality (0.082) - this node is a cross-community bridge._
-- **Are the 48 inferred relationships involving `log()` (e.g. with `syncVersion()` and `minifyCSS()`) actually correct?**
-  _`log()` has 48 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `log()` connect `Build Tools & DVR` to `Google Drive Backup & Auth`, `Timestamp Service & Repo`, `Timekeeper Main App`, `State Management`, `Icons & Tooltip`, `Timestamp Operations`, `Timekeeper UI`, `Timestamp Extraction`, `Timestamp Highlighting`?**
+  _High betweenness centrality (0.305) - this node is a cross-community bridge._
+- **Why does `getVideoElement()` connect `Video Playback` to `Timekeeper Main App`, `Timestamp Extraction`, `Timestamp View`, `Timestamp Operations`?**
+  _High betweenness centrality (0.080) - this node is a cross-community bridge._
+- **Why does `displayPane()` connect `Google Drive Backup & Auth` to `Timestamp Service & Repo`, `Timekeeper Main App`, `State Management`, `Build Tools & DVR`, `Timekeeper UI`?**
+  _High betweenness centrality (0.077) - this node is a cross-community bridge._
+- **Are the 47 inferred relationships involving `log()` (e.g. with `minifyCSS()` and `buildUserscript()`) actually correct?**
+  _`log()` has 47 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 2 inferred relationships involving `updateBackupStatusDisplay()` (e.g. with `getState()` and `setIconLabel()`) actually correct?**
   _`updateBackupStatusDisplay()` has 2 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 2 inferred relationships involving `scheduleAutoBackup()` (e.g. with `displayPane()` and `getState()`) actually correct?**

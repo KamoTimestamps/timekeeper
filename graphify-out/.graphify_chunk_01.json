@@ -1,0 +1,1645 @@
+{
+  "nodes": [
+    {
+      "id": "icons_tablericonname",
+      "label": "TablerIconName (type)",
+      "file_type": "code",
+      "source_file": "src/icons.ts",
+      "source_location": "lines 39-72"
+    },
+    {
+      "id": "icons_icons_svgs",
+      "label": "ICON_SVGS (constant)",
+      "file_type": "code",
+      "source_file": "src/icons.ts",
+      "source_location": "lines 74-107"
+    },
+    {
+      "id": "icons_parseattributes",
+      "label": "parseAttributes (function)",
+      "file_type": "code",
+      "source_file": "src/icons.ts",
+      "source_location": "lines 116-122"
+    },
+    {
+      "id": "icons_decodeSvgSource",
+      "label": "decodeSvgSource (function)",
+      "file_type": "code",
+      "source_file": "src/icons.ts",
+      "source_location": "lines 124-132"
+    },
+    {
+      "id": "icons_buildSvgFromSource",
+      "label": "buildSvgFromSource (function)",
+      "file_type": "code",
+      "source_file": "src/icons.ts",
+      "source_location": "lines 134-164"
+    },
+    {
+      "id": "icons_getIconTemplate",
+      "label": "getIconTemplate (function)",
+      "file_type": "code",
+      "source_file": "src/icons.ts",
+      "source_location": "lines 166-175"
+    },
+    {
+      "id": "icons_createIcon",
+      "label": "createIcon (function)",
+      "file_type": "code",
+      "source_file": "src/icons.ts",
+      "source_location": "lines 181-190"
+    },
+    {
+      "id": "icons_setIcon",
+      "label": "setIcon (function)",
+      "file_type": "code",
+      "source_file": "src/icons.ts",
+      "source_location": "lines 193-195"
+    },
+    {
+      "id": "icons_setIconLabel",
+      "label": "setIconLabel (function)",
+      "file_type": "code",
+      "source_file": "src/icons.ts",
+      "source_location": "lines 198-200"
+    },
+    {
+      "id": "util_log",
+      "label": "log (function)",
+      "file_type": "code",
+      "source_file": "src/util.ts",
+      "source_location": "lines 5-17"
+    },
+    {
+      "id": "util_formatTimeString",
+      "label": "formatTimeString (function)",
+      "file_type": "code",
+      "source_file": "src/util.ts",
+      "source_location": "lines 24-36"
+    },
+    {
+      "id": "util_buildYouTubeUrlWithTimestamp",
+      "label": "buildYouTubeUrlWithTimestamp (function)",
+      "file_type": "code",
+      "source_file": "src/util.ts",
+      "source_location": "lines 43-56"
+    },
+    {
+      "id": "util_getTimestampSuffix",
+      "label": "getTimestampSuffix (function)",
+      "file_type": "code",
+      "source_file": "src/util.ts",
+      "source_location": "lines 61-69"
+    },
+    {
+      "id": "version_TIMEKEEPER_VERSION",
+      "label": "TIMEKEEPER_VERSION (constant)",
+      "file_type": "code",
+      "source_file": "src/version.ts",
+      "source_location": "line 1"
+    },
+    {
+      "id": "google_drive_SIGN_IN_TO_GOOGLE",
+      "label": "signInToGoogle (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 445-548"
+    },
+    {
+      "id": "google_drive_HANDLE_OAUTH_POPUP",
+      "label": "handleOAuthPopup (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 595-714"
+    },
+    {
+      "id": "google_drive_EXPORT_ALL_TIMESTAMPS_GOOGLE_DRIVE",
+      "label": "exportAllTimestampsToGoogleDrive (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 1151-1169"
+    },
+    {
+      "id": "google_drive_RUN_AUTO_BACKUP_ONCE",
+      "label": "runAutoBackupOnce (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 1509-1591"
+    },
+    {
+      "id": "google_drive_SCHEDULE_AUTO_BACKUP",
+      "label": "scheduleAutoBackup (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 1593-1612"
+    },
+    {
+      "id": "google_drive_TOGGLE_AUTO_BACKUP",
+      "label": "toggleAutoBackup (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 1614-1620"
+    },
+    {
+      "id": "google_drive_GOOGLE_CLIENT_ID",
+      "label": "GOOGLE_CLIENT_ID (constant)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "line 149"
+    },
+    {
+      "id": "google_drive_GOOGLE_SCOPES",
+      "label": "GOOGLE_SCOPES (constant)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "line 150"
+    },
+    {
+      "id": "google_drive_AUTO_BACKUP_MAX_RETRY_ATTEMPTS",
+      "label": "AUTO_BACKUP_MAX_RETRY_ATTEMPTS (constant)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "line 159"
+    },
+    {
+      "id": "google_drive_MERGE_FROM_ALL_REMOTES",
+      "label": "mergeFromAllRemotesBeforeBackup (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 965-1013"
+    },
+    {
+      "id": "google_drive_CREATE_ZIP_FROM_JSON",
+      "label": "createZipFromJson (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 1018-1052"
+    },
+    {
+      "id": "google_drive_UPLOAD_JSON_TO_DRIVE",
+      "label": "uploadJsonToDrive (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 1057-1127"
+    },
+    {
+      "id": "google_drive_ENSURE_DRIVE_FOLDER",
+      "label": "ensureDriveFolder (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 880-901"
+    },
+    {
+      "id": "google_drive_SIGN_OUT_FROM_GOOGLE",
+      "label": "signOutFromGoogle (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 721-733"
+    },
+    {
+      "id": "google_drive_VERIFY_SIGNED_IN",
+      "label": "verifySignedIn (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 736-758"
+    },
+    {
+      "id": "google_drive_SILENT_SIGN_IN_TO_GOOGLE",
+      "label": "silentSignInToGoogle (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 552-592"
+    },
+    {
+      "id": "google_drive_MONITOR_OAUTH_POPUP",
+      "label": "monitorOAuthPopup (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 300-442"
+    },
+    {
+      "id": "google_drive_LOAD_GOOGLE_AUTH_STATE",
+      "label": "loadGoogleAuthState (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 177-207"
+    },
+    {
+      "id": "google_drive_SAVE_GOOGLE_AUTH_STATE",
+      "label": "saveGoogleAuthState (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 210-230"
+    },
+    {
+      "id": "google_drive_UPDATE_BACKUP_STATUS_DISPLAY",
+      "label": "updateBackupStatusDisplay (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 1392-1447"
+    },
+    {
+      "id": "google_drive_UPDATE_BACKUP_STATUS_INDICATOR",
+      "label": "updateBackupStatusIndicator (function)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 1477-1507"
+    },
+    {
+      "id": "google_drive_STATE_GOOGLE_AUTH_STATE",
+      "label": "googleAuthState (getter object)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 34-55"
+    },
+    {
+      "id": "google_drive_STATE_EXPORT_PAYLOAD",
+      "label": "buildExportPayload (callback)",
+      "file_type": "code",
+      "source_file": "src/google-drive.ts",
+      "source_location": "lines 121-122"
+    },
+    {
+      "id": "state_STATE",
+      "label": "AppState (interface)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 11-41"
+    },
+    {
+      "id": "state_GET_STATE",
+      "label": "getState (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 94-96"
+    },
+    {
+      "id": "state_SET_STATE",
+      "label": "setState (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 101-113"
+    },
+    {
+      "id": "state_GET_GOOGLE_AUTH_STATE",
+      "label": "getGoogleAuthState (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 132-134"
+    },
+    {
+      "id": "state_SUBSCRIBE",
+      "label": "subscribe (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 235-238"
+    },
+    {
+      "id": "state_RESET_STATE",
+      "label": "resetState (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 256-259"
+    },
+    {
+      "id": "state_DEFAULT_STATE",
+      "label": "DEFAULT_STATE (constant)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 46-76"
+    },
+    {
+      "id": "state_setGoogleAuthState",
+      "label": "setGoogleAuthState (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 136-138"
+    },
+    {
+      "id": "state_setAutoBackupEnabled",
+      "label": "setAutoBackupEnabled (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 140-142"
+    },
+    {
+      "id": "state_setAutoBackupIntervalMinutes",
+      "label": "setAutoBackupIntervalMinutes (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 144-146"
+    },
+    {
+      "id": "state_setAutoBackupRunning",
+      "label": "setAutoBackupRunning (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 148-150"
+    },
+    {
+      "id": "state_setAutoBackupRetryAttempts",
+      "label": "setAutoBackupRetryAttempts (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 152-154"
+    },
+    {
+      "id": "state_setAutoBackupBackoffMs",
+      "label": "setAutoBackupBackoffMs (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 156-158"
+    },
+    {
+      "id": "state_setLastAutoBackupAt",
+      "label": "setLastAutoBackupAt (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 160-162"
+    },
+    {
+      "id": "state_timekeeperBackendBearerToken",
+      "label": "setTimekeeperBackendBearerToken (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 176-178"
+    },
+    {
+      "id": "state_setTimestamps",
+      "label": "setTimestamps (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 214-221"
+    },
+    {
+      "id": "state_setCurrentVideoId",
+      "label": "setCurrentVideoId (function)",
+      "file_type": "code",
+      "source_file": "src/services/state.ts",
+      "source_location": "lines 187-189"
+    },
+    {
+      "id": "service_buildExportPayload",
+      "label": "buildExportPayload (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "lines 20-71"
+    },
+    {
+      "id": "service_exportAllTimestamps",
+      "label": "exportAllTimestamps (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "lines 76-91"
+    },
+    {
+      "id": "service_exportAllTimestampsCsv",
+      "label": "exportAllTimestampsCsv (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "lines 163-178"
+    },
+    {
+      "id": "service_addTimestamp",
+      "label": "addTimestamp (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "lines 185-193"
+    },
+    {
+      "id": "service_removeTimestamp",
+      "label": "removeTimestamp (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "lines 211-216"
+    },
+    {
+      "id": "service_mergeBackupData",
+      "label": "mergeBackupData (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "lines 245-282"
+    },
+    {
+      "id": "service_saveSetting",
+      "label": "saveSetting (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "lines 289-294"
+    },
+    {
+      "id": "service_loadSetting",
+      "label": "loadSetting (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "lines 299-304"
+    },
+    {
+      "id": "repo_saveTimestamp",
+      "label": "saveTimestamp (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "lines 313-327"
+    },
+    {
+      "id": "repo_saveTimestamps",
+      "label": "saveTimestamps (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "lines 268-308"
+    },
+    {
+      "id": "repo_deleteTimestamp",
+      "label": "deleteTimestamp (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "lines 343-354"
+    },
+    {
+      "id": "repo_loadTimestamps",
+      "label": "loadTimestamps (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "lines 359-406"
+    },
+    {
+      "id": "repo_getAllTimestamps",
+      "label": "getAllTimestamps (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "lines 435-441"
+    },
+    {
+      "id": "repo_withV2Transaction",
+      "label": "withV2Transaction (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "lines 195-209"
+    },
+    {
+      "id": "repo_GET_DB",
+      "label": "getDB (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "lines 31-72"
+    },
+    {
+      "id": "repo_OPEN_INDEXED_DB",
+      "label": "openIndexedDB (function)",
+      "file_type": "code",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "lines 77-189"
+    },
+    {
+      "id": "README_project",
+      "label": "Timekeeper project (README)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "lines 1-12"
+    },
+    {
+      "id": "CLAUDE_project",
+      "label": "Timekeeper CLAUDE.md",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "lines 1-79"
+    },
+    {
+      "id": "graph_report",
+      "label": "GRAPH_REPORT.md",
+      "file_type": "document",
+      "source_file": "graphify-out/GRAPH_REPORT.md",
+      "source_location": "lines 1-125"
+    },
+    {
+      "id": "STATE_INTEGRATION_GUIDE_project",
+      "label": "State Integration Guide",
+      "file_type": "document",
+      "source_file": "src/services/STATE_INTEGRATION_GUIDE.md",
+      "source_location": "lines 1-309"
+    },
+    {
+      "id": "userscript_header",
+      "label": "Userscript Header",
+      "file_type": "document",
+      "source_file": "src/userscript-header.txt",
+      "source_location": "lines 1-21"
+    }
+  ],
+  "edges": [
+    {
+      "source": "util_log",
+      "target": "version_TIMEKEEPER_VERSION",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/util.ts",
+      "source_location": "util.ts:1"
+    },
+    {
+      "source": "icons_buildSvgFromSource",
+      "target": "icons_parseattributes",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/icons.ts",
+      "source_location": "icons.ts:116"
+    },
+    {
+      "source": "icons_buildSvgFromSource",
+      "target": "icons_decodeSvgSource",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/icons.ts",
+      "source_location": "icons.ts:135"
+    },
+    {
+      "source": "icons_getIconTemplate",
+      "target": "icons_buildSvgFromSource",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/icons.ts",
+      "source_location": "icons.ts:172"
+    },
+    {
+      "source": "icons_getIconTemplate",
+      "target": "icons_icons_svgs",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/icons.ts",
+      "source_location": "icons.ts:74"
+    },
+    {
+      "source": "icons_createIcon",
+      "target": "icons_getIconTemplate",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/icons.ts",
+      "source_location": "icons.ts:172"
+    },
+    {
+      "source": "icons_setIcon",
+      "target": "icons_createIcon",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/icons.ts",
+      "source_location": "icons.ts:194"
+    },
+    {
+      "source": "icons_setIconLabel",
+      "target": "icons_createIcon",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/icons.ts",
+      "source_location": "icons.ts:199"
+    },
+    {
+      "source": "icons_tablerIconName",
+      "target": "icons_icons_svgs",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/icons.ts",
+      "source_location": "icons.ts:74"
+    },
+    {
+      "source": "google_drive_signInToGoogle",
+      "target": "google_drive_monitorOAuthPopup",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:481"
+    },
+    {
+      "source": "google_drive_signInToGoogle",
+      "target": "google_drive_saveGoogleAuthState",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:513"
+    },
+    {
+      "source": "google_drive_signInToGoogle",
+      "target": "state_setGoogleAuthState",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:505"
+    },
+    {
+      "source": "google_drive_signInToGoogle",
+      "target": "util_log",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:7"
+    },
+    {
+      "source": "google_drive_signInToGoogle",
+      "target": "google_drive_updateAuthStatusDisplay",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:453"
+    },
+    {
+      "source": "google_drive_signInToGoogle",
+      "target": "google_drive_scheduleAutoBackup",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:519"
+    },
+    {
+      "source": "google_drive_silentSignInToGoogle",
+      "target": "google_drive_monitorOAuthPopup",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:580"
+    },
+    {
+      "source": "google_drive_silentSignInToGoogle",
+      "target": "state_getGoogleAuthState",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:553"
+    },
+    {
+      "source": "google_drive_silentSignInToGoogle",
+      "target": "google_drive_saveGoogleAuthState",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:582"
+    },
+    {
+      "source": "google_drive_silentSignInToGoogle",
+      "target": "state_setGoogleAuthState",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:581"
+    },
+    {
+      "source": "google_drive_handleOAuthPopup",
+      "target": "google_drive_monitorOAuthPopup",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:627"
+    },
+    {
+      "source": "google_drive_handleOAuthPopup",
+      "target": "util_log",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:7"
+    },
+    {
+      "source": "google_drive_verifySignedIn",
+      "target": "state_getGoogleAuthState",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:737"
+    },
+    {
+      "source": "google_drive_verifySignedIn",
+      "target": "google_drive_handleAuthExpiration",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:749"
+    },
+    {
+      "source": "google_drive_verifySignedIn",
+      "target": "util_log",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:7"
+    },
+    {
+      "source": "google_drive_exportAllTimestampsToGoogleDrive",
+      "target": "google_drive_mergeFromAllRemotes",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1159"
+    },
+    {
+      "source": "google_drive_exportAllTimestampsToGoogleDrive",
+      "target": "google_drive_ensureDriveFolder",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1166"
+    },
+    {
+      "source": "google_drive_exportAllTimestampsToGoogleDrive",
+      "target": "google_drive_uploadJsonToDrive",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1167"
+    },
+    {
+      "source": "google_drive_exportAllTimestampsToGoogleDrive",
+      "target": "state_getGoogleAuthState",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1154"
+    },
+    {
+      "source": "google_drive_runAutoBackupOnce",
+      "target": "google_drive_exportAllTimestampsToConfiguredDestinations",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1539"
+    },
+    {
+      "source": "google_drive_runAutoBackupOnce",
+      "target": "state_setAutoBackupRunning",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1536"
+    },
+    {
+      "source": "google_drive_runAutoBackupOnce",
+      "target": "state_setLastAutoBackupAt",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1541"
+    },
+    {
+      "source": "google_drive_runAutoBackupOnce",
+      "target": "state_getState",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1535"
+    },
+    {
+      "source": "google_drive_runAutoBackupOnce",
+      "target": "state_setAutoBackupBackoffMs",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1543"
+    },
+    {
+      "source": "google_drive_runAutoBackupOnce",
+      "target": "util_log",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:7"
+    },
+    {
+      "source": "google_drive_scheduleAutoBackup",
+      "target": "google_drive_runAutoBackupOnce",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1599"
+    },
+    {
+      "source": "google_drive_scheduleAutoBackup",
+      "target": "google_drive_updateBackupStatusDisplay",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1401"
+    },
+    {
+      "source": "google_drive_scheduleAutoBackup",
+      "target": "state_getAutoBackupEnabled",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1595"
+    },
+    {
+      "source": "google_drive_scheduleAutoBackup",
+      "target": "state_getState",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1606"
+    },
+    {
+      "source": "google_drive_toggleAutoBackup",
+      "target": "google_drive_scheduleAutoBackup",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1618"
+    },
+    {
+      "source": "google_drive_toggleAutoBackup",
+      "target": "state_setAutoBackupEnabled",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1616"
+    },
+    {
+      "source": "google_drive_toggleAutoBackup",
+      "target": "google_drive_saveAutoBackupSettings",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1617"
+    },
+    {
+      "source": "google_drive_mergeFromAllRemotes",
+      "target": "google_drive_fetchLatestDriveBackup",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:974"
+    },
+    {
+      "source": "google_drive_mergeFromAllRemotes",
+      "target": "google_drive_fetchLatestBackendBackup",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:985"
+    },
+    {
+      "source": "google_drive_mergeFromAllRemotes",
+      "target": "google_drive_updateBackupStatusDisplay",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1011"
+    },
+    {
+      "source": "google_drive_uploadJsonToDrive",
+      "target": "google_drive_createZipFromJson",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1069"
+    },
+    {
+      "source": "google_drive_uploadJsonToDrive",
+      "target": "google_drive_ensureDriveFolder",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1064"
+    },
+    {
+      "source": "google_drive_updateBackupStatusDisplay",
+      "target": "google_drive_updateBackupStatusIndicator",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1394"
+    },
+    {
+      "source": "google_drive_updateBackupStatusDisplay",
+      "target": "state_getState",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1398"
+    },
+    {
+      "source": "google_drive_updateBackupStatusDisplay",
+      "target": "icons_setIconLabel",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1401"
+    },
+    {
+      "source": "google_drive_updateBackupStatusIndicator",
+      "target": "google_drive_updateBackupStatusDisplay",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1483"
+    },
+    {
+      "source": "google_drive_UPDATE_BACKUP_STATUS_INDICATOR",
+      "target": "google_drive_ensureAuthSpinnerStyles",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:1483"
+    },
+    {
+      "source": "google_drive_STATE_EXPORT_PAYLOAD",
+      "target": "service_buildExportPayload",
+      "relation": "semantically_similar_to",
+      "confidence_score": 0.85,
+      "confidence": "INFERRED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:121-122"
+    },
+    {
+      "source": "google_drive_STATE_GOOGLE_AUTH_STATE",
+      "target": "state_getGoogleAuthState",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:30"
+    },
+    {
+      "source": "google_drive_SIGN_OUT_FROM_GOOGLE",
+      "target": "state_setGoogleAuthState",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:722"
+    },
+    {
+      "source": "google_drive_SIGN_OUT_FROM_GOOGLE",
+      "target": "google_drive_saveGoogleAuthState",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:728"
+    },
+    {
+      "source": "google_drive_SIGN_OUT_FROM_GOOGLE",
+      "target": "google_drive_scheduleAutoBackup",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts",
+      "source_location": "google-drive.ts:729"
+    },
+    {
+      "source": "state_SET_STATE",
+      "target": "state_GET_STATE",
+      "relation": "references",
+      "confidence_score": 0.7,
+      "confidence": "INFERRED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:101-113"
+    },
+    {
+      "source": "state_SET_STATE",
+      "target": "state_SUBSCRIBE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:112"
+    },
+    {
+      "source": "state_setGoogleAuthState",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:119"
+    },
+    {
+      "source": "service_buildExportPayload",
+      "target": "repo_getAllTimestamps",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "timestampService.ts:28"
+    },
+    {
+      "source": "service_exportAllTimestamps",
+      "target": "service_buildExportPayload",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "timestampService.ts:78"
+    },
+    {
+      "source": "service_exportAllTimestamps",
+      "target": "util_log",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "timestampService.ts:12"
+    },
+    {
+      "source": "service_addTimestamp",
+      "target": "repo_saveTimestamp",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "timestampService.ts:192"
+    },
+    {
+      "source": "service_removeTimestamp",
+      "target": "repo_deleteTimestamp",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "timestampService.ts:215"
+    },
+    {
+      "source": "service_mergeBackupData",
+      "target": "repo_getAllTimestamps",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "timestampService.ts:260"
+    },
+    {
+      "source": "service_mergeBackupData",
+      "target": "repo_saveTimestampsBatch",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "timestampService.ts:280"
+    },
+    {
+      "source": "service_saveSetting",
+      "target": "repo_saveSetting",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "timestampService.ts:293"
+    },
+    {
+      "source": "service_loadSetting",
+      "target": "repo_loadSetting",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampService.ts",
+      "source_location": "timestampService.ts:303"
+    },
+    {
+      "source": "repo_saveTimestamps",
+      "target": "repo_withV2Transaction",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "timestampRepository.ts:275"
+    },
+    {
+      "source": "repo_saveTimestamp",
+      "target": "repo_withV2Transaction",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "timestampRepository.ts:319"
+    },
+    {
+      "source": "repo_deleteTimestamp",
+      "target": "repo_withV2Transaction",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "timestampRepository.ts:345"
+    },
+    {
+      "source": "repo_loadTimestamps",
+      "target": "repo_GET_DB",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "timestampRepository.ts:360"
+    },
+    {
+      "source": "repo_getAllTimestamps",
+      "target": "repo_withV2Transaction",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "timestampRepository.ts:436"
+    },
+    {
+      "source": "repo_withV2Transaction",
+      "target": "repo_GET_DB",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "timestampRepository.ts:196"
+    },
+    {
+      "source": "util_formatTimeString",
+      "target": "util_buildYouTubeUrlWithTimestamp",
+      "relation": "semantically_similar_to",
+      "confidence_score": 0.7,
+      "confidence": "INFERRED",
+      "source_file": "src/util.ts",
+      "source_location": "util.ts:24"
+    },
+    {
+      "source": "CLAUDE_project",
+      "target": "README_project",
+      "relation": "conceptually_related_to",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "CLAUDE.md:1"
+    },
+    {
+      "source": "CLAUDE_project",
+      "target": "state_STATE",
+      "rationale_for": "documented as central state management in layered architecture",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "CLAUDE.md:35"
+    },
+    {
+      "source": "CLAUDE_project",
+      "target": "service_buildExportPayload",
+      "rationale_for": "documented service layer for business logic",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "CLAUDE.md:33"
+    },
+    {
+      "source": "CLAUDE_project",
+      "target": "repo_withV2Transaction",
+      "rationale_for": "documented repository layer for IndexedDB operations",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "CLAUDE.md:32"
+    },
+    {
+      "source": "CLAUDE_project",
+      "target": "CLAUDE_project",
+      "rationale_for": "describes Timekeeper as userscript browser extension for YouTube timestamps",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "CLAUDE.md:7"
+    },
+    {
+      "source": "graph_report",
+      "target": "README_project",
+      "relation": "conceptually_related_to",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "graphify-out/GRAPH_REPORT.md",
+      "source_location": "GRAPH_REPORT.md:1"
+    },
+    {
+      "source": "graph_report",
+      "target": "google_drive_updateBackupStatusDisplay",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "graphify-out/GRAPH_REPORT.md",
+      "source_location": "GRAPH_REPORT.md:30"
+    },
+    {
+      "source": "graph_report",
+      "target": "google_drive_scheduleAutoBackup",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "graphify-out/GRAPH_REPORT.md",
+      "source_location": "GRAPH_REPORT.md:31"
+    },
+    {
+      "source": "graph_report",
+      "target": "google_drive_runAutoBackupOnce",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "graphify-out/GRAPH_REPORT.md",
+      "source_location": "GRAPH_REPORT.md:32"
+    },
+    {
+      "source": "graph_report",
+      "target": "state_getState",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "graphify-out/GRAPH_REPORT.md",
+      "source_location": "GRAPH_REPORT.md:33"
+    },
+    {
+      "source": "graph_report",
+      "target": "state_SET_STATE",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "graphify-out/GRAPH_REPORT.md",
+      "source_location": "GRAPH_REPORT.md:38"
+    },
+    {
+      "source": "STATE_INTEGRATION_GUIDE_project",
+      "target": "state_STATE",
+      "rationale_for": "documents AppState interface and all getters/setters for centralized state management",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/STATE_INTEGRATION_GUIDE.md",
+      "source_location": "STATE_INTEGRATION_GUIDE.md:14-38"
+    },
+    {
+      "source": "STATE_INTEGRATION_GUIDE_project",
+      "target": "google_drive_STATE_GOOGLE_AUTH_STATE",
+      "rationale_for": "describes migration of googleAuthState getter to centralized state pattern",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/STATE_INTEGRATION_GUIDE.md",
+      "source_location": "STATE_INTEGRATION_GUIDE.md:257-272"
+    },
+    {
+      "source": "STATE_INTEGRATION_GUIDE_project",
+      "target": "state_SUBSCRIBE",
+      "rationale_for": "describes subscribe pattern for reactive state updates",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/STATE_INTEGRATION_GUIDE.md",
+      "source_location": "STATE_INTEGRATION_GUIDE.md:63-68"
+    },
+    {
+      "source": "STATE_INTEGRATION_GUIDE_project",
+      "target": "CLAUDE_project",
+      "relation": "conceptually_related_to",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/STATE_INTEGRATION_GUIDE.md",
+      "source_location": "STATE_INTEGRATION_GUIDE.md:1-309"
+    },
+    {
+      "source": "README_project",
+      "target": "userscript_header",
+      "relation": "conceptually_related_to",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "README.md:3"
+    },
+    {
+      "source": "README_project",
+      "target": "CLAUDE_project",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "README.md:3"
+    },
+    {
+      "source": "state_DEFAULT_STATE",
+      "target": "state_SET_STATE",
+      "rationale_for": "DEFAULT_STATE is the reset target of setState",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:56-59"
+    },
+    {
+      "source": "state_RESET_STATE",
+      "target": "state_DEFAULT_STATE",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:257"
+    },
+    {
+      "source": "state_RESET_STATE",
+      "target": "state_SUBSCRIBE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:258"
+    },
+    {
+      "source": "state_setTimestamps",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:215"
+    },
+    {
+      "source": "state_setAutoBackupEnabled",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:119"
+    },
+    {
+      "source": "state_setAutoBackupIntervalMinutes",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:126"
+    },
+    {
+      "source": "state_setAutoBackupRunning",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:126"
+    },
+    {
+      "source": "state_setAutoBackupRetryAttempts",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:119"
+    },
+    {
+      "source": "state_setAutoBackupBackoffMs",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:119"
+    },
+    {
+      "source": "state_setLastAutoBackupAt",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:119"
+    },
+    {
+      "source": "state_setCurrentVideoId",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:126"
+    },
+    {
+      "source": "state_setTimekeeperBackendBearerToken",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:119"
+    },
+    {
+      "source": "state_setAutoBackupIntervalMinutes",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:126"
+    },
+    {
+      "source": "state_setAutoBackupRunning",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:126"
+    },
+    {
+      "source": "state_setAutoBackupRetryAttempts",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:119"
+    },
+    {
+      "source": "state_setAutoBackupBackoffMs",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:119"
+    },
+    {
+      "source": "state_setLastAutoBackupAt",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:119"
+    },
+    {
+      "source": "state_setCurrentVideoId",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:126"
+    },
+    {
+      "source": "state_setTimekeeperBackendBearerToken",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:119"
+    },
+    {
+      "source": "state_setPanePosition",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:126"
+    },
+    {
+      "source": "state_setLastHandledUrl",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:126"
+    },
+    {
+      "source": "state_setUrlChangeHandlersSetup",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:126"
+    },
+    {
+      "source": "state_setMinPaneHeight",
+      "target": "state_SET_STATE",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/state.ts",
+      "source_location": "state.ts:126"
+    },
+    {
+      "source": "repo_saveTimestampsBatch",
+      "target": "repo_withV2Transaction",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "timestampRepository.ts:335"
+    },
+    {
+      "source": "repo_saveSetting",
+      "target": "repo_withV2Transaction",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "timestampRepository.ts:449"
+    },
+    {
+      "source": "repo_loadSetting",
+      "target": "repo_GET_DB",
+      "relation": "calls",
+      "confidence_score": 1.0,
+      "confidence": "EXTRACTED",
+      "source_file": "src/services/timestampRepository.ts",
+      "source_location": "timestampRepository.ts:460"
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "backup_lifecycle_flow",
+      "label": "Backup lifecycle flow",
+      "nodes": [
+        "google_drive_scheduleAutoBackup",
+        "google_drive_runAutoBackupOnce",
+        "google_drive_exportAllTimestampsToConfiguredDestinations",
+        "google_drive_uploadJsonToDrive",
+        "google_drive_ensureDriveFolder",
+        "google_drive_mergeFromAllRemotes"
+      ],
+      "relation": "form",
+      "confidence_score": 0.9,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts"
+    },
+    {
+      "id": "auth_flow",
+      "label": "OAuth authentication flow",
+      "nodes": [
+        "google_drive_signInToGoogle",
+        "google_drive_monitorOAuthPopup",
+        "google_drive_handleOAuthPopup",
+        "google_drive_silentSignInToGoogle",
+        "google_drive_saveGoogleAuthState",
+        "google_drive_verifySignedIn"
+      ],
+      "relation": "form",
+      "confidence_score": 0.85,
+      "confidence": "EXTRACTED",
+      "source_file": "src/google-drive.ts"
+    },
+    {
+      "id": "icon_creation_chain",
+      "label": "Icon creation pipeline",
+      "nodes": [
+        "icons_createIcon",
+        "icons_getIconTemplate",
+        "icons_buildSvgFromSource",
+        "icons_parseAttributes",
+        "icons_decodeSvgSource",
+        "icons_icons_svgs"
+      ],
+      "relation": "implement",
+      "confidence_score": 0.9,
+      "confidence": "EXTRACTED",
+      "source_file": "src/icons.ts"
+    }
+  ],
+  "input_tokens": 0,
+  "output_tokens": 0
+}
