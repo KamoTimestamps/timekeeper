@@ -3256,87 +3256,6 @@ initializeDvrEnablement();
         timeDisplay.style.cursor = isLive ? "pointer" : "default";
       };
 
-      // Helper function to update time display with current video time
-      function updateTimeDisplay(
-        currentSeconds: number | null = null,
-        playerInstance: any = null,
-      ) {
-        if (!timeDisplay) return;
-
-        const video = getVideoElement();
-        const player = playerInstance || getActivePlayer();
-
-        if (!video && !player) {
-          return;
-        }
-
-        // Get current time from parameter or player
-        const rawTime =
-          currentSeconds !== null
-            ? currentSeconds
-            : player
-              ? player.getCurrentTime()
-              : 0;
-        const seconds = Number.isFinite(rawTime)
-          ? Math.max(0, Math.floor(rawTime))
-          : Math.max(0, getLatestTimestampValue());
-
-        const { isLive } = player
-          ? player.getVideoData() || { isLive: false }
-          : { isLive: false };
-        const behindLive = player ? isBehindLiveEdge(player) : false;
-
-        const timestamps = list
-          ? getTimestampItems().map((li) => {
-            const timeLink = li.querySelector("[data-time]");
-            return timeLink
-              ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
-              : 0;
-          })
-          : [];
-
-        let timestampDisplay = "";
-        if (timestamps.length > 0) {
-          if (isLive) {
-            const currentTimeMinutes = Math.max(1, seconds / 60);
-            const liveTimestamps = timestamps.filter((time) => time <= seconds);
-            if (liveTimestamps.length > 0) {
-              const timestampsPerMin = (
-                liveTimestamps.length / currentTimeMinutes
-              ).toFixed(2);
-              if (parseFloat(timestampsPerMin) > 0) {
-                timestampDisplay = ` (${timestampsPerMin}/min)`;
-              }
-            }
-          } else {
-            const durationSeconds = player ? player.getDuration() : 0;
-            const validDuration =
-              Number.isFinite(durationSeconds) && durationSeconds > 0
-                ? durationSeconds
-                : video && Number.isFinite(video.duration) && video.duration > 0
-                  ? video.duration
-                  : 0;
-            const totalMinutes = Math.max(1, validDuration / 60);
-            const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(
-              1,
-            );
-            if (parseFloat(timestampsPerMin) > 0) {
-              timestampDisplay = ` (${timestampsPerMin}/min)`;
-            }
-          }
-        }
-
-        timeDisplay.textContent = `${formatTimeString(seconds)}${timestampDisplay}`;
-        timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
-
-        // Update cursor state based on live stream status
-        updateTimeDisplayInteractivity();
-        // Update playback speed UI to reflect actual video rate
-        try {
-          updatePlaybackSpeedUI();
-        } catch (_) { }
-      }
-
       function updateTime() {
         // Skip updates during loading or seeking
         if (isLoadingTimestamps || isSeeking) {
@@ -3354,6 +3273,8 @@ initializeDvrEnablement();
           : Math.max(0, getLatestTimestampValue());
 
         updateTimeDisplay(currentSeconds, playerInstance);
+        updateTimeDisplayInteractivity();
+        try { updatePlaybackSpeedUI(); } catch (_) { }
 
         // Only auto-highlight when the pointer is not over the UI; defer scrolling to mouse leave
         const timestamps = list ? getTimestampItems() : [];
