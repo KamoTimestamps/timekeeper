@@ -9,15 +9,12 @@ import {
   TimestampRecordArraySchema,
   TimestampRecordSchema,
   TimestampRowSchema,
-  LegacyVideoEntrySchema,
-  LegacyExportDataSchema,
 } from '../schema';
-import { log, getTimestampSuffix } from '../util';
+import { log } from '../util';
 
 // === Database Constants ===
 export const DB_NAME = 'ytls-timestamps-db';
 export const DB_VERSION = 3;
-export const STORE_NAME = 'timestamps';
 export const STORE_NAME_V2 = 'timestamps_v2';
 export const SETTINGS_STORE_NAME = 'settings';
 
@@ -80,102 +77,15 @@ function openIndexedDB(): Promise<IDBDatabase> {
     request.onupgradeneeded = event => {
       const db = (event.target as IDBOpenDBRequest).result;
       const oldVersion = event.oldVersion;
-      const transaction = (event.target as IDBOpenDBRequest).transaction!;
 
-      // Version 1: Create initial timestamps store
-      if (oldVersion < 1) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'video_id' });
-      }
-
-      // Version 2: Create settings store
       if (oldVersion < 2 && !db.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
         db.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'key' });
       }
 
-      // Version 3: Migrate from timestamps to timestamps_v2 and delete old store
       if (oldVersion < 3) {
-        // Export backup before migration
-        if (db.objectStoreNames.contains(STORE_NAME)) {
-          log('Exporting backup before v2 migration...');
-          const v1Store = transaction.objectStore(STORE_NAME);
-          const exportRequest = v1Store.getAll();
-
-          exportRequest.onsuccess = () => {
-            const parsedRecords = LegacyVideoEntrySchema.array().safeParse(exportRequest.result);
-
-            if (parsedRecords.success && parsedRecords.data.length > 0) {
-              try {
-                const exportData = {} as Record<string, unknown>;
-                let totalTimestamps = 0;
-
-                parsedRecords.data.forEach(record => {
-                  if (record.timestamps.length > 0) {
-                    const timestampsWithGuids = TimestampRecordArraySchema.parse(record.timestamps);
-
-                    exportData[`ytls-${record.video_id}`] = {
-                      video_id: record.video_id,
-                      timestamps: [...timestampsWithGuids].sort((a, b) => a.start - b.start)
-                    };
-                    totalTimestamps += timestampsWithGuids.length;
-                  }
-                });
-
-                const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `timekeeper-data-${getTimestampSuffix()}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-
-                log(`Pre-migration backup exported: ${parsedRecords.data.length} videos, ${totalTimestamps} timestamps`);
-              } catch (err) {
-                log('Failed to export pre-migration backup:', err, 'error');
-              }
-            } else if (!parsedRecords.success) {
-              log('Skipping pre-migration backup: legacy data failed validation', parsedRecords.error.format(), 'warn');
-            }
-          };
-        }
-
-        // Create v2 store with new structure: guid -> {guid, video_id, start, comment}
         const v2Store = db.createObjectStore(STORE_NAME_V2, { keyPath: 'guid' });
         v2Store.createIndex('video_id', 'video_id', { unique: false });
         v2Store.createIndex('video_start', ['video_id', 'start'], { unique: false });
-
-        // Migrate data from v1 to v2 if v1 exists
-        if (db.objectStoreNames.contains(STORE_NAME)) {
-          const v1Store = transaction.objectStore(STORE_NAME);
-          const getAllRequest = v1Store.getAll();
-
-          getAllRequest.onsuccess = () => {
-            const parsedRecords = LegacyVideoEntrySchema.array().safeParse(getAllRequest.result);
-
-            if (parsedRecords.success && parsedRecords.data.length > 0) {
-              let totalMigrated = 0;
-              parsedRecords.data.forEach(record => {
-                if (record.timestamps.length > 0) {
-                  record.timestamps.forEach(ts => {
-                    v2Store.put({
-                      guid: ts.guid,
-                      video_id: record.video_id,
-                      start: ts.start,
-                      comment: ts.comment
-                    });
-                    totalMigrated++;
-                  });
-                }
-              });
-              log(`Migrated ${totalMigrated} timestamps from ${parsedRecords.data.length} videos to v2 store`);
-            } else if (!parsedRecords.success) {
-              log('Skipping v1 → v2 migration: legacy data failed validation', parsedRecords.error.format(), 'warn');
-            }
-          };
-
-          // Delete the old store after migration
-          db.deleteObjectStore(STORE_NAME);
-          log('Deleted old timestamps store after migration to v2');
-        }
       }
     };
     request.onsuccess = event => {
