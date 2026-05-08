@@ -13,6 +13,15 @@ import * as TimestampModel from "./timestamp-model";
 import * as TimestampView from "./timestamp-view";
 import * as AppState from "./services/state";
 import { initializeDvrEnablement } from "./dvr-enablement";
+import { buildPaneElements } from "./pane-builder";
+import { setupPaneInteractions } from "./pane-interactions";
+import {
+  createModalCloseHandler,
+  createEscapeKeyHandler,
+  registerModalEscapeHandler,
+  createClickOutsideHandler,
+  registerModalClickOutsideHandler,
+} from "./modals";
 
 function getExtensionStorageValue<T = unknown>(
   key: string,
@@ -3182,16 +3191,19 @@ initializeDvrEnablement();
         document.head.appendChild(styleEl);
       }
 
-      pane = document.createElement("div");
-      header = document.createElement("div");
-      list = document.createElement("ul");
-      btns = document.createElement("div");
-      timeDisplay = document.createElement("span");
-      versionDisplay = document.createElement("span");
-      backupStatusIndicator = document.createElement("span");
+      {
+        const elements = buildPaneElements();
+        pane = elements.pane;
+        header = elements.header;
+        list = elements.list;
+        btns = elements.btns;
+        timeDisplay = elements.timeDisplay;
+        versionDisplay = elements.versionDisplay;
+        backupStatusIndicator = elements.backupStatusIndicator;
+      }
       backupStatusIndicator.classList.add("ytls-backup-indicator");
       backupStatusIndicator.style.cursor = "pointer";
-      backupStatusIndicator.style.backgroundColor = "#666"; // Default gray color
+      backupStatusIndicator.style.backgroundColor = "#666";
       backupStatusIndicator.onclick = (e) => {
         e.stopPropagation();
         toggleSettingsModal("drive");
@@ -3497,62 +3509,6 @@ initializeDvrEnablement();
       }
       timeUpdateIntervalId = setInterval(updateTime, 1000);
       btns.id = "ytls-buttons";
-
-      // Reusable modal helper functions
-      const createModalCloseHandler = (
-        modal: HTMLElement,
-        onClose?: () => void,
-      ) => {
-        return () => {
-          modal.classList.remove("ytls-fade-in");
-          modal.classList.add("ytls-fade-out");
-          setTimeout(() => {
-            if (document.body.contains(modal)) {
-              document.body.removeChild(modal);
-            }
-            if (onClose) {
-              onClose();
-            }
-          }, 300);
-        };
-      };
-
-      const createEscapeKeyHandler = (closeHandler: () => void) => {
-        return (event: KeyboardEvent) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            event.stopPropagation();
-            closeHandler();
-          }
-        };
-      };
-
-      const registerModalEscapeHandler = (
-        escapeHandler: (event: KeyboardEvent) => void,
-      ) => {
-        setTimeout(() => {
-          document.addEventListener("keydown", escapeHandler);
-        }, 0);
-      };
-
-      const createClickOutsideHandler = (
-        modal: HTMLElement,
-        closeHandler: () => void,
-      ) => {
-        return (event: MouseEvent) => {
-          if (!modal.contains(event.target as Node)) {
-            closeHandler();
-          }
-        };
-      };
-
-      const registerModalClickOutsideHandler = (
-        clickOutsideHandler: (event: MouseEvent) => void,
-      ) => {
-        setTimeout(() => {
-          document.addEventListener("click", clickOutsideHandler, true);
-        }, 0);
-      };
 
       // Define handlers for main buttons
       const handleAddTimestamp = () => {
@@ -4855,501 +4811,51 @@ initializeDvrEnablement();
           timestamp: Date.now(),
         });
       }
-      // Enable dragging for the pane
-      pane.style.position = "fixed";
-      pane.style.bottom = "0";
-      pane.style.right = "0";
-      pane.style.transition = "none"; // Disable transition during initial position restore
-      loadPanePosition();
-      // Ensure initial position is clamped to viewport
-      setTimeout(() => clampPaneToViewport(), 10);
-
-      let isDragging = false;
-      let offsetX = 0;
-      let offsetY = 0;
-      let dragCachedPaneWidth = 0;
-      let dragCachedPaneHeight = 0;
-      let dragCachedViewportWidth = 0;
-      let dragCachedViewportHeight = 0;
-      let dragRafId: number | null = null;
-      let dragOccurredSinceLastMouseDown = false; // Flag to track if a drag occurred
-
-      pane.addEventListener("mousedown", (e) => {
-        const target = e.target;
-        if (!(target instanceof Element)) {
-          return;
-        }
-
-        if (
-          target instanceof HTMLInputElement ||
-          target instanceof HTMLTextAreaElement
-        ) {
-          return;
-        }
-
-        // Prevent starting a drag when clicking inside the playback speed controls (they should not move the pane)
-        if (
-          target instanceof Element &&
-          (target.closest("#ytls-playback-speed-group") ||
-            target.closest("#ytls-playback-speed"))
-        ) {
-          return;
-        }
-
-        // Allow dragging from the header region
-        if (
-          target !== header &&
-          !header.contains(target) &&
-          window.getComputedStyle(target).cursor === "pointer"
-        ) {
-          return;
-        }
-
-        isDragging = true;
-        dragOccurredSinceLastMouseDown = false;
-        // Read layout once at drag start; reuse for clamping throughout the drag
-        const rect = pane.getBoundingClientRect();
-        offsetX = e.clientX - rect.left;
-        offsetY = e.clientY - rect.top;
-        dragCachedPaneWidth = rect.width;
-        dragCachedPaneHeight = rect.height;
-        dragCachedViewportWidth = document.documentElement.clientWidth;
-        dragCachedViewportHeight = document.documentElement.clientHeight;
-
-        pane.style.transition = "none";
+      // Set up pane drag, resize, scrollbar, and layout recalculation
+      const paneInteraction = setupPaneInteractions(pane, header, list, btns, {
+        clampAndSavePanePosition,
+        savePanePosition,
+        loadPanePosition,
+        clampPaneToViewport,
+        getTimestampItems,
+        setMinPaneHeight,
+        getMinPaneHeight,
+        autoHighlightNearest,
+        setIsMouseOverTimestamps: (v: boolean) => { isMouseOverTimestamps = v; },
       });
-
-      document.addEventListener(
-        "mousemove",
-        (documentMousemoveHandler = (e) => {
-          if (!isDragging) return;
-
-          dragOccurredSinceLastMouseDown = true;
-
-          // Capture coordinates before yielding to RAF to get the latest pointer position
-          const clientX = e.clientX;
-          const clientY = e.clientY;
-
-          // Skip if a frame is already queued; the captured coords will be applied next frame
-          if (dragRafId !== null) return;
-
-          dragRafId = requestAnimationFrame(() => {
-            dragRafId = null;
-            if (!isDragging) return;
-
-            let x = Math.max(
-              0,
-              Math.min(
-                clientX - offsetX,
-                dragCachedViewportWidth - dragCachedPaneWidth,
-              ),
-            );
-            let y = Math.max(
-              0,
-              Math.min(
-                clientY - offsetY,
-                dragCachedViewportHeight - dragCachedPaneHeight,
-              ),
-            );
-
-            pane.style.left = `${x}px`;
-            pane.style.top = `${y}px`;
-            pane.style.right = "auto";
-            pane.style.bottom = "auto";
-          });
-        }),
-      );
-
-      document.addEventListener(
-        "mouseup",
-        (documentMouseupHandler = () => {
-          if (!isDragging) return;
-
-          isDragging = false;
-          if (dragRafId !== null) {
-            cancelAnimationFrame(dragRafId);
-            dragRafId = null;
-          }
-          const didDrag = dragOccurredSinceLastMouseDown;
-          setTimeout(() => {
-            dragOccurredSinceLastMouseDown = false; // Reset the flag after a short delay
-          }, 50);
-
-          // Ensure the pane remains fully visible and persist its position
-          clampPaneToViewport();
-          setTimeout(() => {
-            if (didDrag) {
-              savePanePosition();
-            }
-          }, 200);
-        }),
-      );
-
-      // Prevent text selection during drag
-      pane.addEventListener("dragstart", (e) => e.preventDefault());
-
-      // Create corner resize handles (top-left, top-right, bottom-left, bottom-right)
-      const resizeTL = document.createElement("div");
-      const resizeTR = document.createElement("div");
-      const resizeBL = document.createElement("div");
-      const resizeBR = document.createElement("div");
-      resizeTL.id = "ytls-resize-tl";
-      resizeTR.id = "ytls-resize-tr";
-      resizeBL.id = "ytls-resize-bl";
-      resizeBR.id = "ytls-resize-br";
-
-      // Resize state
-      let isResizing = false;
-      let resizeStartX: number = 0;
-      let resizeStartY: number = 0;
-      let resizeStartWidth: number = 0;
-      let resizeStartHeight: number = 0;
-      let resizeStartLeft: number = 0;
-      let resizeStartTop: number = 0;
-      let resizeCachedViewportWidth: number = 0;
-      let resizeCachedViewportHeight: number = 0;
-      let resizeRafId: number | null = null;
-      let resizeEdge:
-        | "top-left"
-        | "top-right"
-        | "bottom-left"
-        | "bottom-right"
-        | null = null;
-
-      function setupCorner(
-        handle: HTMLElement,
-        edge: "top-left" | "top-right" | "bottom-left" | "bottom-right",
-      ) {
-        handle.addEventListener("dblclick", (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          if (pane) {
-            pane.style.width = "300px";
-            pane.style.height = "300px";
-            savePanePosition();
-            recalculateTimestampsArea();
-          }
-        });
-        handle.addEventListener("mousedown", (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          isResizing = true;
-          resizeEdge = edge;
-          resizeStartX = ev.clientX;
-          resizeStartY = ev.clientY;
-          const rect = pane.getBoundingClientRect();
-          resizeStartWidth = rect.width;
-          resizeStartHeight = rect.height;
-          resizeStartLeft = rect.left;
-          resizeStartTop = rect.top;
-          // Cache viewport dimensions once at resize start
-          resizeCachedViewportWidth = document.documentElement.clientWidth;
-          resizeCachedViewportHeight = document.documentElement.clientHeight;
-          // Set diagonal cursor indicator
-          if (edge === "top-left" || edge === "bottom-right")
-            document.body.style.cursor = "nwse-resize";
-          else document.body.style.cursor = "nesw-resize";
-        });
+      documentMousemoveHandler = paneInteraction.documentMousemoveHandler;
+      documentMouseupHandler = paneInteraction.documentMouseupHandler;
+      windowResizeHandler = paneInteraction.windowResizeHandler;
+      scrollbarTrack = paneInteraction.scrollbarTrack;
+      scrollbarThumb = paneInteraction.scrollbarThumb;
+      recalculateTimestampsAreaFn = paneInteraction.recalculateTimestampsArea;
+      if (paneResizeObserver) {
+        try { paneResizeObserver.disconnect(); } catch (_) {}
+        paneResizeObserver = null;
       }
+      paneResizeObserver = paneInteraction.paneResizeObserver;
 
-      setupCorner(resizeTL, "top-left");
-      setupCorner(resizeTR, "top-right");
-      setupCorner(resizeBL, "bottom-left");
-      setupCorner(resizeBR, "bottom-right");
-
-      document.addEventListener("mousemove", (e) => {
-        if (!isResizing || !pane || !resizeEdge) return;
-
-        const clientX = e.clientX;
-        const clientY = e.clientY;
-
-        if (resizeRafId !== null) return;
-
-        resizeRafId = requestAnimationFrame(() => {
-          resizeRafId = null;
-          if (!isResizing || !pane || !resizeEdge) return;
-
-          const deltaX = clientX - resizeStartX;
-          const deltaY = clientY - resizeStartY;
-          const vw = resizeCachedViewportWidth;
-          const vh = resizeCachedViewportHeight;
-
-          let newWidth = resizeStartWidth;
-          let newHeight = resizeStartHeight;
-          let newLeft = resizeStartLeft;
-          let newTop = resizeStartTop;
-
-          if (resizeEdge === "bottom-right") {
-            newWidth = Math.max(200, Math.min(800, resizeStartWidth + deltaX));
-            newHeight = Math.max(250, Math.min(vh, resizeStartHeight + deltaY));
-          } else if (resizeEdge === "top-left") {
-            newWidth = Math.max(200, Math.min(800, resizeStartWidth - deltaX));
-            newLeft = resizeStartLeft + deltaX;
-            newHeight = Math.max(250, Math.min(vh, resizeStartHeight - deltaY));
-            newTop = resizeStartTop + deltaY;
-          } else if (resizeEdge === "top-right") {
-            newWidth = Math.max(200, Math.min(800, resizeStartWidth + deltaX));
-            newHeight = Math.max(250, Math.min(vh, resizeStartHeight - deltaY));
-            newTop = resizeStartTop + deltaY;
-          } else if (resizeEdge === "bottom-left") {
-            newWidth = Math.max(200, Math.min(800, resizeStartWidth - deltaX));
-            newLeft = resizeStartLeft + deltaX;
-            newHeight = Math.max(250, Math.min(vh, resizeStartHeight + deltaY));
-          }
-
-          // Clamp to viewport
-          newLeft = Math.max(0, Math.min(newLeft, vw - newWidth));
-          newTop = Math.max(0, Math.min(newTop, vh - newHeight));
-
-          pane.style.width = `${newWidth}px`;
-          pane.style.height = `${newHeight}px`;
-          pane.style.left = `${newLeft}px`;
-          pane.style.top = `${newTop}px`;
-          pane.style.right = "auto";
-          pane.style.bottom = "auto";
-        });
-      });
-
-      document.addEventListener("mouseup", () => {
-        if (isResizing) {
-          isResizing = false;
-          if (resizeRafId !== null) {
-            cancelAnimationFrame(resizeRafId);
-            resizeRafId = null;
-          }
-          resizeEdge = null;
-          document.body.style.cursor = "";
-          clampAndSavePanePosition(true);
-        }
-      });
-
-      // Ensure the timestamps window is fully onscreen after resizing
-      let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
-      window.addEventListener(
-        "resize",
-        (windowResizeHandler = () => {
-          // Debounce position save - only save after resize is finished
-          if (resizeTimeout) {
-            clearTimeout(resizeTimeout);
-          }
-          resizeTimeout = setTimeout(() => {
-            // After resize finishes, clamp, save, and recalculate layout in a single debounced pass
-            clampAndSavePanePosition(true);
-            recalculateTimestampsAreaFn?.();
-            resizeTimeout = null;
-          }, 200);
-        }),
-      );
-
-      header.appendChild(timeDisplay); // Add timeDisplay
-      // Add playback speed display with arrow buttons
+      // Assemble header: time display, playback speed group, version/backup indicator
+      header.appendChild(timeDisplay);
       const playbackGroup = document.createElement("span");
       playbackGroup.id = "ytls-playback-speed-group";
       playbackGroup.style.display = "inline-flex";
       playbackGroup.style.alignItems = "center";
       playbackGroup.style.marginLeft = "4px";
-
       if (playbackSpeedDisplay) playbackGroup.appendChild(playbackSpeedDisplay);
-
       header.appendChild(playbackGroup);
+      header.appendChild(versionWrapper);
 
-      header.appendChild(versionWrapper); // Add version wrapper with indicator to header
-
+      // Assemble pane: header, list wrapper (with scrollbar), buttons, resize handles
       const listWrapper = document.createElement("div");
       listWrapper.id = "ytls-list-wrapper";
-      scrollbarTrack = document.createElement("div");
-      scrollbarTrack.className = "ytls-scrollbar-track";
-      scrollbarThumb = document.createElement("div");
-      scrollbarThumb.className = "ytls-scrollbar-thumb";
-      scrollbarTrack.append(scrollbarThumb);
-      listWrapper.append(list, scrollbarTrack);
-
+      listWrapper.append(list, paneInteraction.scrollbarTrack);
       const content = document.createElement("div");
       content.id = "ytls-content";
-      content.append(listWrapper); // list is inside its own positioned wrapper
-      content.append(btns); // Buttons are always at the bottom of content
-
-      pane.append(header, content, resizeTL, resizeTR, resizeBL, resizeBR); // Append header, content, and corner resize handles to the pane
-
-      // Show diagonal cursors only on corners (no edge cursors)
-      let lastPaneCursor = "";
-      pane.addEventListener("mousemove", (ev) => {
-        if (isDragging || isResizing) return;
-        const rect = pane.getBoundingClientRect();
-        const threshold = 20; // matches corner grab size
-        const x = ev.clientX;
-        const y = ev.clientY;
-        const inLeft = x - rect.left <= threshold;
-        const inRight = rect.right - x <= threshold;
-        const inTop = y - rect.top <= threshold;
-        const inBottom = rect.bottom - y <= threshold;
-        let c = "";
-        if ((inTop && inLeft) || (inBottom && inRight)) c = "nwse-resize";
-        else if ((inTop && inRight) || (inBottom && inLeft)) c = "nesw-resize";
-        if (c !== lastPaneCursor) {
-          lastPaneCursor = c;
-          document.body.style.cursor = c;
-        }
-      });
-
-      let scrollThumbRafId: number | null = null;
-
-      function updateScrollbarThumb() {
-        if (!list || !scrollbarThumb) return;
-        const { scrollTop, scrollHeight, clientHeight } = list;
-        if (scrollHeight <= clientHeight) return;
-        const thumbHeight = Math.max(
-          30,
-          (clientHeight / scrollHeight) * clientHeight,
-        );
-        const thumbTop =
-          (scrollTop / (scrollHeight - clientHeight)) *
-          (clientHeight - thumbHeight);
-        scrollbarThumb.style.height = `${thumbHeight}px`;
-        scrollbarThumb.style.top = `${thumbTop}px`;
-      }
-
-      function showScrollbar() {
-        if (!scrollbarTrack) return;
-        // Batch thumb geometry update with the next paint
-        if (scrollThumbRafId === null) {
-          scrollThumbRafId = requestAnimationFrame(() => {
-            scrollThumbRafId = null;
-            updateScrollbarThumb();
-          });
-        }
-        scrollbarTrack.classList.add("ytls-scrollbar-visible");
-        if (scrollbarHideTimeoutId) clearTimeout(scrollbarHideTimeoutId);
-        scrollbarHideTimeoutId = setTimeout(() => {
-          scrollbarTrack?.classList.remove("ytls-scrollbar-visible");
-          scrollbarHideTimeoutId = null;
-        }, 500);
-      }
-
-      // Keep scrollbar visible while hovering the track gutter
-      scrollbarTrack.addEventListener("mouseenter", () => {
-        if (scrollbarHideTimeoutId) {
-          clearTimeout(scrollbarHideTimeoutId);
-          scrollbarHideTimeoutId = null;
-        }
-        scrollbarTrack!.classList.add("ytls-scrollbar-visible");
-      });
-      scrollbarTrack.addEventListener("mouseleave", () => {
-        if (isScrollbarDragging) return;
-        scrollbarHideTimeoutId = setTimeout(() => {
-          scrollbarTrack?.classList.remove("ytls-scrollbar-visible");
-          scrollbarHideTimeoutId = null;
-        }, 500);
-      });
-
-      // Drag scrollbar thumb
-      scrollbarThumb.addEventListener("mousedown", (e) => {
-        if (!list) return;
-        e.preventDefault();
-        e.stopPropagation();
-        isScrollbarDragging = true;
-        const startY = e.clientY;
-        const startScrollTop = list.scrollTop;
-        const { scrollHeight, clientHeight } = list;
-        const thumbHeight = Math.max(30, (clientHeight / scrollHeight) * clientHeight);
-        const scrollRange = scrollHeight - clientHeight;
-        const thumbRange = clientHeight - thumbHeight;
-
-        function onMouseMove(ev: MouseEvent) {
-          if (!list) return;
-          const delta = ev.clientY - startY;
-          list.scrollTop = Math.max(0, Math.min(scrollRange, startScrollTop + delta * (scrollRange / thumbRange)));
-          updateScrollbarThumb();
-        }
-        function onMouseUp() {
-          isScrollbarDragging = false;
-          document.removeEventListener("mousemove", onMouseMove);
-          document.removeEventListener("mouseup", onMouseUp);
-          // If the mouse is no longer over the track, start the hide timer
-          if (!scrollbarTrack?.matches(":hover")) {
-            scrollbarHideTimeoutId = setTimeout(() => {
-              scrollbarTrack?.classList.remove("ytls-scrollbar-visible");
-              scrollbarHideTimeoutId = null;
-            }, 500);
-          }
-        }
-        document.addEventListener("mousemove", onMouseMove);
-        document.addEventListener("mouseup", onMouseUp);
-      });
-
-      pane.addEventListener("mouseenter", () => {
-        isMouseOverTimestamps = true;
-        TimestampView.setMouseOverTimestamps(true);
-        showScrollbar();
-      });
-
-      list.addEventListener("scroll", showScrollbar);
-
-      pane.addEventListener("mouseleave", () => {
-        if (!isResizing && !isDragging) document.body.style.cursor = "";
-        isMouseOverTimestamps = false;
-        TimestampView.setMouseOverTimestamps(false);
-        // Hide any visible tooltips when leaving the pane
-        try {
-          hideActiveTooltip();
-        } catch (_) { }
-        // Restore highlight when leaving the pane
-        try {
-          autoHighlightNearest(false);
-        } catch (e) {
-          // ignore
-        }
-      });
-
-      // Dynamically set min-height: header + buttons + 1 li row
-      function recalculateTimestampsArea() {
-        if (pane && header && btns && list) {
-          // Get bounding rectangles
-          const paneRect = pane.getBoundingClientRect();
-          const headerRect = header.getBoundingClientRect();
-          const btnsRect = btns.getBoundingClientRect();
-          // Calculate available height for the list
-          const available =
-            paneRect.height - (headerRect.height + btnsRect.height);
-          list.style.maxHeight = available > 0 ? available + "px" : "0px";
-          list.style.overflowY = available > 0 ? "auto" : "hidden";
-        }
-      }
-      recalculateTimestampsAreaFn = recalculateTimestampsArea;
-
-      setTimeout(() => {
-        recalculateTimestampsArea();
-        // Also set minPaneHeight for drag/resize logic
-        if (pane && header && btns && list) {
-          let liH = 40;
-          const itemsForSize = getTimestampItems();
-          if (itemsForSize.length > 0) {
-            liH = (itemsForSize[0] as HTMLElement).offsetHeight;
-          } else {
-            const tempLi = document.createElement("li");
-            tempLi.style.visibility = "hidden";
-            tempLi.style.position = "absolute";
-            tempLi.textContent = "00:00 Example";
-            // Append temporarily so we can measure
-            list.appendChild(tempLi);
-            liH = tempLi.offsetHeight;
-            list.removeChild(tempLi);
-          }
-          setMinPaneHeight(header.offsetHeight + btns.offsetHeight + liH);
-          pane.style.minHeight = getMinPaneHeight() + "px";
-        }
-      }, 0);
-
-      // Recalculate when the pane itself changes size (drag-resize); window resize is handled
-      // by the debounced windowResizeHandler above which already calls recalculateTimestampsAreaFn.
-      if (paneResizeObserver) {
-        try {
-          paneResizeObserver.disconnect();
-        } catch (_) { }
-        paneResizeObserver = null;
-      }
-      paneResizeObserver = new ResizeObserver(recalculateTimestampsArea);
-      paneResizeObserver.observe(pane);
+      content.append(listWrapper);
+      content.append(btns);
+      const { tl: resizeTL, tr: resizeTR, bl: resizeBL, br: resizeBR } = paneInteraction.resizeHandles;
+      pane.append(header, content, resizeTL, resizeTR, resizeBL, resizeBR);
 
       // Track pointer interactions globally to differentiate user-initiated focus changes
       if (!docPointerDownHandler) {
