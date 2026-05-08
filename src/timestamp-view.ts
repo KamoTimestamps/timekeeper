@@ -81,9 +81,6 @@ export function displayPaneError(list: HTMLUListElement | null, message: string)
   const li = document.createElement('li');
   li.className = 'ytls-error-message';
   li.textContent = message;
-  li.style.color = '#ff4d4f';
-  li.style.textAlign = 'center';
-  li.style.padding = '20px';
   list.appendChild(li);
   list.style.overflowY = 'hidden';
 }
@@ -262,11 +259,6 @@ export function updateSeekbarMarkers(
 
     const marker = document.createElement("div");
     marker.className = "ytls-marker";
-    marker.style.position = "absolute";
-    marker.style.height = "100%";
-    marker.style.width = "2px";
-    marker.style.backgroundColor = "#ff0000";
-    marker.style.cursor = "pointer";
     marker.style.left = (startTime / video.duration * 100) + "%";
     marker.dataset.time = String(startTime);
     marker.addEventListener("click", () => {

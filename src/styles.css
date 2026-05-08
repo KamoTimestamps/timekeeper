@@ -874,3 +874,19 @@
 .ytls-toast-info {
   background: #2c3e50;
 }
+
+/* Error message list item */
+.ytls-error-message {
+  color: #ff4d4f;
+  text-align: center;
+  padding: 20px;
+}
+
+/* Seekbar timestamp markers */
+.ytls-marker {
+  position: absolute;
+  height: 100%;
+  width: 2px;
+  background-color: #ff0000;
+  cursor: pointer;
+}
