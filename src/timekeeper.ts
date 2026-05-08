@@ -23,6 +23,7 @@ import {
   registerModalClickOutsideHandler,
 } from "./modals";
 import { showToast } from "./toast";
+import type { Player } from "./player";
 
 function getExtensionStorageValue<T = unknown>(
   key: string,
@@ -1045,7 +1046,7 @@ initializeDvrEnablement();
   let isSeeking = false;
 
   // Detect whether playback is behind the live edge using YouTube player internals.
-  function isBehindLiveEdge(playerInstance: any): boolean {
+  function isBehindLiveEdge(playerInstance: Player): boolean {
     if (!playerInstance || typeof playerInstance.getVideoData !== "function") {
       return false;
     }
@@ -2520,7 +2521,7 @@ initializeDvrEnablement();
   // Helper function to update time display with current video time
   function updateTimeDisplay(
     currentSeconds: number | null = null,
-    playerInstance: any = null,
+    playerInstance: Player | null = null,
   ) {
     if (!timeDisplay) return;
 

@@ -7,6 +7,7 @@
 import { TimestampRecord } from './schema';
 import { log, formatTimeString, buildYouTubeUrlWithTimestamp } from './util';
 import { addTooltip } from './tooltip';
+import type { Player } from './player';
 
 // === UI State Management ===
 
@@ -234,7 +235,7 @@ export function removeSeekbarMarkers(): void {
 export function updateSeekbarMarkers(
   list: HTMLUListElement | null,
   getVideoElement: () => HTMLVideoElement | null,
-  getActivePlayer: () => any,
+  getActivePlayer: () => Player | null,
   isLiveStream: boolean
 ): void {
   if (!list) return;
