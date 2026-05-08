@@ -204,7 +204,12 @@ function withV2Transaction(mode: IDBTransactionMode, op: (store: IDBObjectStore)
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error ?? new Error('Transaction failed'));
     tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted'));
-    op(tx.objectStore(STORE_NAME_V2));
+    try {
+      op(tx.objectStore(STORE_NAME_V2));
+    } catch (err) {
+      reject(new Error(`Operation threw synchronously: ${err}`));
+      try { tx.abort(); } catch (_) { /* already completing */ }
+    }
   }));
 }
 
@@ -304,6 +309,9 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
         log('Error during save operation:', err, 'error');
       }
     };
+    getRequest.onerror = () => {
+      log('Failed to fetch existing timestamps before save:', getRequest.error, 'error');
+    };
   });
 }
 
@@ -350,6 +358,9 @@ export function deleteTimestamp(guid: string): Promise<void> {
         store.put({ ...record, deleted_at: Date.now() });
       }
     };
+    getRequest.onerror = () => {
+      log('Failed to fetch timestamp for deletion:', getRequest.error, 'error');
+    };
   });
 }
 
@@ -367,6 +378,10 @@ export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | nul
       return;
     }
 
+    tx.onerror = () => {
+      log('Transaction error during load:', tx.error, 'warn');
+      resolve(null);
+    };
     tx.onabort = () => {
       log('Transaction aborted during load:', tx.error, 'warn');
       resolve(null);
@@ -425,6 +440,9 @@ export function deleteTimestampsForVideo(videoId: string): Promise<void> {
       } catch (err) {
         log('Error during remove operation:', err, 'error');
       }
+    };
+    getRequest.onerror = () => {
+      log('Failed to fetch timestamps for removal:', getRequest.error, 'error');
     };
   });
 }
