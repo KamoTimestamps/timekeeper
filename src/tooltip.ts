@@ -3,6 +3,14 @@
  * Creates styled tooltips that appear after a delay
  */
 
+// Extend HTMLElement to store tooltip cleanup functions without `as any` casts
+declare global {
+  interface HTMLElement {
+        __tooltipCleanup?: (() => void) | undefined;
+        __tooltipObserver?: MutationObserver | undefined;
+      }
+}
+
 let tooltipElement: HTMLDivElement | null = null;
 let tooltipTimeout: ReturnType<typeof setTimeout> | null = null;
 const TOOLTIP_DELAY = 250; // milliseconds
@@ -285,7 +293,7 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
   allTooltipObservers.push(observer);
 
   // Store cleanup function on element for later removal if needed
-  (element as any).__tooltipCleanup = () => {
+  element.__tooltipCleanup = () => {
     element.removeEventListener('mouseenter', handleMouseEnter);
     element.removeEventListener('mousemove', handleMouseMove);
     element.removeEventListener('mouseleave', handleMouseLeave);
@@ -293,9 +301,9 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
     try { observer.disconnect(); } catch (_) {}
     const idx = allTooltipObservers.indexOf(observer);
     if (idx !== -1) allTooltipObservers.splice(idx, 1);
-    delete (element as any).__tooltipObserver;
+    delete element.__tooltipObserver;
   };
-  (element as any).__tooltipObserver = observer;
+  element.__tooltipObserver = observer;
 }
 
 /**
@@ -314,9 +322,9 @@ export function cleanupAllTooltips() {
  * Remove tooltip from an element
  */
 export function removeTooltip(element: HTMLElement) {
-  if ((element as any).__tooltipCleanup) {
-    (element as any).__tooltipCleanup();
-    delete (element as any).__tooltipCleanup;
+  if (element.__tooltipCleanup) {
+    element.__tooltipCleanup();
+    delete element.__tooltipCleanup;
   }
   // Ensure tooltip is hidden when tooltip is explicitly removed
   hideTooltip();

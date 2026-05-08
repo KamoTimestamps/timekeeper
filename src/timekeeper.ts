@@ -1,3 +1,10 @@
+// Extend HTMLInputElement to store custom data without `as any` casts
+declare global {
+  interface HTMLInputElement {
+       __ytls_li?: HTMLLIElement | undefined;
+     }
+}
+
 import { z } from "zod";
 import { createIcon, setIcon, setIconLabel, TablerIconName } from "./icons";
 import {
@@ -42,6 +49,7 @@ function setExtensionStorageValue(key: string, value: unknown): Promise<void> {
 import * as GoogleDrive from "./google-drive";
 import {
   PanePositionSchema,
+  type PanePosition,
   TimestampRecord,
   TimestampRecordSchema,
 } from "./schema";
@@ -123,8 +131,8 @@ initializeDvrEnablement();
   }
 
   // Initialize GoogleDrive callbacks early for OAuth handling
-  (GoogleDrive as any).setLoadGlobalSettings(earlyLoadGlobalSettings);
-  (GoogleDrive as any).setSaveGlobalSettings(earlySaveGlobalSettings);
+  GoogleDrive.setLoadGlobalSettings(earlyLoadGlobalSettings);
+  GoogleDrive.setSaveGlobalSettings(earlySaveGlobalSettings);
 
   // Check if we're in an OAuth popup and handle it
   const isOAuthPopup = await GoogleDrive.handleOAuthPopup();
@@ -213,7 +221,7 @@ initializeDvrEnablement();
     width?: number;
     height?: number;
   } | null {
-    return AppState.getState().ui.panePosition as any;
+    return AppState.getState().ui.panePosition;
   }
 
   function setPanePositionState(
@@ -224,7 +232,7 @@ initializeDvrEnablement();
       height?: number;
     } | null,
   ): void {
-    AppState.setPanePosition(position as any);
+    AppState.setPanePosition(position);
   }
 
   // --- Timestamp state helpers ---
@@ -1424,7 +1432,7 @@ initializeDvrEnablement();
     commentInput.style.cssText = "width:100%;margin-top:5px;display:block;";
     commentInput.type = "text";
     commentInput.setAttribute("inputmode", "text");
-    commentInput.autocapitalize = "off" as any;
+    commentInput.autocapitalize = "off";
     commentInput.autocomplete = "off";
     commentInput.spellcheck = false;
     requestAnimationFrame(syncIndentGutterPosition);
@@ -1776,7 +1784,7 @@ initializeDvrEnablement();
     } else {
       // Do not append to the live DOM yet; expose the constructed li for callers that are
       // building a fragment to append later.
-      (commentInput as any).__ytls_li = li;
+      commentInput.__ytls_li = li;
     }
 
     return commentInput;
@@ -2416,7 +2424,7 @@ initializeDvrEnablement();
             ts.guid,
             false,
           );
-          const li = (input as any).__ytls_li as HTMLLIElement | undefined;
+          const li = input.__ytls_li as HTMLLIElement | undefined;
           if (li) frag.appendChild(li);
         });
 
@@ -3984,9 +3992,9 @@ initializeDvrEnablement();
               : "Backend Token: Missing",
           );
           if (
-            typeof (GoogleDrive as any).updateBackupStatusDisplay === "function"
+            typeof GoogleDrive.updateBackupStatusDisplay === "function"
           ) {
-            (GoogleDrive as any).updateBackupStatusDisplay();
+            GoogleDrive.updateBackupStatusDisplay();
           }
         };
 
@@ -4822,18 +4830,20 @@ initializeDvrEnablement();
       }
     }
 
-    history.pushState = function () {
-      const res = origPush.apply(this, arguments as any);
+    history.pushState = function (
+      state: unknown,
+      url: string | URL | null | undefined,
+       ) {
+      origPush.call(this, state, url, url);
       dispatchLocationChange();
-      return res;
-    } as any;
-
-    history.replaceState = function () {
-      const res = origReplace.apply(this, arguments as any);
+       };
+    history.replaceState = function (
+      state: unknown,
+      url: string | URL | null | undefined,
+       ) {
+      origReplace.call(this, state, url, url);
       dispatchLocationChange();
-      return res;
-    } as any;
-
+       };
     window.addEventListener("popstate", dispatchLocationChange);
 
     window.addEventListener("locationchange", () => {
