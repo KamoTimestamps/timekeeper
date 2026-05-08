@@ -774,7 +774,6 @@ initializeDvrEnablement();
   let currentLoadedVideoId: string | null = null; // Track the currently loaded video to prevent duplicate loads
   let visibilityAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let visibilitySizingTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  let scrollbarHideTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let scrollbarTrack: HTMLDivElement | null = null;
   let scrollbarThumb: HTMLDivElement | null = null;
   let isScrollbarDragging = false;
@@ -2251,6 +2250,14 @@ initializeDvrEnablement();
     if (visibilityAnimationTimeoutId) {
       clearTimeout(visibilityAnimationTimeoutId);
       visibilityAnimationTimeoutId = null;
+    }
+    if (visibilitySizingTimeoutId) {
+      clearTimeout(visibilitySizingTimeoutId);
+      visibilitySizingTimeoutId = null;
+    }
+    if (seekTimeoutId) {
+      clearTimeout(seekTimeoutId);
+      seekTimeoutId = null;
     }
 
     // Remove all event listeners to prevent memory leaks
