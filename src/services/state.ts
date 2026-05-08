@@ -4,6 +4,7 @@
  */
 
 import { GoogleAuthStateParsed, AutoBackupSettings, TimestampRecord, PanePosition } from '../schema';
+import { log } from '../util';
 
 /**
  * Complete application state structure
@@ -245,7 +246,7 @@ function notifyListeners(previousState: AppState): void {
     try {
       listener(appState, previousState);
     } catch (error) {
-      console.error('Error in state listener:', error);
+      log('Error in state listener:', error, 'error');
     }
   });
 }

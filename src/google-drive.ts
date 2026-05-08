@@ -519,31 +519,19 @@ export async function signInToGoogle() {
         // Check if backup is needed and schedule auto-backup
         await scheduleAutoBackup();
 
-        if (log) {
-          log(`Successfully authenticated as ${userInfo.name}`);
-        } else {
-          console.log(`[Timekeeper] Successfully authenticated as ${userInfo.name}`);
-        }
+        log(`Successfully authenticated as ${userInfo.name}`);
       } else {
         throw new Error('Failed to fetch user info');
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
-      if (log) {
-        log('OAuth failed:', err, 'error');
-      } else {
-        console.error('[Timekeeper] OAuth failed:', err);
-      }
+      log('OAuth failed:', err, 'error');
       updateAuthStatusDisplay('error', errorMessage);
       return;
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Sign in failed';
-    if (log) {
-      log('Failed to sign in to Google:', err, 'error');
-    } else {
-      console.error('[Timekeeper] Failed to sign in to Google:', err);
-    }
+    log('Failed to sign in to Google:', err, 'error');
     updateAuthStatusDisplay('error', `Failed to sign in: ${errorMessage}`);
   }
 }

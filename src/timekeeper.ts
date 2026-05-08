@@ -55,29 +55,19 @@ if (hash && hash.length > 1) {
   if (state === "timekeeper_auth") {
     const token = params.get("access_token");
     if (token) {
-      console.log(
-        "[Timekeeper] Auth token detected in URL, broadcasting token",
-      );
-      console.log("[Timekeeper] Token length:", token.length, "characters");
+      log("Auth token detected in URL, broadcasting token");
+      log("Token length: " + token.length + " characters");
 
       // Broadcast via BroadcastChannel (primary method)
       try {
         const channel = new BroadcastChannel("timekeeper_oauth");
         const message = { type: "timekeeper_oauth_token", token: token };
-        console.log("[Timekeeper] Sending auth message via BroadcastChannel:", {
-          type: message.type,
-          tokenLength: token.length,
-        });
+        log("Sending auth message via BroadcastChannel:", { type: message.type, tokenLength: token.length });
         channel.postMessage(message);
         channel.close();
-        console.log(
-          "[Timekeeper] Token broadcast via BroadcastChannel completed",
-        );
+        log("Token broadcast via BroadcastChannel completed");
       } catch (e) {
-        console.log(
-          "[Timekeeper] BroadcastChannel failed, using IndexedDB fallback:",
-          e,
-        );
+        log("BroadcastChannel failed, using IndexedDB fallback:", e, 'warn');
         // Fallback to IndexedDB for cross-tab communication
         const message = {
           type: "timekeeper_oauth_token",
@@ -92,10 +82,7 @@ if (hash && hash.length > 1) {
           const store = tx.objectStore("settings");
           store.put({ key: "oauth_message", value: message });
           tx.oncomplete = () => {
-            console.log(
-              "[Timekeeper] Token broadcast via IndexedDB completed, timestamp:",
-              message.timestamp,
-            );
+            log("Token broadcast via IndexedDB completed, timestamp:", message.timestamp);
             db.close();
           };
         };
@@ -108,7 +95,7 @@ if (hash && hash.length > 1) {
       }
 
       // Close window after broadcasting auth token
-      console.log("[Timekeeper] Closing window after broadcasting auth token");
+      log("Closing window after broadcasting auth token");
       window.close();
       // Exit the module by throwing - this prevents the IIFE from running
       throw new Error("OAuth window closed");
