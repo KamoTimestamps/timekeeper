@@ -278,23 +278,23 @@ export function deleteTimestamp(guid: string): Promise<void> {
  * Load all timestamps for a video
  */
 export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | null> {
-  return getDB().then(db => new Promise<TimestampRecord[] | null>(resolve => {
+  return getDB().then(db => new Promise<TimestampRecord[] | null>((resolve, reject) => {
     let tx: IDBTransaction;
     try {
       tx = db.transaction([STORE_NAME_V2], 'readonly');
     } catch (err) {
-      log('Failed to create read transaction:', err, 'warn');
-      resolve(null);
+      log('Failed to create read transaction:', err, 'error');
+      reject(err);
       return;
     }
 
     tx.onerror = () => {
-      log('Transaction error during load:', tx.error, 'warn');
-      resolve(null);
+      log('Transaction error during load:', tx.error, 'error');
+      reject(tx.error ?? new Error('Transaction failed'));
     };
     tx.onabort = () => {
-      log('Transaction aborted during load:', tx.error, 'warn');
-      resolve(null);
+      log('Transaction aborted during load:', tx.error, 'error');
+      reject(tx.error ?? new Error('Transaction aborted'));
     };
 
     const v2Request = tx.objectStore(STORE_NAME_V2).index('video_id').getAll(IDBKeyRange.only(videoId));
@@ -315,8 +315,8 @@ export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | nul
 
       const parsed = TimestampRecordArraySchema.safeParse(mapped);
       if (!parsed.success) {
-        log('Failed to parse timestamps from IndexedDB:', parsed.error.format(), 'warn');
-        resolve(null);
+        log('Failed to parse timestamps from IndexedDB:', parsed.error.format(), 'error');
+        reject(new Error('Invalid timestamp data: ' + parsed.error.format()));
         return;
       }
 
@@ -324,8 +324,8 @@ export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | nul
     };
 
     v2Request.onerror = () => {
-      log('Failed to load timestamps:', v2Request.error, 'warn');
-      resolve(null);
+      log('Failed to load timestamps:', v2Request.error, 'error');
+      reject(v2Request.error ?? new Error('IndexedDB read failed'));
     };
   }));
 }
@@ -373,12 +373,10 @@ export function getAllTimestamps(): Promise<TimestampRow[]> {
 /**
  * Save a global setting
  */
-export function saveSetting(key: string, value: unknown): void {
-  executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
+export function saveSetting(key: string, value: unknown): Promise<void> {
+  return executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
     store.put({ key, value });
-  }).catch(err => {
-    log(`Failed to save setting '${key}' to IndexedDB:`, err, 'error');
-  });
+   });
 }
 
 /**
@@ -387,10 +385,7 @@ export function saveSetting(key: string, value: unknown): void {
 export function loadSetting(key: string): Promise<unknown> {
   return executeTransaction(SETTINGS_STORE_NAME, 'readonly', (store) => {
     return store.get(key);
-  }).then(result => {
+    }).then(result => {
     return (result as { value?: unknown } | undefined)?.value;
-  }).catch(err => {
-    log(`Failed to load setting '${key}' from IndexedDB:`, err, 'error');
-    return undefined;
-  });
+    });
 }

@@ -67,8 +67,8 @@ export function removeFromIndexedDB(videoId: string): Promise<void> {
 /**
  * Save a global setting
  */
-export function saveGlobalSettings(key: string, value: unknown): void {
-  TimestampService.saveSetting(key, value);
+export function saveGlobalSettings(key: string, value: unknown): Promise<void> {
+  return TimestampService.saveSetting(key, value);
 }
 
 /**

@@ -286,11 +286,11 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
 /**
  * Save a setting
  */
-export function saveSetting(key: string, value: unknown): void {
+export function saveSetting(key: string, value: unknown): Promise<void> {
   if (!key) {
     throw new Error('Setting key is required');
   }
-  TimestampRepository.saveSetting(key, value);
+  return TimestampRepository.saveSetting(key, value);
 }
 
 /**

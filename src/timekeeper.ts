@@ -35,7 +35,7 @@ function getExtensionStorageValue<T = unknown>(
 }
 
 function setExtensionStorageValue(key: string, value: unknown): Promise<void> {
-  TimestampModel.saveGlobalSettings(key, value);
+  TimestampModel.saveGlobalSettings(key, value).catch(() => {});
   return Promise.resolve();
 }
 
@@ -278,7 +278,7 @@ initializeDvrEnablement();
       updateLastSavedPanePositionFromRect(rect);
       if (save) {
         const position = getPanePositionState();
-        saveGlobalSettings("windowPosition", position);
+        saveGlobalSettings("windowPosition", position).catch(() => {});
         safePostMessage({
           type: "window_position_updated",
           position: position,
@@ -4577,7 +4577,7 @@ initializeDvrEnablement();
         log(
           `Saving window position and size to IndexedDB: x=${positionData.x}, y=${positionData.y}, width=${positionData.width}, height=${positionData.height}`,
         );
-        saveGlobalSettings("windowPosition", positionData);
+        saveGlobalSettings("windowPosition", positionData).catch(() => {});
 
         safePostMessage({
           type: "window_position_updated",
