@@ -519,7 +519,9 @@ initializeDvrEnablement();
     lastSavedSpeed = speedToSave;
     try {
       localStorage.setItem("ytls-last-speed", String(speedToSave));
-    } catch (_) { }
+    } catch (err) {
+       log("Failed to save playback speed to localStorage:", err, "error");
+     }
   }
 
   function updatePlaybackSpeedUI(rateOverride?: number) {
