@@ -2064,7 +2064,7 @@ initializeDvrEnablement();
     });
   }
 
-  async function saveTimestampsAs(format) {
+  async function saveTimestampsAs(format: string) {
     if (!list || list.querySelector(".ytls-error-message")) {
       showToast("Cannot export timestamps while displaying an error message.", 'warn');
       return;
@@ -2861,7 +2861,7 @@ initializeDvrEnablement();
     }
   }
 
-  function processImportedData(contentString) {
+  function processImportedData(contentString: string) {
     if (!list) {
       log("UI is not initialized; cannot import timestamps.", "warn");
       return;
