@@ -3004,7 +3004,12 @@ initializeDvrEnablement();
                 commentInput.value = comment;
               }
             } else {
-              addTimestamp(start, comment, false, guid || crypto.randomUUID()); // Use existing GUID or generate new one
+              const validated = TimestampRecordSchema.safeParse({ guid: guid || crypto.randomUUID(), start, comment });
+              if (validated.success) {
+                addTimestamp(validated.data.start, validated.data.comment, false, validated.data.guid);
+              } else {
+                log("Skipping invalid imported timestamp:", validated.error.format(), "warn");
+              }
             }
           }
         });
