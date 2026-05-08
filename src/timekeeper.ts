@@ -2905,14 +2905,10 @@ initializeDvrEnablement();
       }
 
       if (timestamps && Array.isArray(timestamps)) {
-        // Check if all items are valid timestamp objects
-        const isValidJsonData = timestamps.every(
-          (ts) =>
-            typeof ts.start === "number" && typeof ts.comment === "string",
-        );
-        if (isValidJsonData) {
-          // Single pass: Process each timestamp
-          timestamps.forEach((ts) => {
+        const parsed = TimestampRecordSchema.safeParse(timestamps);
+        if (parsed.success) {
+             // Single pass: Process each validated timestamp
+          parsed.data.forEach((ts) => {
             if (ts.guid) {
               const existingLi = getTimestampItems().find(
                 (li) => li.dataset.guid === ts.guid,
@@ -2933,7 +2929,7 @@ initializeDvrEnablement();
           processedSuccessfully = true;
         } else {
           log(
-            "Parsed JSON array, but items are not in the expected timestamp format. Trying as plain text.",
+            "Parsed JSON array, but items failed Zod validation.",
             "warn",
           );
         }
