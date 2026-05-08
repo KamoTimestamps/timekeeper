@@ -43,8 +43,7 @@ function getExtensionStorageValue<T = unknown>(
 }
 
 function setExtensionStorageValue(key: string, value: unknown): Promise<void> {
-  TimestampModel.saveGlobalSettings(key, value).catch(() => {});
-  return Promise.resolve();
+  return TimestampModel.saveGlobalSettings(key, value);
 }
 
 import * as GoogleDrive from "./google-drive";
@@ -287,7 +286,9 @@ initializeDvrEnablement();
       updateLastSavedPanePositionFromRect(rect);
       if (save) {
         const position = getPanePositionState();
-        saveGlobalSettings("windowPosition", position).catch(() => {});
+        saveGlobalSettings("windowPosition", position).catch((err) => {
+          log("Failed to persist window position:", err, "error");
+        });
         safePostMessage({
           type: "window_position_updated",
           position: position,
@@ -4591,7 +4592,9 @@ initializeDvrEnablement();
         log(
           `Saving window position and size to IndexedDB: x=${positionData.x}, y=${positionData.y}, width=${positionData.width}, height=${positionData.height}`,
         );
-        saveGlobalSettings("windowPosition", positionData).catch(() => {});
+        saveGlobalSettings("windowPosition", positionData).catch((err) => {
+          log("Failed to persist window position:", err, "error");
+        });
 
         safePostMessage({
           type: "window_position_updated",
