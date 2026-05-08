@@ -44,7 +44,7 @@ export interface AppState {
 /**
  * Default state
  */
-const DEFAULT_STATE: AppState = {
+const DEFAULT_STATE = {
   auth: {
     googleAuthState: {
       isSignedIn: false,
@@ -71,15 +71,15 @@ const DEFAULT_STATE: AppState = {
     urlChangeHandlersSetup: false,
   },
   timestamps: {
-    items: [],
+    items: [] as TimestampRecord[],
     currentIndex: null,
   },
-};
+} as const;
 
 /**
  * Internal state storage
  */
-let appState: AppState = deepClone(DEFAULT_STATE);
+let appState: Readonly<AppState> = deepClone(DEFAULT_STATE);
 
 /**
  * State change listeners

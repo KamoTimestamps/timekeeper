@@ -49,6 +49,7 @@ function setExtensionStorageValue(key: string, value: unknown): Promise<void> {
 import * as GoogleDrive from "./google-drive";
 import {
   PanePositionSchema,
+  TimestampRecordArraySchema,
   type PanePosition,
   TimestampRecord,
   TimestampRecordSchema,
@@ -2905,7 +2906,7 @@ initializeDvrEnablement();
       }
 
       if (timestamps && Array.isArray(timestamps)) {
-        const parsed = TimestampRecordSchema.safeParse(timestamps);
+        const parsed = TimestampRecordArraySchema.safeParse(timestamps);
         if (parsed.success) {
              // Single pass: Process each validated timestamp
           parsed.data.forEach((ts) => {
