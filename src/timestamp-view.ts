@@ -117,7 +117,8 @@ export function formatTimeForDisplay(
 }
 
 /**
- * Find the nearest timestamp at or before the given time
+ * Find the nearest timestamp at or before the given time.
+ * @returns The list item whose timestamp is the largest value ≤ currentTime, or null if none qualify.
  */
 export function findNearestTimestamp(
   list: HTMLUListElement | null,
@@ -156,7 +157,9 @@ export function findNearestTimestamp(
 }
 
 /**
- * Highlight a timestamp and optionally scroll it into view
+ * Highlight a timestamp list item and optionally scroll it into view.
+ * Clears the previous highlight first. No-ops if the item is being deleted.
+ * @param shouldScroll - When true, scrolls the item into view only if it is not already visible.
  */
 export function highlightTimestamp(
   list: HTMLUListElement | null,
@@ -346,7 +349,9 @@ export function getMouseOverTimestamps(): boolean {
 }
 
 /**
- * Sync visibility state across UI toggle buttons
+ * Sync visibility state across UI toggle buttons.
+ * Updates aria-pressed on the header button and resets the button image to
+ * the default icon when the pointer is not hovering over it.
  */
 export function syncToggleButtons(
   isVisible: boolean,
@@ -368,7 +373,9 @@ export function syncToggleButtons(
 }
 
 /**
- * Offset all timestamp times by a delta
+ * Offset all timestamp times by a delta, clamping each result to ≥ 0.
+ * @param delta - Seconds to add (positive) or subtract (negative).
+ * @returns True if at least one timestamp was changed.
  */
 export function offsetAllTimestampTimes(
   list: HTMLUListElement | null,
