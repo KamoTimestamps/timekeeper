@@ -76,18 +76,19 @@ function openIndexedDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = event => {
       const db = (event.target as IDBOpenDBRequest).result;
-      const oldVersion = event.oldVersion;
 
-      if (oldVersion < 2 && !db.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
+        // Create settings store (v2 migration)
+      if (!db.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
         db.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'key' });
-      }
+       }
 
-      if (oldVersion < 3) {
+        // Create main timestamps store with indexes (v3 migration)
+      if (!db.objectStoreNames.contains(STORE_NAME_V2)) {
         const v2Store = db.createObjectStore(STORE_NAME_V2, { keyPath: 'guid' });
         v2Store.createIndex('video_id', 'video_id', { unique: false });
         v2Store.createIndex('video_start', ['video_id', 'start'], { unique: false });
-      }
-    };
+       }
+     };
     request.onsuccess = event => {
       resolve((event.target as IDBOpenDBRequest).result);
     };
