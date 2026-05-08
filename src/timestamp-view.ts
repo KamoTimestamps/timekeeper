@@ -439,17 +439,27 @@ export function getLatestTimestampValue(list: HTMLUListElement | null): number {
 }
 
 /**
- * Calculate and update time differences between consecutive timestamps
+ * Calculate and update time differences between consecutive timestamps.
+ * When maxTime is provided, also reformats each anchor's text to use a
+ * consistent width based on the longest timestamp in the list.
  */
-export function updateTimeDifferences(list: HTMLUListElement | null): void {
+export function updateTimeDifferences(list: HTMLUListElement | null, maxTime?: number): void {
   if (!list) return;
 
   const items = getTimestampItems(list);
+  const resolvedMax = maxTime ?? 0;
 
   items.forEach((li, index) => {
     const timeDiff = li.querySelector<HTMLSpanElement>('.time-diff');
     const timeLink = li.querySelector<HTMLElement>('[data-time]');
     const timeValue = timeLink?.dataset.time;
+
+    if (timeLink && timeValue) {
+      const t = Number.parseInt(timeValue, 10);
+      if (Number.isFinite(t)) {
+        timeLink.textContent = formatTimeString(t, resolvedMax);
+      }
+    }
 
     if (!timeDiff || !timeValue) {
       return;
@@ -462,34 +472,25 @@ export function updateTimeDifferences(list: HTMLUListElement | null): void {
     }
 
     if (index === 0) {
-      // First timestamp shows time from start
-      if (currentTime > 0) {
-        timeDiff.textContent = `+${formatTimeString(currentTime)}`;
-      } else {
-        timeDiff.textContent = '';
-      }
-    } else {
-      // Subsequent timestamps show delta from previous
-      const prevLi = items[index - 1];
-      const prevTimeLink = prevLi.querySelector<HTMLElement>('[data-time]');
-      const prevTimeValue = prevTimeLink?.dataset.time;
-
-      if (prevTimeValue) {
-        const prevTime = Number.parseInt(prevTimeValue, 10);
-        if (Number.isFinite(prevTime)) {
-          const diff = currentTime - prevTime;
-          if (diff > 0) {
-            timeDiff.textContent = `+${formatTimeString(diff)}`;
-          } else {
-            timeDiff.textContent = '';
-          }
-        } else {
-          timeDiff.textContent = '';
-        }
-      } else {
-        timeDiff.textContent = '';
-      }
+      timeDiff.textContent = '';
+      return;
     }
+
+    const prevLi = items[index - 1];
+    const prevTimeLink = prevLi.querySelector<HTMLElement>('[data-time]');
+    const prevTimeValue = prevTimeLink?.dataset.time;
+    if (!prevTimeValue) {
+      timeDiff.textContent = '';
+      return;
+    }
+    const prevTime = Number.parseInt(prevTimeValue, 10);
+    if (!Number.isFinite(prevTime)) {
+      timeDiff.textContent = '';
+      return;
+    }
+    const diff = currentTime - prevTime;
+    const sign = diff < 0 ? '-' : '';
+    timeDiff.textContent = ` ${sign}${formatTimeString(Math.abs(diff))}`;
   });
 }
 

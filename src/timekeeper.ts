@@ -407,7 +407,7 @@ initializeDvrEnablement();
     list.appendChild(pendingTimestampsFragment);
     pendingTimestampsFragment = null;
     invalidateLatestTimestampValue();
-    updateTimeDifferences();
+    TimestampView.updateTimeDifferences(list, getLatestTimestampValue());
 
     // Restore visibility now that nodes are present
     if (list.style.visibility === "hidden") {
@@ -1073,25 +1073,12 @@ initializeDvrEnablement();
     return false;
   }
 
-  function highlightNearestTimestampAtTime(
-    currentSeconds: number,
-    shouldScroll: boolean,
-  ) {
-    if (!Number.isFinite(currentSeconds)) {
-      return;
-    }
-
-    const nearestLi = findNearestTimestamp(currentSeconds);
-    highlightTimestamp(nearestLi, shouldScroll);
-  }
-
   /**
    * Auto highlight helper: computes the proper current time (player or latest) and highlights
    * the nearest timestamp unless the pointer is over the Timekeeper UI. Optionally accepts a
    * precomputed `currentSeconds` to avoid recomputing.
    */
   function autoHighlightNearest(shouldScroll = false, currentSeconds?: number) {
-    // If pointer is over the UI, skip automatic highlight unless caller explicitly requests scrolling
     if (isMouseOverTimestamps && !shouldScroll) return;
 
     let currentTime: number;
@@ -1106,82 +1093,7 @@ initializeDvrEnablement();
     }
 
     if (Number.isFinite(currentTime)) {
-      highlightNearestTimestampAtTime(currentTime, shouldScroll);
-    }
-  }
-
-  // Find and return the nearest timestamp at or before the given time
-  function findNearestTimestamp(currentTime: number): HTMLLIElement | null {
-    if (!Number.isFinite(currentTime)) {
-      return null;
-    }
-
-    const items = getTimestampItems();
-    if (items.length === 0) {
-      return null;
-    }
-
-    let nearestLi: HTMLLIElement | null = null;
-    let largestTimestamp = -Infinity;
-
-    for (const li of items) {
-      const timeLink = li.querySelector<HTMLElement>("[data-time]");
-      const timeValue = timeLink?.dataset.time;
-      if (!timeValue) {
-        continue;
-      }
-      const timestamp = Number.parseInt(timeValue, 10);
-      if (!Number.isFinite(timestamp)) {
-        continue;
-      }
-      // Only consider timestamps at or before the current time
-      if (timestamp <= currentTime && timestamp > largestTimestamp) {
-        largestTimestamp = timestamp;
-        nearestLi = li;
-      }
-    }
-
-    return nearestLi;
-  }
-
-  // Highlight a timestamp and optionally scroll it into view
-  function highlightTimestamp(li: HTMLLIElement | null, shouldScroll = false) {
-    const items = getTimestampItems();
-    // Always clear existing highlights first
-    items.forEach((item) => {
-      if (!item.classList.contains(TIMESTAMP_DELETE_CLASS)) {
-        item.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
-      }
-    });
-
-    if (!li) return;
-
-    if (!li.classList.contains(TIMESTAMP_DELETE_CLASS)) {
-      li.classList.add(TIMESTAMP_HIGHLIGHT_CLASS);
-
-      if (shouldScroll) {
-        try {
-          // If the timestamp list is present, only scroll when the element is not already visible
-          if (list instanceof HTMLElement) {
-            const liRect = li.getBoundingClientRect();
-            const listRect = list.getBoundingClientRect();
-            const isVisible = !(
-              liRect.bottom < listRect.top || liRect.top > listRect.bottom
-            );
-            if (!isVisible) {
-              li.scrollIntoView({ behavior: "smooth", block: "center" });
-            }
-          } else {
-            // Fallback: if we don't have a list container reference, just scroll
-            li.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
-        } catch (e) {
-          // Be defensive: if geometry checks fail for any reason, fallback to scrolling
-          try {
-            li.scrollIntoView({ behavior: "smooth", block: "center" });
-          } catch (_) { }
-        }
-      }
+      TimestampView.highlightNearestTimestampAtTime(list, currentTime, shouldScroll);
     }
   }
 
@@ -1224,7 +1136,7 @@ initializeDvrEnablement();
       return false;
     }
 
-    updateTimeDifferences();
+    TimestampView.updateTimeDifferences(list, getLatestTimestampValue());
     updateIndentMarkers();
     updateSeekbarMarkers();
     saveTimestamps(currentLoadedVideoId);
@@ -1264,8 +1176,8 @@ initializeDvrEnablement();
     const player = getActivePlayer();
     const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
     if (Number.isFinite(currentTime)) {
-      const nearestLi = findNearestTimestamp(currentTime);
-      highlightTimestamp(nearestLi, false);
+      const nearestLi = TimestampView.findNearestTimestamp(list, currentTime);
+      TimestampView.highlightTimestamp(list, nearestLi, false);
     }
 
     return true;
@@ -1358,7 +1270,7 @@ initializeDvrEnablement();
         }, 500);
       }, 500);
 
-      updateTimeDifferences();
+      TimestampView.updateTimeDifferences(list, getLatestTimestampValue());
       updateIndentMarkers();
       updateSeekbarMarkers();
 
@@ -1659,7 +1571,7 @@ initializeDvrEnablement();
         getActivePlayer()?.setPlaybackRate(1);
         invalidateLatestTimestampValue();
         formatTime(anchor, currentTime);
-        updateTimeDifferences();
+        TimestampView.updateTimeDifferences(list, getLatestTimestampValue());
         updateIndentMarkers();
         saveSingleTimestampDirect(
           currentLoadedVideoId,
@@ -1743,7 +1655,7 @@ initializeDvrEnablement();
 
         li.remove();
         invalidateLatestTimestampValue();
-        updateTimeDifferences();
+        TimestampView.updateTimeDifferences(list, getLatestTimestampValue());
         updateIndentMarkers();
         updateSeekbarMarkers();
         updateScroll();
@@ -1858,7 +1770,7 @@ initializeDvrEnablement();
       li.scrollIntoView({ behavior: "smooth", block: "center" });
 
       invalidateLatestTimestampValue();
-      updateTimeDifferences();
+      TimestampView.updateTimeDifferences(list, getLatestTimestampValue());
       updateScroll();
       updateIndentMarkers();
       updateSeekbarMarkers();
@@ -1871,7 +1783,7 @@ initializeDvrEnablement();
         );
         mostRecentlyModifiedTimestampGuid = timestampGuid;
         // Immediately highlight the newly created timestamp
-        highlightTimestamp(li, false);
+        TimestampView.highlightTimestamp(list, li, false);
       }
     } else {
       // Do not append to the live DOM yet; expose the constructed li for callers that are
@@ -1880,61 +1792,6 @@ initializeDvrEnablement();
     }
 
     return commentInput;
-  }
-
-  function updateTimeDifferences() {
-    if (!list || list.querySelector(".ytls-error-message")) {
-      return;
-    }
-
-    const maxTime = getLatestTimestampValue();
-    const items = getTimestampItems();
-    items.forEach((item, index) => {
-      const timeDiffSpan = item.querySelector<HTMLSpanElement>(".time-diff");
-      const timeLink = item.querySelector<HTMLElement>("[data-time]");
-      const currentTimeStr = timeLink?.dataset.time;
-
-      // Reformat anchor text with shared maxTime so all timestamps use consistent width
-      if (timeLink && currentTimeStr) {
-        const t = Number.parseInt(currentTimeStr, 10);
-        if (Number.isFinite(t)) {
-          timeLink.textContent = formatTimeString(t, maxTime);
-        }
-      }
-
-      if (!timeDiffSpan) {
-        return;
-      }
-      if (!currentTimeStr) {
-        timeDiffSpan.textContent = "";
-        return;
-      }
-      const currentTime = Number.parseInt(currentTimeStr, 10);
-      if (!Number.isFinite(currentTime)) {
-        timeDiffSpan.textContent = "";
-        return;
-      }
-      if (index === 0) {
-        timeDiffSpan.textContent = "";
-        return;
-      }
-      const prevItem = items[index - 1];
-      const prevLink =
-        prevItem.querySelector<HTMLElement>("[data-time]");
-      const prevTimeStr = prevLink?.dataset.time;
-      if (!prevTimeStr) {
-        timeDiffSpan.textContent = "";
-        return;
-      }
-      const prevTime = Number.parseInt(prevTimeStr, 10);
-      if (!Number.isFinite(prevTime)) {
-        timeDiffSpan.textContent = "";
-        return;
-      }
-      const diff = currentTime - prevTime;
-      const sign = diff < 0 ? "-" : "";
-      timeDiffSpan.textContent = ` ${sign}${formatTimeString(Math.abs(diff))}`;
-    });
   }
 
   function sortTimestampsAndUpdateDisplay() {
@@ -2015,7 +1872,7 @@ initializeDvrEnablement();
     });
 
     // Update all time differences
-    updateTimeDifferences();
+    TimestampView.updateTimeDifferences(list, getLatestTimestampValue());
     updateIndentMarkers();
 
     updateSeekbarMarkers();
@@ -2587,7 +2444,7 @@ initializeDvrEnablement();
           if (list) {
             list.appendChild(frag);
             invalidateLatestTimestampValue();
-            updateTimeDifferences();
+            TimestampView.updateTimeDifferences(list, getLatestTimestampValue());
             updateIndentMarkers();
             updateSeekbarMarkers();
             // Ensure scroll area is recalculated after DOM updates
