@@ -17,6 +17,17 @@ export function log(message: string, ...args: any[]) {
 }
 
 /**
+ * Deep clone a value using structuredClone with a JSON fallback.
+ */
+export function deepClone<T>(value: T): T {
+  try {
+    return structuredClone(value);
+   } catch {
+    return JSON.parse(JSON.stringify(value)) as T;
+   }
+}
+
+/**
  * Format seconds into a time string (M:SS, MM:SS, H:MM:SS, or HH:MM:SS)
  * @param seconds - The time in seconds to format
  * @param maxTime - The maximum timestamp value in the list (determines format width)

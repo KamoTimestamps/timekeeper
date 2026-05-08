@@ -4,7 +4,7 @@
  */
 
 import { GoogleAuthStateParsed, AutoBackupSettings, TimestampRecord, PanePosition } from '../schema';
-import { log } from '../util';
+import { log, deepClone } from '../util';
 
 /**
  * Complete application state structure
@@ -79,7 +79,7 @@ const DEFAULT_STATE: AppState = {
 /**
  * Internal state storage
  */
-let appState: AppState = structuredClone(DEFAULT_STATE);
+let appState: AppState = deepClone(DEFAULT_STATE);
 
 /**
  * State change listeners
@@ -100,7 +100,7 @@ export function getState(): AppState {
  * Update state with partial changes
  */
 export function setState(updates: Partial<AppState>): void {
-  const previousState = listeners.size > 0 ? structuredClone(appState) : appState;
+  const previousState = listeners.size > 0 ? deepClone(appState) : appState;
 
   appState = {
     ...appState,
@@ -255,6 +255,6 @@ function notifyListeners(previousState: AppState): void {
  * Reset state to defaults (useful for testing or clearing)
  */
 export function resetState(): void {
-  appState = structuredClone(DEFAULT_STATE);
-  notifyListeners(structuredClone(DEFAULT_STATE));
+  appState = deepClone(DEFAULT_STATE);
+  notifyListeners(deepClone(DEFAULT_STATE));
 }
