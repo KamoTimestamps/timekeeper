@@ -5,12 +5,30 @@
 
 import { z } from 'zod';
 import { log } from './util';
-import { TIMEKEEPER_VERSION } from './version';
 import { addTooltip } from './tooltip';
-import { zipSync, unzipSync } from 'fflate';
 import { BackupSettingsSchema, GoogleAuthStateSchema, GoogleAuthStateParsed } from './schema';
 import { createIcon, setIcon, setIconLabel } from './icons';
 import { showToast } from './toast';
+import {
+  getTimekeeperBackendHostNormalized,
+  getTimekeeperBackendBearerTokenNormalized,
+  getTimekeeperBackendBaseUrl,
+  hasGoogleDriveBackupDestination,
+  hasTimekeeperBackendBackupConfiguration,
+  hasTimekeeperBackendBackupDestination,
+  hasAnyBackupDestination,
+  getConfiguredDestinationLabels,
+  fetchWithTimeout,
+  sendUserscriptRequest,
+  decodeFirstZipEntry,
+  createZipFromJson,
+  ensureDriveFolder,
+  findFileInFolder,
+  fetchLatestDriveBackup,
+  fetchLatestBackendBackup,
+  uploadJsonToDrive,
+  uploadJsonToTimekeeperBackend,
+} from './google-drive-upload';
 import * as AppState from './services/state';
 
 // Types
@@ -150,9 +168,6 @@ export function setReloadCurrentVideoTimestamps(fn: () => void) {
 const GOOGLE_CLIENT_ID = '1023528652072-45cu3dr7o5j79vsdn8643bhle9ee8kds.apps.googleusercontent.com';
 const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile';
 const GOOGLE_REDIRECT_URI = 'https://www.youtube.com/';
-const DEFAULT_TIMEKEEPER_BACKEND_HOST = 'localhost';
-const DEFAULT_TIMEKEEPER_BACKEND_PORT = 8443;
-const DETERMINISTIC_ZIP_MTIME = new Date(Date.UTC(2000, 0, 1, 0, 0, 0));
 
 // Auto-backup constants
 const AUTO_BACKUP_INITIAL_BACKOFF_MS = 30 * 1000; // 30s
@@ -746,209 +761,6 @@ export async function verifySignedIn(): Promise<boolean> {
   }
 }
 
-function getTimekeeperBackendHostNormalized(): string {
-  return getTimekeeperBackendHost().trim() || DEFAULT_TIMEKEEPER_BACKEND_HOST;
-}
-
-function getTimekeeperBackendBearerTokenNormalized(): string | null {
-  const token = getTimekeeperBackendBearerToken();
-  if (typeof token !== 'string') {
-    return null;
-  }
-  const trimmed = token.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function hasGoogleDriveBackupDestination(): boolean {
-  const authState = getGoogleAuthState();
-  return authState.isSignedIn && !!authState.accessToken;
-}
-
-function hasTimekeeperBackendBackupConfiguration(): boolean {
-  const port = getTimekeeperBackendPort();
-  return !!getTimekeeperBackendHostNormalized() && Number.isInteger(port) && port >= 1 && port <= 65535 && !!getTimekeeperBackendBearerTokenNormalized();
-}
-
-function hasTimekeeperBackendBackupDestination(): boolean {
-  return getTimekeeperBackendBackupEnabled() && hasTimekeeperBackendBackupConfiguration();
-}
-
-function hasAnyBackupDestination(): boolean {
-  return hasGoogleDriveBackupDestination() || hasTimekeeperBackendBackupDestination();
-}
-
-function getConfiguredDestinationLabels(): string[] {
-  const labels: string[] = [];
-  if (hasGoogleDriveBackupDestination()) {
-    labels.push('Google Drive');
-  }
-  if (hasTimekeeperBackendBackupDestination()) {
-    labels.push(`Timekeeper Backend (${getTimekeeperBackendHostNormalized()}:${getTimekeeperBackendPort()})`);
-  }
-  return labels;
-}
-
-function getTimekeeperBackendBaseUrl(): string {
-  const rawHost = getTimekeeperBackendHostNormalized();
-  const host = rawHost.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-  return `https://${host}:${getTimekeeperBackendPort()}`;
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 30000): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } catch (err: unknown) {
-    if (err instanceof Error && err.name === 'AbortError') throw new Error('request timed out');
-    throw err;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-async function sendUserscriptRequest(details: {
-  method: string;
-  url: string;
-  headers?: Record<string, string>;
-  data?: string | ArrayBuffer | Blob | FormData;
-  timeout?: number;
-}): Promise<{ status: number; responseText: string }> {
-  try {
-    const response = await fetchWithTimeout(details.url, {
-      method: details.method,
-      headers: {
-        'User-Agent': `Timekeeper/${TIMEKEEPER_VERSION}`,
-        ...(details.headers || {}),
-      },
-      body: details.data as BodyInit | null | undefined,
-    }, details.timeout);
-    const responseText = await response.text();
-    return { status: response.status, responseText };
-  } catch (err: unknown) {
-    throw new Error(err instanceof Error ? err.message : 'request failed');
-  }
-}
-
-function decodeFirstZipEntry(buffer: ArrayBuffer): string | null {
-  const unzipped = unzipSync(new Uint8Array(buffer));
-  const firstFile = Object.values(unzipped)[0];
-  return firstFile ? new TextDecoder().decode(firstFile) : null;
-}
-
-async function uploadJsonToTimekeeperBackend(filename: string, json: string): Promise<void> {
-  const bearerToken = getTimekeeperBackendBearerTokenNormalized();
-  if (!bearerToken) {
-    throw new Error('unauthorized');
-  }
-
-  const zipFilename = filename.replace(/\.json$/, '.zip');
-  const zipData = createZipFromJson(json, filename);
-  const zipBytes = Uint8Array.from(zipData);
-  const formData = new FormData();
-  formData.append('file', new Blob([zipBytes], { type: 'application/zip' }), zipFilename);
-
-  const response = await sendUserscriptRequest({
-    method: 'POST',
-    url: `${getTimekeeperBackendBaseUrl()}/api/v1/backups`,
-    headers: {
-      Authorization: `Bearer ${bearerToken}`,
-    },
-    data: formData,
-  });
-
-  if (response.status === 401 || response.status === 403) {
-    throw new Error('unauthorized');
-  }
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error(`timekeeper backend upload failed: ${response.status} ${response.responseText}`.trim());
-  }
-}
-
-// Ensure a folder named "Timekeeper" exists in Google Drive
-async function ensureDriveFolder(accessToken: string): Promise<string> {
-  const headers = { Authorization: `Bearer ${accessToken}` };
-  const q = encodeURIComponent("name = 'Timekeeper' and mimeType = 'application/vnd.google-apps.folder' and trashed = false");
-  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=10`;
-  const searchResp = await fetch(searchUrl, { headers });
-  if (searchResp.status === 401) throw new Error('unauthorized');
-  if (!searchResp.ok) throw new Error('drive search failed');
-  const searchJson = await searchResp.json();
-  if (Array.isArray(searchJson.files) && searchJson.files.length > 0) {
-    return searchJson.files[0].id;
-  }
-
-  const createResp = await fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'Timekeeper', mimeType: 'application/vnd.google-apps.folder' })
-  });
-  if (createResp.status === 401) throw new Error('unauthorized');
-  if (!createResp.ok) throw new Error('drive folder create failed');
-  const createJson = await createResp.json();
-  return createJson.id;
-}
-
-// Search for an existing file by name in a folder
-async function findFileInFolder(filename: string, folderId: string, accessToken: string): Promise<string | null> {
-  const query = `name='${filename}' and '${folderId}' in parents and trashed=false`;
-  const encodedQuery = encodeURIComponent(query);
-  const resp = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodedQuery}&fields=files(id,name)`, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
-  if (resp.status === 401) throw new Error('unauthorized');
-  if (!resp.ok) return null;
-  const data = await resp.json();
-  if (data.files && data.files.length > 0) {
-    return data.files[0].id;
-  }
-  return null;
-}
-
-// Download and decompress the latest backup from Google Drive
-async function fetchLatestDriveBackup(accessToken: string): Promise<string | null> {
-  try {
-    const folderId = await ensureDriveFolder(accessToken);
-    const fileId = await findFileInFolder('timekeeper-data.zip', folderId, accessToken);
-    if (!fileId) return null;
-
-    const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    if (resp.status === 401) throw new Error('unauthorized');
-    if (!resp.ok) return null;
-
-    return decodeFirstZipEntry(await resp.arrayBuffer());
-  } catch (err: unknown) {
-    if (err instanceof Error && err.message === 'unauthorized') throw err;
-    log('Failed to fetch latest Drive backup for merge:', err, 'warn');
-    return null;
-  }
-}
-
-// Download and decompress the latest backup from the Timekeeper backend
-async function fetchLatestBackendBackup(): Promise<string | null> {
-  const bearerToken = getTimekeeperBackendBearerTokenNormalized();
-  if (!bearerToken) return null;
-  try {
-    const response = await fetchWithTimeout(`${getTimekeeperBackendBaseUrl()}/api/v1/backups/latest`, {
-      headers: {
-        Authorization: `Bearer ${bearerToken}`,
-        'User-Agent': `Timekeeper/${TIMEKEEPER_VERSION}`,
-      },
-    });
-    if (response.status === 401 || response.status === 403) throw new Error('unauthorized');
-    if (!response.ok) return null;
-    return decodeFirstZipEntry(await response.arrayBuffer());
-  } catch (err: unknown) {
-    if (err instanceof Error && err.message === 'request timed out') return null;
-    if (err instanceof Error && err.message === 'unauthorized') throw err;
-    log('Failed to fetch latest backend backup for merge:', err, 'warn');
-    return null;
-  }
-}
-
 // Fetch and merge the latest remote backup from all configured destinations before uploading.
 // Errors during fetch/merge are logged but never block the backup.
 async function mergeFromAllRemotesBeforeBackup(): Promise<void> {
@@ -999,120 +811,6 @@ async function mergeFromAllRemotesBeforeBackup(): Promise<void> {
   if (totalMergedTimestamps > 0 && reloadCurrentVideoTimestamps) {
     reloadCurrentVideoTimestamps();
   }
-}
-
-// Helper function to create a ZIP archive containing the JSON file
-// Creates a well-formed standard ZIP format compatible with Windows, macOS, and Linux
-// The ZIP file includes proper headers: local file header, central directory header, and EOCD record
-function createZipFromJson(json: string, filename: string): Uint8Array {
-  const jsonBytes = new TextEncoder().encode(json);
-
-  // Normalize filename for ZIP standard:
-  // - Use forward slashes only (not backslashes)
-  // - No leading slash
-  // - Preserve the .json extension
-  let normalizedFilename = filename.replace(/\\/g, '/').replace(/^\/+/, '');
-
-  // Ensure filename ends with .json
-  if (!normalizedFilename.endsWith('.json')) {
-    normalizedFilename += '.json';
-  }
-
-  // Create a ZIP archive with proper PKZip headers and metadata
-  // fflate automatically generates:
-  // - Local file header (signature 0x04034b50) with correct CRC32
-  // - File data compressed with DEFLATE (method 8)
-  // - Central directory file header (signature 0x02014b50)
-  // - End of central directory record (signature 0x06054b50)
-  //
-  // IMPORTANT: Use simple options to avoid Google Drive "encrypted or multi-volume" error
-  // - No encryption (bit 0 of general purpose flag = 0)
-  // - Standard DEFLATE compression only (method 8)
-  // - No multi-volume features
-  const zipData = zipSync({
-    [normalizedFilename]: [jsonBytes, {
-      level: 6,           // Standard deflate compression level (method 8)
-      mtime: DETERMINISTIC_ZIP_MTIME, // Keep archive output stable across runs
-      os: 0               // OS flag: 0 = FAT/NTFS (most compatible with Windows/Google Drive)
-    }]
-  });
-
-  return zipData;
-}
-
-
-
-// Upload JSON content to Google Drive (creates new or updates existing)
-async function uploadJsonToDrive(filename: string, json: string, folderId: string, accessToken: string): Promise<void> {
-  // Convert JSON filename to ZIP filename
-  // e.g., "timekeeper-data-20231219.json" -> "timekeeper-data-20231219.zip"
-  // or "timekeeper-data.json" -> "timekeeper-data.zip"
-  const zipFilename = filename.replace(/\.json$/, '.zip');
-
-  // Check if file already exists
-  const existingFileId = await findFileInFolder(zipFilename, folderId, accessToken);
-
-  // Create a ZIP archive containing the JSON file
-  // The ZIP will contain one file: the original JSON filename (e.g., "timekeeper-data.json")
-  const originalSize = new TextEncoder().encode(json).length;
-  const zipData = createZipFromJson(json, filename);
-  const compressedSize = zipData.length;
-  log(`Compressing data: ${originalSize} bytes -> ${compressedSize} bytes (${Math.round(100 - (compressedSize / originalSize * 100))}% reduction)`);
-
-  const boundary = '-------314159265358979';
-  const delimiter = `\r\n--${boundary}\r\n`;
-  const closeDelim = `\r\n--${boundary}--`;
-
-  // For updates, don't include parents field
-  const metadata = existingFileId
-    ? { name: zipFilename, mimeType: 'application/zip' }
-    : { name: zipFilename, mimeType: 'application/zip', parents: [folderId] };
-
-  // Convert Uint8Array to base64 for safe multipart upload
-  // Process in chunks to avoid call stack overflow for large files
-  const chunkSize = 8192;
-  let binaryString = '';
-  for (let i = 0; i < zipData.length; i += chunkSize) {
-    const chunk = zipData.subarray(i, Math.min(i + chunkSize, zipData.length));
-    binaryString += String.fromCharCode.apply(null, Array.from(chunk));
-  }
-  const base64Data = btoa(binaryString);
-
-  // Create multipart request body with proper headers
-  // Content-Transfer-Encoding: base64 ensures data integrity during transmission
-  const multipartBody =
-    delimiter +
-    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-    JSON.stringify(metadata) +
-    delimiter +
-    'Content-Type: application/zip\r\n' +
-    'Content-Transfer-Encoding: base64\r\n\r\n' +
-    base64Data +
-    closeDelim;
-
-  let url: string;
-  let method: string;
-
-  if (existingFileId) {
-    // Update existing file
-    url = `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart&fields=id,name`;
-    method = 'PATCH';
-  } else {
-    // Create new file
-    url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name';
-    method = 'POST';
-  }
-
-  const resp = await fetch(url, {
-    method: method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': `multipart/related; boundary=${boundary}`
-    },
-    body: multipartBody
-  });
-  if (resp.status === 401) throw new Error('unauthorized');
-  if (!resp.ok) throw new Error('drive upload failed');
 }
 
 // Helper function to handle auth expiration
