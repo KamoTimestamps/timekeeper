@@ -10,6 +10,7 @@ import { addTooltip } from './tooltip';
 import { zipSync, unzipSync } from 'fflate';
 import { BackupSettingsSchema, GoogleAuthStateSchema, GoogleAuthStateParsed } from './schema';
 import { createIcon, setIcon, setIconLabel } from './icons';
+import { showToast } from './toast';
 import * as AppState from './services/state';
 
 // Types
@@ -1625,7 +1626,7 @@ export async function setAutoBackupIntervalPrompt() {
   if (input === null) return;
   const minutes = Math.floor(Number(input));
   if (!Number.isFinite(minutes) || minutes < 5 || minutes > 1440) {
-    alert('Please enter a number between 5 and 1440 minutes.');
+    showToast('Please enter a number between 5 and 1440 minutes.', 'warn');
     return;
   }
   AppState.setAutoBackupIntervalMinutes(minutes);
@@ -1647,7 +1648,7 @@ export async function setTimekeeperBackendHostPrompt() {
 
   const host = input.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
   if (!host) {
-    alert('Please enter a host name or IP address.');
+    showToast('Please enter a host name or IP address.', 'warn');
     return;
   }
 
@@ -1663,7 +1664,7 @@ export async function setTimekeeperBackendPortPrompt() {
 
   const port = Number.parseInt(input.trim(), 10);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    alert('Please enter a valid port between 1 and 65535.');
+    showToast('Please enter a valid port between 1 and 65535.', 'warn');
     return;
   }
 

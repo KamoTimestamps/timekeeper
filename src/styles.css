@@ -834,3 +834,43 @@
 .ytls-tooltip.ytls-tooltip-visible {
   opacity: 1;
 }
+
+/* Toast notifications */
+.ytls-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 99999;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-family: "Roboto", "Arial", sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #fff;
+  max-width: 360px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.ytls-toast.ytls-toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ytls-toast-error {
+  background: #c0392b;
+}
+
+.ytls-toast-warn {
+  background: #e67e22;
+}
+
+.ytls-toast-info {
+  background: #2c3e50;
+}

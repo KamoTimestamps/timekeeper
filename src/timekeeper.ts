@@ -22,6 +22,7 @@ import {
   createClickOutsideHandler,
   registerModalClickOutsideHandler,
 } from "./modals";
+import { showToast } from "./toast";
 
 function getExtensionStorageValue<T = unknown>(
   key: string,
@@ -1163,7 +1164,7 @@ initializeDvrEnablement();
       if (options.alertOnNoChange) {
         const message =
           options.failureMessage ?? "Offset did not change any timestamps.";
-        alert(message);
+        showToast(message, 'warn');
       }
       return false;
     }
@@ -2069,7 +2070,7 @@ initializeDvrEnablement();
 
   async function saveTimestampsAs(format) {
     if (!list || list.querySelector(".ytls-error-message")) {
-      alert("Cannot export timestamps while displaying an error message.");
+      showToast("Cannot export timestamps while displaying an error message.", 'warn');
       return;
     }
     const videoId = currentLoadedVideoId;
@@ -3017,7 +3018,7 @@ initializeDvrEnablement();
       updateScroll();
       // alert("Timestamps loaded and merged successfully!");
     } else {
-      alert(
+      showToast(
         "Failed to parse content. Please ensure it is in the correct JSON or plain text format.",
       );
     }
@@ -3451,7 +3452,7 @@ initializeDvrEnablement();
 
         const items = getTimestampItems();
         if (items.length === 0) {
-          alert("No timestamps available to offset.");
+          showToast("No timestamps available to offset.", 'warn');
           return;
         }
 
@@ -3470,7 +3471,7 @@ initializeDvrEnablement();
 
         const offsetSeconds = Number.parseInt(trimmed, 10);
         if (!Number.isFinite(offsetSeconds)) {
-          alert("Please enter a valid integer number of seconds.");
+          showToast("Please enter a valid integer number of seconds.", 'warn');
           return;
         }
 
@@ -3493,7 +3494,7 @@ initializeDvrEnablement();
       const handleDeleteAll = async () => {
         const currentVideoId = getVideoId();
         if (!currentVideoId) {
-          alert("Unable to determine current video ID.");
+          showToast("Unable to determine current video ID.");
           return;
         }
 
@@ -3585,7 +3586,7 @@ initializeDvrEnablement();
                 handleUrlChange(); // Refresh the tool to reflect deletion
               } catch (err) {
                 log("Failed to delete all timestamps:", err, "error");
-                alert(
+                showToast(
                   "Failed to delete timestamps. Check console for details.",
                 );
               }
@@ -3913,7 +3914,7 @@ initializeDvrEnablement();
               try {
                 await exportAllTimestampsCsv();
               } catch (err) {
-                alert("Failed to export CSV: Could not read from database.");
+                showToast("Failed to export CSV: Could not read from database.");
               }
             },
             "file-spreadsheet",
@@ -4417,11 +4418,11 @@ initializeDvrEnablement();
               if (clipboardText) {
                 processImportedData(clipboardText.trim());
               } else {
-                alert("Clipboard is empty.");
+                showToast("Clipboard is empty.", 'warn');
               }
             } catch (err) {
               log("Failed to read from clipboard: ", err, "error");
-              alert(
+              showToast(
                 "Failed to read from clipboard. Ensure you have granted permission.",
               );
             }
@@ -4451,7 +4452,7 @@ initializeDvrEnablement();
         try {
           await exportAllTimestamps();
         } catch (err) {
-          alert("Failed to export data: Could not read from database.");
+          showToast("Failed to export data: Could not read from database.");
         }
       };
 
@@ -4524,13 +4525,13 @@ initializeDvrEnablement();
                   handleUrlChange(); // Refresh the tool to reflect imported data
                 })
                 .catch((err) => {
-                  alert(
+                  showToast(
                     "An error occurred during import to IndexedDB. Check console for details.",
                   );
                   log("Overall import error:", err, "error");
                 });
             } catch (e) {
-              alert(
+              showToast(
                 "Failed to import data. Please ensure the file is in the correct format.\n" +
                 (e as Error).message,
               );
