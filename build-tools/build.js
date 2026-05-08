@@ -1,8 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
-const { execSync } = require('node:child_process');
 const { syncVersion } = require('./sync-version');
+const { generateStyles } = require('./generate-styles');
 
 const repoRoot = path.join(__dirname, '..');
 const headerTemplateFile = path.join(repoRoot, 'src', 'userscript-header.txt');
@@ -10,8 +10,6 @@ const packageJsonFile = path.join(repoRoot, 'package.json');
 const distDir = path.join(repoRoot, 'dist');
 const userscriptFile = path.join(repoRoot, 'timekeeper.user.js');
 const legacyUserscriptFile = path.join(repoRoot, 'ts.user.js');
-const cssSourceFile = path.join(repoRoot, 'src', 'styles.css');
-const cssMinifiedFile = path.join(distDir, 'styles.min.css');
 
 function readHeaderTemplate() {
   if (!fs.existsSync(headerTemplateFile)) {
@@ -30,39 +28,6 @@ function removeExistingHeader(content) {
   return content.replace(headerPattern, '').trimStart();
 }
 
-function minifyCSS() {
-  console.log('Minifying CSS...');
-  // Use cleancss to minify the CSS file
-  execSync(`npx cleancss -o "${cssMinifiedFile}" "${cssSourceFile}"`, {
-    cwd: repoRoot,
-    stdio: 'inherit'
-  });
-  console.log('✓ CSS minified');
-}
-
-// esbuild plugin to inject minified CSS
-const injectCSSPlugin = {
-  name: 'inject-css',
-  setup(build) {
-    // Intercept imports that end with .css or resolve to styles.css
-    build.onResolve({ filter: /\.css$/ }, args => {
-      // Check if this is our styles.css import
-      if (args.path === './styles.css' || args.path.endsWith('/styles.css')) {
-        return { path: cssMinifiedFile, namespace: 'inject-css' };
-      }
-      return null;
-    });
-    build.onLoad({ filter: /.*/, namespace: 'inject-css' }, async () => {
-      const css = fs.readFileSync(cssMinifiedFile, 'utf8');
-      // Return as a JS module that exports the CSS string
-      return {
-        contents: `export const PANE_STYLES = ${JSON.stringify(css)};`,
-        loader: 'js'
-      };
-    });
-  }
-};
-
 async function buildUserscript() {
   // Ensure dist directory exists
   if (!fs.existsSync(distDir)) {
@@ -72,8 +37,8 @@ async function buildUserscript() {
   // Sync version from package.json to src/version.ts and manifest.json
   syncVersion();
 
-  // Minify CSS first
-  minifyCSS();
+  // Minify CSS and generate src/styles.ts
+  generateStyles();
 
   // Bundle with esbuild
   await esbuild.build({
@@ -85,7 +50,6 @@ async function buildUserscript() {
     target: 'ES2020',
     external: ['GM', 'GM_info'],
     minify: true,
-    plugins: [injectCSSPlugin],
     loader: {
       '.svg': 'text',
     },
