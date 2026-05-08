@@ -78,7 +78,7 @@ const DEFAULT_STATE: AppState = {
 /**
  * Internal state storage
  */
-let appState: AppState = JSON.parse(JSON.stringify(DEFAULT_STATE));
+let appState: AppState = structuredClone(DEFAULT_STATE);
 
 /**
  * State change listeners
@@ -99,7 +99,7 @@ export function getState(): AppState {
  * Update state with partial changes
  */
 export function setState(updates: Partial<AppState>): void {
-  const previousState = listeners.size > 0 ? JSON.parse(JSON.stringify(appState)) : appState;
+  const previousState = listeners.size > 0 ? structuredClone(appState) : appState;
 
   appState = {
     ...appState,
@@ -254,6 +254,6 @@ function notifyListeners(previousState: AppState): void {
  * Reset state to defaults (useful for testing or clearing)
  */
 export function resetState(): void {
-  appState = JSON.parse(JSON.stringify(DEFAULT_STATE));
-  notifyListeners(JSON.parse(JSON.stringify(DEFAULT_STATE)));
+  appState = structuredClone(DEFAULT_STATE);
+  notifyListeners(structuredClone(DEFAULT_STATE));
 }
