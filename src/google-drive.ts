@@ -312,12 +312,8 @@ export function blinkAuthStatusDisplay() {
 }
 
 // Re-export OAuth functions from google-oauth.ts
-export {
-  signInToGoogle,
-  signOutFromGoogle,
-  handleOAuthPopup,
-  handleAuthExpiration,
-} from './google-oauth';
+export { signInToGoogle, signOutFromGoogle, handleOAuthPopup } from './google-oauth';
+import { handleAuthExpiration } from './google-oauth';
 
 // Verify that the user is still signed in by making a lightweight API call
 export async function verifySignedIn(): Promise<boolean> {
@@ -334,6 +330,7 @@ export async function verifySignedIn(): Promise<boolean> {
     if (response.status === 401) {
       // Token expired - sign out
       await handleAuthExpiration({ silent: true });
+      await scheduleAutoBackup();
       return false;
     }
 
@@ -357,7 +354,10 @@ async function mergeFromAllRemotesBeforeBackup(): Promise<void> {
       const token = authState.accessToken;
       fetches.push(
         fetchLatestDriveBackup(token).catch(async (err: Error) => {
-          if (err.message === 'unauthorized') await handleAuthExpiration({ silent: true });
+          if (err.message === 'unauthorized') {
+            await handleAuthExpiration({ silent: true });
+            await scheduleAutoBackup();
+           }
           return null;
         })
       );
@@ -481,6 +481,7 @@ async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boo
 
       if (destination.type === 'google' && kind === 'auth') {
         await handleAuthExpiration({ silent: opts?.silent });
+        await scheduleAutoBackup();
       } else {
         log(`${destination.label} export failed:`, result.reason, 'error');
       }

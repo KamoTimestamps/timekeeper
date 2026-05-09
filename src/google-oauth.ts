@@ -17,7 +17,6 @@ import {
   updateGoogleUserDisplay,
   updateAuthStatusDisplay,
   updateBackupStatusDisplay,
-  scheduleAutoBackup,
 } from './google-drive';
 
 // ============================================================================
@@ -254,8 +253,6 @@ export async function signInToGoogle() {
         updateAuthStatusDisplay();
         updateBackupStatusDisplay();
 
-         // Check if backup is needed and schedule auto-backup
-        await scheduleAutoBackup();
 
         log(`Successfully authenticated as ${userInfo.name}`);
        } else {
@@ -475,7 +472,6 @@ export async function handleAuthExpiration(opts?: { silent?: boolean }): Promise
     email: null,
    });
   await saveGoogleAuthState();
-  await scheduleAutoBackup();
   updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
   updateBackupStatusDisplay();
 }
@@ -495,7 +491,6 @@ export async function signOutFromGoogle() {
     email: null,
    });
   await saveGoogleAuthState();
-  await scheduleAutoBackup();
   updateGoogleUserDisplay();
   updateAuthStatusDisplay();
   updateBackupStatusDisplay();

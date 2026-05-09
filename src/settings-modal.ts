@@ -286,9 +286,11 @@ export function toggleSettingsModal(
     async () => {
       if (GoogleDrive.googleAuthState.isSignedIn) {
         await GoogleDrive.signOutFromGoogle();
+        await GoogleDrive.scheduleAutoBackup();
        } else {
         await GoogleDrive.signInToGoogle();
        }
+        await GoogleDrive.scheduleAutoBackup();
       setIconLabel(
         signButton,
         GoogleDrive.googleAuthState.isSignedIn ? 'logout' : 'login',
