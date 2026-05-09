@@ -1,0 +1,47 @@
+**High Priority**
+
+1. **Fix IndexedDB silent failures** — `loadTimestamps()` in `timestampRepository.ts:280` resolves to `null` on ALL errors (transaction abort, DB closed, parse failure). Callers cannot distinguish "no data" from "database error." Same for `saveSetting()` (line 376) and `loadSetting()` (line 387) which swallow errors with `.catch()` and return `undefined`/`void`. Replace with typed result objects or proper errors so callers can react to DB failures.
+
+2. **Reduce `any` types** — 20+ `any` usages found. Priority targets:
+   - `(GoogleDrive as any)` casts in `timekeeper.ts:126-127,3989` (should use proper setter injection)
+   - `arguments as any` in `timekeeper.ts:4826,4835` (history.pushState/replaceState intercept)
+   - `commentInput.autocapitalize = "off" as any` in `timekeeper.ts:1427` (HTML autocompletion attribute)
+   - `(element as any).__tooltipCleanup` pattern in `tooltip.ts:288-319` (private field hack)
+   - `value: any` in `dvr-enablement.ts:26,34,41` (Object.defineProperty setters)
+   - Start with the repository and state modules, then work outward.
+
+3. **Replace remaining `prompt()` calls** — 5 `prompt()` calls remain (1 in `timekeeper.ts:3375` for offset, 4 in `google-drive.ts:1311-1368` for backup interval, host, port, bearer token). Replace with custom modal dialogs for a polished UX consistent with the rest of the extension.
+
+4. **Fix `timeUpdateIntervalId` memory leak** — `setInterval` at `timekeeper.ts:3284` runs every 1s for the lifetime of the pane. On URL change the pane is re-created but `timeUpdateIntervalId` is never cleared from the previous pane's scope. The interval fires on garbage-collected closures, logging stale state and accessing detached DOM. Ensure `unloadTimekeeper()` or the URL-change path clears it.
+
+5. **Sanitize import fallback** — `processImportedData()` at `timekeeper.ts:2855` parses plain-text timestamps via regex and calls `addTimestamp()` with the extracted comment string. No Zod validation is applied to the parsed data. Add `TimestampRecordSchema.safeParse()` before inserting to prevent malformed records from corrupting the DB.
+
+**Medium Priority**
+
+6. **Type untyped functions** — `saveTimestampsAs()` (`timekeeper.ts:2058`) and `processImportedData()` (`timekeeper.ts:2855`) have zero type annotations on parameters. Both receive DOM events and strings respectively — type them properly.
+
+7. **Clean up dead migration code** — `timestampRepository.ts:77-89` contains `oldVersion < 2` and `oldVersion < 3` migration blocks. The DB is at version 3 and all existing users are on v3+. These blocks will never execute. Remove to reduce maintenance burden.
+
+8. **Audit timer cleanup coverage** — AUDITED. All timers have proper cleanup via clear-before-set patterns and `unloadTimekeeper()`. The one gap (Item #4) was fixed. No changes needed. Several timers in `timekeeper.ts` (seek timeouts, comment save timeouts, visibility animation timeouts) are created per-interaction but not always cleared on pane unload. Audit every timer and ensure cleanup in `unloadTimekeeper()` and on URL change.
+
+9. **Replace `structuredClone` with a shared deep clone utility** — DONE. Added `deepClone()` to `util.ts` with structuredClone + JSON fallback. All 4 usages in state.ts replaced.
+
+10. **Add user-facing fallbacks for IndexedDB failures** — DONE. Item #1 fix enables proper error rejection. Lines 2398-2408 show "Failed to load timestamps from IndexedDB. Try refreshing the page." The "No timestamps" placeholder only shows for genuinely empty videos.
+
+11. **Extract settings modal logic** — [x] Extracted ~570 lines from `timekeeper.ts` into new `src/settings-modal.ts`. Uses a config object pattern to pass button onclick handlers, decoupling the modal from timekeeper's button variables.
+
+12. **Add `as const` to state defaults** — `DEFAULT_STATE` in `state.ts:47` is a mutable plain object. Add `as const` or freeze it so `setState()` cannot accidentally mutate the prototype.
+
+**Lower Priority**
+
+13. **Standardize `catch (_) { }` patterns** — 15+ empty catch blocks (`catch (_) { }` or `catch (err) { }` with only a comment) silently swallow errors. Review each: is silence intentional? If not, add logging or user-facing feedback. Notable locations: `timekeeper.ts:511,1615,1618,2187,2279,2285,2630,2648,3078,3136,3153,3158`; `timestampRepository.ts:121`.
+
+14. **Improve `loadTimestamps` error signal** — Instead of resolving `null` on any failure, return a result wrapper like `{ data: TimestampRecord[] | null, error: string | null }` so the caller can decide whether to show an error message, retry, or proceed silently.
+
+15. **Add `as const` to icon registry** — `ICON_SVGS` in `icons.ts:74` is a mutable Record. Mark as `as const` since icon SVG strings are static.
+
+16. **Document public APIs** — Functions exported from `timestamp-model.ts`, `timestamp-view.ts`, and `google-drive-upload.ts` lack JSDoc. Add parameter and return type documentation.
+
+17. **Review `google-drive.ts` size** — 1,376 lines. OAuth popup logic (`monitorOAuthPopup`, `signInToGoogle`, `handleOAuthPopup`) could be split into its own file. The backup scheduling logic (`runAutoBackupOnce`, `scheduleAutoBackup`, `toggleAutoBackup`) is also large enough to warrant extraction.
+
+18. **Consider a proper event bus** — The codebase uses a mix of AppState listeners, callback injection, and direct module imports for cross-module communication. A typed event bus would reduce coupling between google-drive.ts and timekeeper.ts.
