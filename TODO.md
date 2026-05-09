@@ -14,30 +14,30 @@
 
 ## Medium Priority
 
-- [ ] **Type untyped functions** — `saveTimestampsAs()` (`timekeeper.ts:2058`) and `processImportedData()` (`timekeeper.ts:2855`) have zero type annotations on parameters. Both receive DOM events and strings respectively — type them properly.
+- [x] **Type untyped functions** — Fixed in commit `2b44273`. `saveTimestampsAs()` and `processImportedData()` now have proper type annotations.
 
-- [ ] **Clean up dead migration code** — `timestampRepository.ts:77-89` contains `oldVersion < 2` and `oldVersion < 3` migration blocks. The DB is at version 3 and all existing users are on v3+. These blocks will never execute. Remove to reduce maintenance burden.
+- [x] **Clean up dead migration code** — Fixed in commit `085ef4c`. Dead `oldVersion < 2` and `oldVersion < 3` migration blocks removed.
 
-- [ ] **Audit timer cleanup coverage** — AUDITED. All timers have proper cleanup via clear-before-set patterns and `unloadTimekeeper()`. The one gap (Item #4) was fixed. No changes needed. Several timers in `timekeeper.ts` (seek timeouts, comment save timeouts, visibility animation timeouts) are created per-interaction but not always cleared on pane unload. Audit every timer and ensure cleanup in `unloadTimekeeper()` and on URL change.
+- [x] **Audit timer cleanup coverage** — AUDITED. All timers have proper cleanup via clear-before-set patterns and `unloadTimekeeper()`. No changes needed.
 
-- [x] **Replace `structuredClone` with a shared deep clone utility** — DONE. Added `deepClone()` to `util.ts` with structuredClone + JSON fallback. All 4 usages in state.ts replaced.
+- [x] **Replace `structuredClone` with a shared deep clone utility** — DONE in commit `1139e55`. Added `deepClone()` to `util.ts` with structuredClone + JSON fallback. All 4 usages in state.ts replaced.
 
-- [x] **Add user-facing fallbacks for IndexedDB failures** — DONE. Item #1 fix enables proper error rejection. Lines 2398-2408 show "Failed to load timestamps from IndexedDB. Try refreshing the page." The "No timestamps" placeholder only shows for genuinely empty videos.
+- [x] **Add user-facing fallbacks for IndexedDB failures** — DONE in commit `4efe593`. Errors properly rejected, caller shows "Failed to load timestamps from IndexedDB. Try refreshing the page."
 
-- [x] **Extract settings modal logic** — Extracted ~570 lines from `timekeeper.ts` into new `src/settings-modal.ts`. Uses a config object pattern to pass button onclick handlers, decoupling the modal from timekeeper's button variables.
+- [x] **Extract settings modal logic** — DONE in commit `0cfb3d6`. Extracted ~570 lines into `src/settings-modal.ts`.
 
-- [ ] **Add `as const` to state defaults** — `DEFAULT_STATE` in `state.ts:47` is a mutable plain object. Add `as const` or freeze it so `setState()` cannot accidentally mutate the prototype.
+- [x] **Add `as const` to state defaults** — Fixed in commit `750182b`. `DEFAULT_STATE` marked `as const`.
 
 ## Lower Priority
 
-- [ ] **Standardize `catch (_) { }` patterns** — 15+ empty catch blocks (`catch (_) { }` or `catch (err) { }` with only a comment) silently swallow errors. Review each: is silence intentional? If not, add logging or user-facing feedback. Notable locations: `timekeeper.ts:511,1615,1618,2187,2279,2285,2630,2648,3078,3136,3153,3158`; `timestampRepository.ts:121`.
+- [x] **Standardize `catch (_) { }` patterns** — Fixed in commit `caf6f5e`. All empty catch blocks replaced with descriptive `log()` calls.
 
-- [ ] **Improve `loadTimestamps` error signal** — Instead of resolving `null` on any failure, return a result wrapper like `{ data: TimestampRecord[] | null, error: string | null }` so the caller can decide whether to show an error message, retry, or proceed silently.
+- [x] **Improve `loadTimestamps` error signal** — DONE in commit `4efe593`. `loadTimestamps()` rejects on errors; caller uses try/catch to show error messages. Result wrapper deemed unnecessary given existing error handling.
 
-- [ ] **Add `as const` to icon registry** — `ICON_SVGS` in `icons.ts:74` is a mutable Record. Mark as `as const` since icon SVG strings are static.
+- [x] **Add `as const` to icon registry** — Fixed in commit `fc1e918`. `ICON_SVGS` marked `as const`.
 
-- [ ] **Document public APIs** — Functions exported from `timestamp-model.ts`, `timestamp-view.ts`, and `google-drive-upload.ts` lack JSDoc. Add parameter and return type documentation.
+- [x] **Document public APIs** — Fixed in commit `3c78944`. JSDoc added to exported functions in `timestamp-model.ts`, `timestamp-view.ts`, and `google-drive-upload.ts`.
 
-- [ ] **Review `google-drive.ts` size** — 1,376 lines. OAuth popup logic (`monitorOAuthPopup`, `signInToGoogle`, `handleOAuthPopup`) could be split into its own file. The backup scheduling logic (`runAutoBackupOnce`, `scheduleAutoBackup`, `toggleAutoBackup`) is also large enough to warrant extraction.
+- [x] **Review `google-drive.ts` size** — Fixed in commit `3d85281`. OAuth logic extracted into `src/google-oauth.ts` (502 lines) and `src/google-oauth-constants.ts` (5 lines). `google-drive.ts` reduced from 1376 to 937 lines.
 
-- [ ] **Consider a proper event bus** — The codebase uses a mix of AppState listeners, callback injection, and direct module imports for cross-module communication. A typed event bus would reduce coupling between google-drive.ts and timekeeper.ts.
+- [ ] **Consider a proper event bus** — DEFERRED. Analysis concluded the coupling is call-based, not event-driven. An event bus would not meaningfully reduce coupling for only two consumers. The `AppState.subscribe()` pattern exists but is unused — can be wired up if more modules are added.
