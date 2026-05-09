@@ -5,6 +5,7 @@
 
 import { setMouseOverTimestamps } from './timestamp-view';
 import { hideActiveTooltip } from './tooltip';
+import { log } from './util';
 
 export interface PaneInteractionDeps {
   clampAndSavePanePosition: (save?: boolean) => void;
@@ -354,8 +355,8 @@ export function setupPaneInteractions(
     if (!isResizing && !isDragging) document.body.style.cursor = "";
     setIsMouseOverTimestamps(false);
     setMouseOverTimestamps(false);
-    try { hideActiveTooltip(); } catch (_) { }
-    try { autoHighlightNearest(false); } catch (_) { }
+    try { hideActiveTooltip(); } catch (err) { log('Failed to hide tooltip on pane mouseleave', err, 'debug'); }
+    try { autoHighlightNearest(false); } catch (err) { log('Failed to auto-highlight nearest on pane mouseleave', err, 'debug'); }
   });
 
   // ── Layout recalculation ─────────────────────────────────────────────────

@@ -45,7 +45,7 @@ function monitorOAuthPopup(popup: Window | null, timeoutMs = 5 * 60 * 1000): Pro
 
     const cleanup = () => {
       if (channel) {
-        try { channel.close(); } catch (_) {}
+        try { channel.close(); } catch (err) { log("OAuth cleanup: " + (err instanceof Error ? err.message : String(err)), null, "debug"); }
         channel = null;
        }
       if (storagePollIntervalId) {
@@ -81,12 +81,12 @@ function monitorOAuthPopup(popup: Window | null, timeoutMs = 5 * 60 * 1000): Pro
         if (parsed.data.type === 'timekeeper_oauth_token' && parsed.data.token) {
           if (log) log('OAuth monitor: token received via BroadcastChannel');
           cleanup();
-          try { popup.close(); } catch (_) {}
+          try { popup.close(); } catch (err) { log("OAuth cleanup: " + (err instanceof Error ? err.message : String(err)), null, "debug"); }
           resolve(parsed.data.token);
          } else if (parsed.data.type === 'timekeeper_oauth_error') {
           if (log) log('OAuth monitor: error received via BroadcastChannel', parsed.data.error, 'error');
           cleanup();
-          try { popup.close(); } catch (_) {}
+          try { popup.close(); } catch (err) { log("OAuth cleanup: " + (err instanceof Error ? err.message : String(err)), null, "debug"); }
           reject(new Error(parsed.data.error || 'OAuth failed'));
          }
        };
@@ -129,7 +129,7 @@ function monitorOAuthPopup(popup: Window | null, timeoutMs = 5 * 60 * 1000): Pro
                 if (parsed.data.type === 'timekeeper_oauth_token' && parsed.data.token) {
                   if (log) log('OAuth monitor: token received via IndexedDB');
                   cleanup();
-                  try { popup.close(); } catch (_) {}
+                  try { popup.close(); } catch (err) { log("OAuth cleanup: " + (err instanceof Error ? err.message : String(err)), null, "debug"); }
                    // Delete the message
                   const delTx = db.transaction('settings', 'readwrite');
                   delTx.objectStore('settings').delete('oauth_message');
@@ -137,7 +137,7 @@ function monitorOAuthPopup(popup: Window | null, timeoutMs = 5 * 60 * 1000): Pro
                  } else if (parsed.data.type === 'timekeeper_oauth_error') {
                   if (log) log('OAuth monitor: error received via IndexedDB', parsed.data.error, 'error');
                   cleanup();
-                  try { popup.close(); } catch (_) {}
+                  try { popup.close(); } catch (err) { log("OAuth cleanup: " + (err instanceof Error ? err.message : String(err)), null, "debug"); }
                    // Delete the message
                   const delTx = db.transaction('settings', 'readwrite');
                   delTx.objectStore('settings').delete('oauth_message');
@@ -164,7 +164,7 @@ function monitorOAuthPopup(popup: Window | null, timeoutMs = 5 * 60 * 1000): Pro
       if (elapsed > timeoutMs) {
         if (log) log('OAuth monitor: popup timed out after 5 minutes', null, 'error');
         cleanup();
-        try { popup.close(); } catch (_) {}
+        try { popup.close(); } catch (err) { log("OAuth cleanup: " + (err instanceof Error ? err.message : String(err)), null, "debug"); }
         reject(new Error('OAuth popup timed out'));
         return;
        }
@@ -319,7 +319,7 @@ async function silentSignInToGoogle(): Promise<boolean> {
     return true;
    } catch (err) {
     log('Silent OAuth: silent refresh failed', err, 'warn');
-    try { popup.close(); } catch (_) {}
+    try { popup.close(); } catch (err) { log("OAuth cleanup: " + (err instanceof Error ? err.message : String(err)), null, "debug"); }
     return false;
    }
 }
@@ -399,7 +399,7 @@ export async function handleOAuthPopup() {
 
      // Close popup after a brief delay
     setTimeout(() => {
-      try { window.close(); } catch (_) {}
+      try { window.close(); } catch (err) { log("OAuth cleanup: " + (err instanceof Error ? err.message : String(err)), null, "debug"); }
      }, 500);
     return true;
    }
@@ -445,7 +445,7 @@ export async function handleOAuthPopup() {
 
      // Close popup after a brief delay
     setTimeout(() => {
-      try { window.close(); } catch (_) {}
+      try { window.close(); } catch (err) { log("OAuth cleanup: " + (err instanceof Error ? err.message : String(err)), null, "debug"); }
      }, 500);
     return true;
    }

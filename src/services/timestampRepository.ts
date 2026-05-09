@@ -119,7 +119,7 @@ function withV2Transaction(mode: IDBTransactionMode, op: (store: IDBObjectStore)
       op(tx.objectStore(STORE_NAME_V2));
     } catch (err) {
       reject(new Error(`Operation threw synchronously: ${err}`));
-      try { tx.abort(); } catch (_) { /* already completing */ }
+      try { tx.abort(); } catch (err) { log("Failed to abort transaction during error:", err, "debug"); }
     }
   }));
 }

@@ -134,7 +134,7 @@ function ensureAuthSpinnerStyles() {
 `;
     document.head.appendChild(style);
     authSpinnerStylesInjected = true;
-  } catch {}
+  } catch (err) { log('Failed to inject auth spinner styles', err, 'debug'); }
 }
 
 // Callbacks (set from main script)

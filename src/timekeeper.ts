@@ -1625,14 +1625,14 @@ initializeDvrEnablement();
       const cleanupDeleteListeners = () => {
         try {
           li.removeEventListener("click", cancelDeleteOnClick!, true);
-        } catch (_) { }
+        } catch (err) { log("Failed to remove delete click listener from li:", err, "debug"); }
         try {
           document.removeEventListener("click", cancelDeleteOnClick!, true);
-        } catch (_) { }
+        } catch (err) { log("Failed to remove delete click listener from document:", err, "debug"); }
         if (list) {
           try {
             list.removeEventListener("mouseleave", cancelDeleteOnMouseLeave!);
-          } catch (_) { }
+          } catch (err) { log("Failed to remove delete mouseleave listener from list:", err, "debug"); }
         }
         if (cancelTimeoutId) {
           clearTimeout(cancelTimeoutId);
@@ -2197,13 +2197,13 @@ initializeDvrEnablement();
     if (paneObserver) {
       try {
         paneObserver.disconnect();
-      } catch (_) { }
+      } catch (err) { log("Failed to disconnect paneObserver during partial cleanup:", err, "debug"); }
       paneObserver = null;
     }
     if (paneResizeObserver) {
       try {
         paneResizeObserver.disconnect();
-      } catch (_) { }
+      } catch (err) { log("Failed to disconnect paneResizeObserver during partial cleanup:", err, "debug"); }
       paneResizeObserver = null;
     }
 
@@ -2272,7 +2272,7 @@ initializeDvrEnablement();
     try {
       channel.close();
     } catch (err) {
-      // Channel may already be closed
+      log("Failed to close BroadcastChannel:", err, "debug");
     }
 
     settingsCogButtonElement = null;
@@ -2282,13 +2282,13 @@ initializeDvrEnablement();
     if (paneObserver) {
       try {
         paneObserver.disconnect();
-      } catch (_) { }
+      } catch (err) { log("Failed to disconnect paneObserver during full teardown:", err, "debug"); }
       paneObserver = null;
     }
     if (paneResizeObserver) {
       try {
         paneResizeObserver.disconnect();
-      } catch (_) { }
+      } catch (err) { log("Failed to disconnect paneResizeObserver during full teardown:", err, "debug"); }
       paneResizeObserver = null;
     }
     if (pane && pane.parentNode) {
@@ -3082,7 +3082,7 @@ initializeDvrEnablement();
         // Hide any visible tooltips when leaving the list
         try {
           hideActiveTooltip();
-        } catch (_) { }
+        } catch (err) { log("Failed to hide tooltip on list mouseleave:", err, "debug"); }
         if (suppressSortUntilRefocus) {
           return;
         }
@@ -3140,7 +3140,7 @@ initializeDvrEnablement();
       const stopPropagation = (e: Event) => {
         try {
           e.stopPropagation();
-        } catch (_) { }
+        } catch (err) { log("Failed to stop event propagation:", err, "debug"); }
       };
       // Don't block 'mouseup'/'pointerup'/'touchend' so document-level handlers (drag end) still run.
       [
@@ -3157,12 +3157,12 @@ initializeDvrEnablement();
       pane.addEventListener("keydown", (e) => {
         try {
           e.stopPropagation();
-        } catch (_) { }
+        } catch (err) { log("Failed to stop keydown propagation:", err, "debug"); }
       });
       pane.addEventListener("keyup", (e) => {
         try {
           e.stopPropagation();
-        } catch (_) { }
+        } catch (err) { log("Failed to stop keyup propagation:", err, "debug"); }
       });
       // focus/blur don't bubble reliably - keep capture to prevent page from reacting
       pane.addEventListener(
@@ -3170,7 +3170,7 @@ initializeDvrEnablement();
         (e) => {
           try {
             e.stopPropagation();
-          } catch (_) { }
+          } catch (err) { log("Failed to stop focus propagation:", err, "debug"); }
         },
         true,
       );
@@ -3179,7 +3179,7 @@ initializeDvrEnablement();
         (e) => {
           try {
             e.stopPropagation();
-          } catch (_) { }
+          } catch (err) { log("Failed to stop blur propagation:", err, "debug"); }
         },
         true,
       );
@@ -3276,7 +3276,7 @@ initializeDvrEnablement();
 
         updateTimeDisplay(currentSeconds, playerInstance);
         updateTimeDisplayInteractivity();
-        try { updatePlaybackSpeedUI(); } catch (_) { }
+        try { updatePlaybackSpeedUI(); } catch (err) { log("Failed to update playback speed UI:", err, "debug"); }
 
         // Only auto-highlight when the pointer is not over the UI; defer scrolling to mouse leave
         const timestamps = list ? getTimestampItems() : [];
@@ -4047,7 +4047,7 @@ initializeDvrEnablement();
       scrollbarThumb = paneInteraction.scrollbarThumb;
       recalculateTimestampsAreaFn = paneInteraction.recalculateTimestampsArea;
       if (paneResizeObserver) {
-        try { paneResizeObserver.disconnect(); } catch (_) {}
+        try { paneResizeObserver.disconnect(); } catch (err) { log("Failed to disconnect paneResizeObserver before reuse:", err, "debug"); }
         paneResizeObserver = null;
       }
       paneResizeObserver = paneInteraction.paneResizeObserver;
@@ -4176,7 +4176,7 @@ initializeDvrEnablement();
     if (paneObserver) {
       try {
         paneObserver.disconnect();
-      } catch (_) { }
+      } catch (err) { log("Failed to disconnect paneObserver during install:", err, "debug"); }
       paneObserver = null;
     }
     paneObserver = new MutationObserver(() => {

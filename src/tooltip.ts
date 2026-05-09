@@ -11,6 +11,8 @@ declare global {
       }
 }
 
+import { log } from './util';
+
 let tooltipElement: HTMLDivElement | null = null;
 let tooltipTimeout: ReturnType<typeof setTimeout> | null = null;
 const TOOLTIP_DELAY = 250; // milliseconds
@@ -121,7 +123,7 @@ function repositionActiveTooltip() {
   if (!tooltipElement.classList.contains('ytls-tooltip-visible')) return;
   try {
     positionTooltipNearElement(tooltipElement, activeTarget);
-  } catch (_) {}
+  } catch (err) { log('Failed to reposition tooltip', err, 'debug'); }
 }
 
 function scheduleHideIfNeeded(delay = 50) {
@@ -298,7 +300,7 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
     element.removeEventListener('mousemove', handleMouseMove);
     element.removeEventListener('mouseleave', handleMouseLeave);
     element.removeEventListener('click', handleClick, true);
-    try { observer.disconnect(); } catch (_) {}
+    try { observer.disconnect(); } catch (err) { log('Failed to disconnect tooltip observer', err, 'debug'); }
     const idx = allTooltipObservers.indexOf(observer);
     if (idx !== -1) allTooltipObservers.splice(idx, 1);
     delete element.__tooltipObserver;
@@ -312,7 +314,7 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
  */
 export function cleanupAllTooltips() {
   for (const obs of allTooltipObservers) {
-    try { obs.disconnect(); } catch (_) {}
+    try { obs.disconnect(); } catch (err) { log('Failed to disconnect tooltip observer during cleanup', err, 'debug'); }
   }
   allTooltipObservers.length = 0;
   hideTooltip();
