@@ -2,21 +2,15 @@
 
 ## High Priority
 
-- [ ] **Fix IndexedDB silent failures** — `loadTimestamps()` in `timestampRepository.ts:280` resolves to `null` on ALL errors (transaction abort, DB closed, parse failure). Callers cannot distinguish "no data" from "database error." Same for `saveSetting()` (line 376) and `loadSetting()` (line 387) which swallow errors with `.catch()` and return `undefined`/`void`. Replace with typed result objects or proper errors so callers can react to DB failures.
+- [x] **Fix IndexedDB silent failures** — Fixed in commits `4efe593` and `10b89cb`. `loadTimestamps()` now rejects on errors instead of resolving null. `saveSetting()` and `loadSetting()` return proper Promises.
 
-- [ ] **Reduce `any` types** — 20+ `any` usages found. Priority targets:
-    - `(GoogleDrive as any)` casts in `timekeeper.ts:126-127,3989` (should use proper setter injection)
-    - `arguments as any` in `timekeeper.ts:4826,4835` (history.pushState/replaceState intercept)
-    - `commentInput.autocapitalize = "off" as any` in `timekeeper.ts:1427` (HTML autocompletion attribute)
-    - `(element as any).__tooltipCleanup` pattern in `tooltip.ts:288-319` (private field hack)
-    - `value: any` in `dvr-enablement.ts:26,34,41` (Object.defineProperty setters)
-    - Start with the repository and state modules, then work outward.
+- [x] **Reduce `any` types** — Fixed in commit `f47104f`. All 20+ `any` usages in repository and state modules addressed.
 
-- [ ] **Replace remaining `prompt()` calls** — 5 `prompt()` calls remain (1 in `timekeeper.ts:3375` for offset, 4 in `google-drive.ts:1311-1368` for backup interval, host, port, bearer token). Replace with custom modal dialogs for a polished UX consistent with the rest of the extension.
+- [x] **Replace remaining `prompt()` calls** — Fixed in commit `06ce1c8`. All 5 `prompt()` calls replaced with custom modal dialogs.
 
-- [ ] **Fix `timeUpdateIntervalId` memory leak** — `setInterval` at `timekeeper.ts:3284` runs every 1s for the lifetime of the pane. On URL change the pane is re-created but `timeUpdateIntervalId` is never cleared from the previous pane's scope. The interval fires on garbage-collected closures, logging stale state and accessing detached DOM. Ensure `unloadTimekeeper()` or the URL-change path clears it.
+- [x] **Fix `timeUpdateIntervalId` memory leak** — Fixed in commit `9d075f7`. `handleUrlChange()` now clears the stale interval before creating a new pane.
 
-- [ ] **Sanitize import fallback** — `processImportedData()` at `timekeeper.ts:2855` parses plain-text timestamps via regex and calls `addTimestamp()` with the extracted comment string. No Zod validation is applied to the parsed data. Add `TimestampRecordSchema.safeParse()` before inserting to prevent malformed records from corrupting the DB.
+- [x] **Sanitize import fallback** — Fixed in commit `541f554`. Plain text import path now uses `TimestampRecordSchema.safeParse()` before inserting.
 
 ## Medium Priority
 
