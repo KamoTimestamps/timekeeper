@@ -317,15 +317,8 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
   }
 
   await TimestampRepository.saveTimestampsBatch(batch);
-
-  // Advance the local counter past every imported remote value so future
-  // local writes always beat anything we just merged in.
-  const localCounter = await TimestampRepository.getWriteCounter();
-  const remoteMax = batch.length > 0
-    ? Math.max(...batch.map(b => b.write_counter ?? 0))
-    : 0;
-  await TimestampRepository.setWriteCounter(Math.max(localCounter + 1, remoteMax + 1));
-
+  // saveTimestampsBatch already advances the local counter to max(local, remoteMax)+1
+  // so no additional setWriteCounter call is needed here.
   return { mergedVideos, mergedTimestamps };
 }
 
