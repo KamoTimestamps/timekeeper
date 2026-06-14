@@ -1,6 +1,6 @@
 {
   "name": "timekeeper",
-  "version": "5.0.6",
+  "version": "5.0.7",
   "private": true,
   "description": "Timekeeper browser extension",
   "scripts": {

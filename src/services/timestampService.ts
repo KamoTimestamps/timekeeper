@@ -244,25 +244,17 @@ export async function getVideoTimestamps(videoId: string): Promise<TimestampReco
  * Merge remote backup data into local DB using Lamport counter conflict resolution.
  *
  * Rules:
- *   - New GUID (no local record)              → always import (with its state)
- *   - Same GUID, higher remote counter        → remote wins (newer edit or delete)
- *   - Same GUID, equal/lower counter          → keep local
+ *   - New GUID (no local record)              → always import (with its deleted_at state)
+ *   - Same GUID, higher remote counter        → remote wins, including its deleted_at state:
+ *       - remote deleted_at set   → record is soft-deleted on this device after merge
+ *       - remote deleted_at unset → record is live (re-activates any local soft-deletion)
+ *   - Same GUID, equal/lower remote counter   → keep local as-is (local deletion preserved)
  *   - Same GUID, no counter in remote         → keep local (old backup format)
  *
- * write_counter is a monotonic global sequence: every import advances the
- * local counter past the remote max, so the device that last touched a
- * record always has the higher counter regardless of which machine it ran on.
- * device_id is intentionally NOT part of the comparison — comparing counters
- * across devices is valid and necessary for sequential single-user sync.
- *
- * Soft-deletes participate in Lamport ordering:
- *   - If the remote record is soft-deleted (deleted_at set) with a higher
- *     counter than local, the soft-deletion wins (record stays deleted).
- *   - If the local record is soft-deleted but the remote has a higher
- *     counter (remote edited/created the record after the local delete),
- *     the remote wins (record re-activated).
- *   - If the local record is soft-deleted with a higher counter than
- *     remote, the local deletion wins (record stays deleted).
+ * write_counter is a monotonic global sequence stamped on every create, edit, and
+ * soft-delete.  Because soft-deletes increment the counter, a deletion on one device
+ * will have a higher counter than the pre-deletion record on other devices, so the
+ * Lamport comparison naturally propagates deletions without extra bookkeeping.
  */
 export async function mergeBackupData(json: string): Promise<{ mergedVideos: number; mergedTimestamps: number }> {
   let parsed: unknown;
@@ -303,85 +295,43 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
     for (const ts of timestamps) {
       const existing = existingMap.get(ts.guid);
 
-      // ts.deleted_at is the export format's soft-deletion flag.
-      // It may be present for timestamps that were soft-deleted on the
-      // source device at backup time.
-      const remoteDeleted = (ts as { deleted_at?: number }).deleted_at != null;
-      const localDeleted = existing?.deleted_at != null;
-
       let shouldImport = false;
-      let shouldPreserveLocalDelete = false;
-
       if (!existing) {
         // New GUID — always import (including its deleted_at state)
         shouldImport = true;
-      } else if (localDeleted && !remoteDeleted) {
-        // Local record is soft-deleted; remote backup does NOT have deleted_at.
-        // Compare Lamport counters to decide if the local deletion stands.
-        // - Local counter > remote counter → keep soft-deleted (local deletion is newer)
-        // - Remote counter > local counter → remote wins, re-activate the record
-        // - Remote has no counter → keep soft-deleted (old backup format)
-        if (
-          existing.write_counter !== undefined &&
-          ts.write_counter !== undefined &&
-          ts.write_counter > existing.write_counter
-        ) {
-          shouldImport = true; // remote is newer, re-activate
-        } else {
-          shouldPreserveLocalDelete = true; // local deletion stands
-        }
-      } else {
-        // Normal case: both live or both soft-deleted or remote is also deleted.
-        // Apply standard Lamport counter comparison.
-        if (
-          existing.write_counter !== undefined &&
-          ts.write_counter !== undefined &&
-          ts.write_counter > existing.write_counter
-        ) {
-          shouldImport = true; // remote is newer
-        }
+      } else if (
+        existing.write_counter !== undefined &&
+        ts.write_counter !== undefined &&
+        ts.write_counter > existing.write_counter
+      ) {
+        // Remote is newer — import, carrying through its deleted_at state.
+        // If the remote soft-deleted this record, deleted_at will be set and
+        // the record will be hidden on this device after the merge.
+        // If the remote has a higher counter but no deleted_at, the record
+        // is re-activated (remote edit supersedes local deletion).
+        shouldImport = true;
       }
-      // else: keep local (remote is same age or older, or no counter in backup)
+      // else: local counter >= remote — keep local as-is (including any
+      // local soft-deletion; no action needed, DB is already correct).
 
-      if (shouldImport || shouldPreserveLocalDelete) {
-        // Determine the final state:
-        // - If remote wins and remote was deleted → preserve deleted_at
-        // - If remote wins and remote was live → clear deleted_at
-        // - If local deletion stands → keep existing deleted_at
-        const finalDeletedAt = shouldPreserveLocalDelete
-          ? existing?.deleted_at
-          : remoteDeleted
-            ? (ts as { deleted_at?: number }).deleted_at
-            : undefined;
-
+      if (shouldImport) {
         batch.push({
           guid: ts.guid,
           video_id,
           start: ts.start,
           comment: ts.comment,
           write_counter: ts.write_counter,
-          deleted_at: finalDeletedAt,
-          // device_id not included; repository stamps imported records with local device_id
+          deleted_at: ts.deleted_at,
         });
-
-        if (shouldPreserveLocalDelete) {
-          // Keep the existing row unchanged (local deletion stands)
-          existingMap.set(ts.guid, existing);
-        } else {
-          // Update the map so later entries in the same batch see the merged state.
-          // Spread existing first (preserves device_id, deleted_at from remote) then override.
-          // For new GUIDs existing is undefined; use {} so the spread is always over an object.
-          existingMap.set(ts.guid, {
-            ...(existing ?? {}),
-            guid: ts.guid,
-            video_id,
-            start: ts.start,
-            comment: ts.comment,
-            write_counter: ts.write_counter,
-            deleted_at: finalDeletedAt,
-            // device_id not included from import; repository stamps with local device_id
-          } as typeof existingRows[number]);
-        }
+        existingMap.set(ts.guid, {
+          ...(existing ?? {}),
+          guid: ts.guid,
+          video_id,
+          start: ts.start,
+          comment: ts.comment,
+          write_counter: ts.write_counter,
+          deleted_at: ts.deleted_at,
+        } as typeof existingRows[number]);
         videoMerged++;
         mergedTimestamps++;
       }

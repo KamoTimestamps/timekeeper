@@ -392,7 +392,8 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
             const unchanged = existing &&
               !existing.deleted_at &&
               existing.start === ts.start &&
-              existing.comment === ts.comment;
+              existing.comment === ts.comment &&
+              existing.deleted_at === ts.deleted_at;
 
             if (unchanged) {
               store.put({
@@ -401,16 +402,22 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
                 start: ts.start,
                 comment: ts.comment,
                 write_counter: existing.write_counter,
+                deleted_at: ts.deleted_at,
                 device_id: existing.device_id,
               });
             } else {
               counter++;
+              // Preserve deleted_at from input (file import may include soft-deletes);
+              // if the existing record is soft-deleted but input has no deleted_at
+              // (old backup), keep the soft-delete — the local deletion is recent.
+              const finalDeletedAt = ts.deleted_at ?? (existing?.deleted_at ?? undefined);
               store.put({
                 guid: ts.guid,
                 video_id: videoId,
                 start: ts.start,
                 comment: ts.comment,
                 write_counter: counter,
+                deleted_at: finalDeletedAt,
               });
             }
           });
@@ -443,6 +450,7 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
         start: ts.start,
         comment: ts.comment,
         write_counter: nextCounter,
+        deleted_at: ts.deleted_at,
       });
       saveSetting('write_counter', nextCounter);
       counterCache = nextCounter;
