@@ -71,18 +71,6 @@ export function getWriteCounter(): Promise<number> {
 }
 
 /**
- * Increment the Lamport write counter in settings.
- * Returns the new counter value.
- */
-export async function incrementWriteCounter(): Promise<number> {
-  const current = await getWriteCounter();
-  const next = current + 1;
-  await saveSetting('write_counter', next);
-  counterCache = next;
-  return next;
-}
-
-/**
  * Set the Lamport write counter to an explicit value and update the in-memory cache.
  * Use after a merge to advance the counter past all imported remote values.
  */
