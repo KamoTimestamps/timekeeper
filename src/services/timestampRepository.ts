@@ -410,10 +410,12 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
             const newGuids = new Set(timestamps.map(ts => ts.guid));
             const now = Date.now();
 
-            // Soft-delete removed timestamps
+            // Soft-delete removed timestamps (with counter so the delete is
+            // ordered correctly relative to any inserts in this same save).
             existingRecords.forEach(record => {
               if (!newGuids.has(record.guid) && !record.deleted_at) {
-                v2Store.put({ ...record, deleted_at: now });
+                counter++;
+                v2Store.put({ ...record, deleted_at: now, write_counter: counter, device_id: deviceId });
               }
             });
 
