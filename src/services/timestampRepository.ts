@@ -545,10 +545,11 @@ export function saveTimestampsBatch(
           }
         });
 
-        // Ensure the stored counter is always past every value we just wrote
-        const finalCounter = counter + 1;
-        settingsStore.put({ key: 'write_counter', value: finalCounter });
-        counterCache = finalCounter;
+        // Store the last-used counter value, matching the convention of every
+        // other writer (saveTimestamp, saveTimestamps, deleteTimestamp, …).
+        // The next write reads this value and increments before use.
+        settingsStore.put({ key: 'write_counter', value: counter });
+        counterCache = counter;
       };
     });
   });
