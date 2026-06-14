@@ -53,7 +53,7 @@ export async function buildExportPayload({ includeDeleted = false }: { includeDe
       start: ts.start,
       comment: ts.comment,
       write_counter: ts.write_counter,
-      device_id: ts.device_id,
+      // device_id is storage-only; excluded from export
     });
   }
 
@@ -278,7 +278,7 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
 
   let mergedVideos = 0;
   let mergedTimestamps = 0;
-  const batch: Array<{ guid: string; video_id: string; start: number; comment: string; write_counter?: number; device_id?: string }> = [];
+  const batch: Array<{ guid: string; video_id: string; start: number; comment: string; write_counter?: number }> = [];
 
   for (const [, videoEntry] of Object.entries(result.data)) {
     const { video_id, timestamps } = videoEntry;
@@ -307,7 +307,7 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
           start: ts.start,
           comment: ts.comment,
           write_counter: ts.write_counter,
-          device_id: ts.device_id,
+          // device_id not included; repository stamps imported records with local device_id
         });
         // Update the map so later entries in the same batch see the merged state.
         // Spread existing first (preserves deleted_at etc.) then override with

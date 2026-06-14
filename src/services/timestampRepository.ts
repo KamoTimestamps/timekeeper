@@ -462,7 +462,7 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
  * so future local writes are always ordered after anything in this batch.
  */
 export function saveTimestampsBatch(
-  records: Array<{ guid: string; video_id: string; start: number; comment: string; write_counter?: number; device_id?: string }>
+  records: Array<{ guid: string; video_id: string; start: number; comment: string; write_counter?: number }>
 ): Promise<void> {
   if (records.length === 0) return Promise.resolve();
   return getDeviceId().then(deviceId => getWriteCounter().then(baseCounter => {
