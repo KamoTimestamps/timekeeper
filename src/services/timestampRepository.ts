@@ -355,7 +355,6 @@ function executeTransaction<T>(
 
 /**
  * Save all timestamps for a video.
- * Sets Lamport write_counter and device_id on every upsert.
  */
 export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promise<void> {
   const parsed = TimestampRecordArraySchema.safeParse(data);
@@ -364,7 +363,7 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
   }
 
   const timestamps = parsed.data;
-  return getDeviceId().then(deviceId => getWriteCounter().then(baseCounter => {
+  return getWriteCounter().then(baseCounter => {
     let counter = baseCounter;
     return withV2Transaction('readwrite', store => {
       const v2Index = store.index('video_id');
@@ -381,7 +380,7 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
           existingRecords.forEach(record => {
             if (!newGuids.has(record.guid) && !record.deleted_at) {
               counter++;
-              store.put({ ...record, deleted_at: now, write_counter: counter, device_id: deviceId });
+              store.put({ ...record, deleted_at: now, write_counter: counter });
             }
           });
 
@@ -412,7 +411,6 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
                 start: ts.start,
                 comment: ts.comment,
                 write_counter: counter,
-                device_id: deviceId,
               });
             }
           });
@@ -424,11 +422,11 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
         }
       };
     });
-  }));
+  });
 }
 
 /**
- * Save a single timestamp. Sets Lamport write_counter and device_id.
+ * Save a single timestamp.
  */
 export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Promise<void> {
   const parsed = TimestampRecordSchema.safeParse(timestamp);
@@ -436,7 +434,7 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
     return Promise.reject(new Error(`Invalid timestamp: ${parsed.error.message}`));
   }
   const ts = parsed.data;
-  return getDeviceId().then(deviceId => getWriteCounter().then(baseCounter => {
+  return getWriteCounter().then(baseCounter => {
     const nextCounter = baseCounter + 1;
     return withV2Transaction('readwrite', store => {
       store.put({
@@ -445,27 +443,24 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
         start: ts.start,
         comment: ts.comment,
         write_counter: nextCounter,
-        device_id: deviceId,
       });
       saveSetting('write_counter', nextCounter);
       counterCache = nextCounter;
     });
-  }));
+  });
 }
 
 /**
  * Additive batch insert: puts all supplied records in one transaction.
  * Does not soft-delete anything — use saveTimestamps for replace semantics.
- * Records with write_counter/device_id preserve those values (used by merge).
- * Records without them get auto-assigned from the local counter.
- * Always advances the local counter to at least max(imported counters) + 1
- * so future local writes are always ordered after anything in this batch.
+ * Records with write_counter preserve it; records without get auto-assigned.
+ * Always advances the local counter to at least max(imported counters).
  */
 export function saveTimestampsBatch(
   records: Array<{ guid: string; video_id: string; start: number; comment: string; write_counter?: number }>
 ): Promise<void> {
   if (records.length === 0) return Promise.resolve();
-  return getDeviceId().then(deviceId => getWriteCounter().then(baseCounter => {
+  return getWriteCounter().then(baseCounter => {
     let counter = baseCounter;
     return withV2Transaction('readwrite', store => {
       records.forEach(record => {
@@ -477,7 +472,6 @@ export function saveTimestampsBatch(
             start: record.start,
             comment: record.comment,
             write_counter: counter,
-            device_id: deviceId,
           });
         } else {
           if (record.write_counter > counter) counter = record.write_counter;
@@ -487,14 +481,13 @@ export function saveTimestampsBatch(
             start: record.start,
             comment: record.comment,
             write_counter: record.write_counter,
-            device_id: deviceId,
           });
         }
       });
       saveSetting('write_counter', counter);
       counterCache = counter;
     });
-  }));
+  });
 }
 
 /**
@@ -502,7 +495,7 @@ export function saveTimestampsBatch(
  */
 export function deleteTimestamp(guid: string): Promise<void> {
   log(`Soft-deleting timestamp ${guid}`);
-  return getDeviceId().then(deviceId => getWriteCounter().then(baseCounter => {
+  return getWriteCounter().then(baseCounter => {
     const nextCounter = baseCounter + 1;
     return withV2Transaction('readwrite', store => {
       const getRequest = store.get(guid);
@@ -513,14 +506,13 @@ export function deleteTimestamp(guid: string): Promise<void> {
             ...record,
             deleted_at: Date.now(),
             write_counter: nextCounter,
-            device_id: deviceId,
           });
           saveSetting('write_counter', nextCounter);
           counterCache = nextCounter;
         }
       };
     });
-  }));
+  });
 }
 
 /**
@@ -579,7 +571,7 @@ export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | nul
  * Delete all timestamps for a video. Updates write_counter on each soft-delete.
  */
 export function deleteTimestampsForVideo(videoId: string): Promise<void> {
-  return getDeviceId().then(deviceId => getWriteCounter().then(baseCounter => {
+  return getWriteCounter().then(baseCounter => {
     let counter = baseCounter;
     return withV2Transaction('readwrite', store => {
       const v2Index = store.index('video_id');
@@ -596,7 +588,6 @@ export function deleteTimestampsForVideo(videoId: string): Promise<void> {
                 ...record,
                 deleted_at: now,
                 write_counter: counter,
-                device_id: deviceId,
               });
             }
           });
@@ -607,7 +598,7 @@ export function deleteTimestampsForVideo(videoId: string): Promise<void> {
         }
       };
     });
-  }));
+  });
 }
 
 /**
