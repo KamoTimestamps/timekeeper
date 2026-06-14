@@ -644,12 +644,13 @@ export function getAllTimestamps(): Promise<TimestampRow[]> {
 // === Settings Repository ===
 
 /**
- * Save a global setting
+ * Save a global setting. Returns a Promise so callers can detect failures;
+ * the promise resolves even on error (logged) so callers need not handle it.
  */
-export function saveSetting(key: string, value: unknown): void {
-  executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
+export function saveSetting(key: string, value: unknown): Promise<void> {
+  return executeTransaction(SETTINGS_STORE_NAME, 'readwrite', (store) => {
     store.put({ key, value });
-  }).catch(err => {
+  }).then(() => undefined).catch(err => {
     log(`Failed to save setting '${key}' to IndexedDB:`, err, 'error');
   });
 }
