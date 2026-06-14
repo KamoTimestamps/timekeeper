@@ -294,6 +294,30 @@ function withV2Transaction(mode: IDBTransactionMode, op: (store: IDBObjectStore)
 }
 
 /**
+ * Run an operation inside a transaction covering both STORE_NAME_V2 and SETTINGS_STORE_NAME.
+ * Passes both object stores to the callback so counter reads and record writes
+ * are atomic within the same transaction, preventing cross-tab counter collisions.
+ */
+function withV2AndSettingsTransaction(
+  mode: IDBTransactionMode,
+  op: (v2Store: IDBObjectStore, settingsStore: IDBObjectStore) => void
+): Promise<void> {
+  return getDB().then(db => new Promise<void>((resolve, reject) => {
+    let tx: IDBTransaction;
+    try {
+      tx = db.transaction([STORE_NAME_V2, SETTINGS_STORE_NAME], mode);
+    } catch (err) {
+      reject(new Error(`Failed to open transaction: ${err}`));
+      return;
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error('Transaction failed'));
+    tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted'));
+    op(tx.objectStore(STORE_NAME_V2), tx.objectStore(SETTINGS_STORE_NAME));
+  }));
+}
+
+/**
  * Execute a transaction with error handling
  */
 function executeTransaction<T>(
@@ -360,49 +384,52 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
   }
 
   const timestamps = parsed.data;
-  return getDeviceId().then(deviceId => getWriteCounter().then(baseCounter => {
-    let counter = baseCounter;
-    return withV2Transaction('readwrite', store => {
-      const v2Index = store.index('video_id');
+  return getDeviceId().then(deviceId => {
+    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore) => {
+      // Read the counter atomically inside this transaction to prevent cross-tab collisions
+      const counterReq = settingsStore.get('write_counter');
+      counterReq.onsuccess = () => {
+        const currentVal = (counterReq.result as { value?: unknown } | undefined)?.value;
+        let counter = typeof currentVal === 'number' ? currentVal : 0;
 
-      // Get existing records for this video
-      const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
+        const v2Index = v2Store.index('video_id');
+        const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
 
-      getRequest.onsuccess = () => {
-        try {
-          const existingRecords = getRequest.result as TimestampRow[];
-          const newGuids = new Set(timestamps.map(ts => ts.guid));
-          const now = Date.now();
+        getRequest.onsuccess = () => {
+          try {
+            const existingRecords = getRequest.result as TimestampRow[];
+            const newGuids = new Set(timestamps.map(ts => ts.guid));
+            const now = Date.now();
 
-          // Soft-delete removed timestamps
-          existingRecords.forEach(record => {
-            if (!newGuids.has(record.guid) && !record.deleted_at) {
-              store.put({ ...record, deleted_at: now });
-            }
-          });
-
-          // Add/update timestamps with Lamport tracking
-          timestamps.forEach(ts => {
-            counter++;
-            store.put({
-              guid: ts.guid,
-              video_id: videoId,
-              start: ts.start,
-              comment: ts.comment,
-              write_counter: counter,
-              device_id: deviceId,
+            // Soft-delete removed timestamps
+            existingRecords.forEach(record => {
+              if (!newGuids.has(record.guid) && !record.deleted_at) {
+                v2Store.put({ ...record, deleted_at: now });
+              }
             });
-          });
 
-          // Persist final counter
-          saveSetting('write_counter', counter);
-          counterCache = counter;
-        } catch (err) {
-          log('Error during save operation:', err, 'error');
-        }
+            // Add/update timestamps with Lamport tracking
+            timestamps.forEach(ts => {
+              counter++;
+              v2Store.put({
+                guid: ts.guid,
+                video_id: videoId,
+                start: ts.start,
+                comment: ts.comment,
+                write_counter: counter,
+                device_id: deviceId,
+              });
+            });
+
+            settingsStore.put({ key: 'write_counter', value: counter });
+            counterCache = counter;
+          } catch (err) {
+            log('Error during save operation:', err, 'error');
+          }
+        };
       };
     });
-  }));
+  });
 }
 
 /**
@@ -414,21 +441,25 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
     return Promise.reject(new Error(`Invalid timestamp: ${parsed.error.message}`));
   }
   const ts = parsed.data;
-  return getDeviceId().then(deviceId => getWriteCounter().then(baseCounter => {
-    const nextCounter = baseCounter + 1;
-    return withV2Transaction('readwrite', store => {
-      store.put({
-        guid: ts.guid,
-        video_id: videoId,
-        start: ts.start,
-        comment: ts.comment,
-        write_counter: nextCounter,
-        device_id: deviceId,
-      });
-      saveSetting('write_counter', nextCounter);
-      counterCache = nextCounter;
+  return getDeviceId().then(deviceId => {
+    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore) => {
+      const counterReq = settingsStore.get('write_counter');
+      counterReq.onsuccess = () => {
+        const currentVal = (counterReq.result as { value?: unknown } | undefined)?.value;
+        const nextCounter = (typeof currentVal === 'number' ? currentVal : 0) + 1;
+        v2Store.put({
+          guid: ts.guid,
+          video_id: videoId,
+          start: ts.start,
+          comment: ts.comment,
+          write_counter: nextCounter,
+          device_id: deviceId,
+        });
+        settingsStore.put({ key: 'write_counter', value: nextCounter });
+        counterCache = nextCounter;
+      };
     });
-  }));
+  });
 }
 
 /**
@@ -489,25 +520,29 @@ export function saveTimestampsBatch(
  */
 export function deleteTimestamp(guid: string): Promise<void> {
   log(`Soft-deleting timestamp ${guid}`);
-  return getDeviceId().then(deviceId => getWriteCounter().then(baseCounter => {
-    const nextCounter = baseCounter + 1;
-    return withV2Transaction('readwrite', store => {
-      const getRequest = store.get(guid);
-      getRequest.onsuccess = () => {
-        const record = getRequest.result as TimestampRow | undefined;
-        if (record) {
-          store.put({
-            ...record,
-            deleted_at: Date.now(),
-            write_counter: nextCounter,
-            device_id: deviceId,
-          });
-          saveSetting('write_counter', nextCounter);
-          counterCache = nextCounter;
-        }
+  return getDeviceId().then(deviceId => {
+    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore) => {
+      const counterReq = settingsStore.get('write_counter');
+      counterReq.onsuccess = () => {
+        const currentVal = (counterReq.result as { value?: unknown } | undefined)?.value;
+        const nextCounter = (typeof currentVal === 'number' ? currentVal : 0) + 1;
+        const getRequest = v2Store.get(guid);
+        getRequest.onsuccess = () => {
+          const record = getRequest.result as TimestampRow | undefined;
+          if (record) {
+            v2Store.put({
+              ...record,
+              deleted_at: Date.now(),
+              write_counter: nextCounter,
+              device_id: deviceId,
+            });
+            settingsStore.put({ key: 'write_counter', value: nextCounter });
+            counterCache = nextCounter;
+          }
+        };
       };
     });
-  }));
+  });
 }
 
 /**
@@ -566,35 +601,40 @@ export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | nul
  * Delete all timestamps for a video. Updates write_counter on each soft-delete.
  */
 export function deleteTimestampsForVideo(videoId: string): Promise<void> {
-  return getDeviceId().then(deviceId => getWriteCounter().then(baseCounter => {
-    let counter = baseCounter;
-    return withV2Transaction('readwrite', store => {
-      const v2Index = store.index('video_id');
-      const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
+  return getDeviceId().then(deviceId => {
+    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore) => {
+      const counterReq = settingsStore.get('write_counter');
+      counterReq.onsuccess = () => {
+        const currentVal = (counterReq.result as { value?: unknown } | undefined)?.value;
+        let counter = typeof currentVal === 'number' ? currentVal : 0;
 
-      getRequest.onsuccess = () => {
-        try {
-          const records = getRequest.result as TimestampRow[];
-          const now = Date.now();
-          records.forEach(record => {
-            if (!record.deleted_at) {
-              counter++;
-              store.put({
-                ...record,
-                deleted_at: now,
-                write_counter: counter,
-                device_id: deviceId,
-              });
-            }
-          });
-          saveSetting('write_counter', counter);
-          counterCache = counter;
-        } catch (err) {
-          log('Error during remove operation:', err, 'error');
-        }
+        const v2Index = v2Store.index('video_id');
+        const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
+
+        getRequest.onsuccess = () => {
+          try {
+            const records = getRequest.result as TimestampRow[];
+            const now = Date.now();
+            records.forEach(record => {
+              if (!record.deleted_at) {
+                counter++;
+                v2Store.put({
+                  ...record,
+                  deleted_at: now,
+                  write_counter: counter,
+                  device_id: deviceId,
+                });
+              }
+            });
+            settingsStore.put({ key: 'write_counter', value: counter });
+            counterCache = counter;
+          } catch (err) {
+            log('Error during remove operation:', err, 'error');
+          }
+        };
       };
     });
-  }));
+  });
 }
 
 /**
