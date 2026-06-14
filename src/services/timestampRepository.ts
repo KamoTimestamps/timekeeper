@@ -457,32 +457,28 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
  * Always advances the local counter to at least max(imported counters).
  */
 export function saveTimestampsBatch(
-  records: Array<{ guid: string; video_id: string; start: number; comment: string; write_counter?: number }>
+  records: Array<{ guid: string; video_id: string; start: number; comment: string; write_counter?: number; deleted_at?: number }>
 ): Promise<void> {
   if (records.length === 0) return Promise.resolve();
   return getWriteCounter().then(baseCounter => {
     let counter = baseCounter;
     return withV2Transaction('readwrite', store => {
       records.forEach(record => {
+        const row: TimestampRow = {
+          guid: record.guid,
+          video_id: record.video_id,
+          start: record.start,
+          comment: record.comment,
+          deleted_at: record.deleted_at,
+        };
         if (record.write_counter === undefined) {
           counter++;
-          store.put({
-            guid: record.guid,
-            video_id: record.video_id,
-            start: record.start,
-            comment: record.comment,
-            write_counter: counter,
-          });
+          row.write_counter = counter;
         } else {
           if (record.write_counter > counter) counter = record.write_counter;
-          store.put({
-            guid: record.guid,
-            video_id: record.video_id,
-            start: record.start,
-            comment: record.comment,
-            write_counter: record.write_counter,
-          });
+          row.write_counter = record.write_counter;
         }
+        store.put(row);
       });
       saveSetting('write_counter', counter);
       counterCache = counter;

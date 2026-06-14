@@ -10,9 +10,11 @@ export const TimestampRecordSchema = z.object({
   start: z.number().finite().nonnegative(),
   comment: z.string(),
   write_counter: z.number().int().positive().optional(),
+  deleted_at: z.number().optional().catch(undefined), // soft-deletion state for backup/restore sync
   // device_id is storage-only (TimestampRowSchema) and is intentionally excluded
-  // from the export format.  write_counter cannot be excluded: the merge comparison
-  // needs it in the backup to determine which version of a record is newer.
+  // from the export format.  write_counter and deleted_at cannot be excluded:
+  // the merge comparison needs both to determine which version is newer and
+  // whether the remote side considers the record deleted.
 });
 
 export const TimestampRecordArraySchema = TimestampRecordSchema.array();
@@ -20,7 +22,6 @@ export type TimestampRecord = z.infer<typeof TimestampRecordSchema>;
 
 export const TimestampRowSchema = TimestampRecordSchema.extend({
   video_id: z.string(),
-  deleted_at: z.number().optional(),
   device_id: z.string().optional(), // storage-only, not exported
 });
 export type TimestampRow = z.infer<typeof TimestampRowSchema>;

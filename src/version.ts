@@ -1,1 +1,1 @@
-export const TIMEKEEPER_VERSION = '5.0.4';
+export const TIMEKEEPER_VERSION = '5.0.5';
