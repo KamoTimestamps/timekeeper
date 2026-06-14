@@ -7,7 +7,7 @@
 import {
   TimestampRecord,
   TimestampRowSchema,
-  LegacyExportDataSchema,
+  ExportDataSchema,
 } from '../schema';
 import { log, getTimestampSuffix, buildYouTubeUrlWithTimestamp } from '../util';
 import * as TimestampRepository from './timestampRepository';
@@ -263,7 +263,7 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
     return { mergedVideos: 0, mergedTimestamps: 0 };
   }
 
-  const result = LegacyExportDataSchema.safeParse(parsed);
+  const result = ExportDataSchema.safeParse(parsed);
   if (!result.success) {
     log('mergeBackupData: data failed validation', result.error.format(), 'warn');
     return { mergedVideos: 0, mergedTimestamps: 0 };

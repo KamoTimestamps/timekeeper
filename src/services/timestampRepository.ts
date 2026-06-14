@@ -10,8 +10,8 @@ import {
   TimestampRecordArraySchema,
   TimestampRecordSchema,
   TimestampRowSchema,
-  LegacyVideoEntrySchema,
-  LegacyExportDataSchema,
+  VideoEntrySchema,
+  ExportDataSchema,
 } from '../schema';
 import { log, getTimestampSuffix } from '../util';
 
@@ -181,7 +181,7 @@ function openIndexedDB(): Promise<IDBDatabase> {
           const exportRequest = v1Store.getAll();
 
           exportRequest.onsuccess = () => {
-            const parsedRecords = LegacyVideoEntrySchema.array().safeParse(exportRequest.result);
+            const parsedRecords = VideoEntrySchema.array().safeParse(exportRequest.result);
 
             if (parsedRecords.success && parsedRecords.data.length > 0) {
               try {
@@ -229,7 +229,7 @@ function openIndexedDB(): Promise<IDBDatabase> {
           const getAllRequest = v1Store.getAll();
 
           getAllRequest.onsuccess = () => {
-            const parsedRecords = LegacyVideoEntrySchema.array().safeParse(getAllRequest.result);
+            const parsedRecords = VideoEntrySchema.array().safeParse(getAllRequest.result);
 
             if (parsedRecords.success && parsedRecords.data.length > 0) {
               let totalMigrated = 0;

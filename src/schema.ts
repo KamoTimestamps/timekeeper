@@ -33,12 +33,11 @@ export const PanePositionSchema = z.object({
 });
 export type PanePosition = z.infer<typeof PanePositionSchema>;
 
-export const LegacyVideoEntrySchema = z.object({
+export const VideoEntrySchema = z.object({
   video_id: z.string(),
   timestamps: TimestampRecordArraySchema,
 });
-export const LegacyExportDataSchema = z.record(LegacyVideoEntrySchema);
-export type LegacyVideoEntry = z.infer<typeof LegacyVideoEntrySchema>;
+export const ExportDataSchema = z.record(VideoEntrySchema);
 
 const GoogleAuthStateObjectSchema = z.object({
   isSignedIn: z.boolean().catch(false),
