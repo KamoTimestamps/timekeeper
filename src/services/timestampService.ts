@@ -298,7 +298,7 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
         // Remote is newer — import
         shouldImport = true;
       }
-      // else: keep local (same device but remote is older, or different device, or no counter)
+      // else: keep local (remote is same age or older, or no counter in backup)
 
       if (shouldImport) {
         batch.push({
