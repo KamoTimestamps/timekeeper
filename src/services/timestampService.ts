@@ -307,8 +307,19 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
           write_counter: ts.write_counter,
           device_id: ts.device_id,
         });
-        // Update the map so later entries in the same batch see the merged state
-        existingMap.set(ts.guid, { ...existing, video_id, start: ts.start, comment: ts.comment, write_counter: ts.write_counter, device_id: ts.device_id });
+        // Update the map so later entries in the same batch see the merged state.
+        // Spread existing first (preserves deleted_at etc.) then override with
+        // the imported values.  For new GUIDs existing is undefined; use {} so
+        // the spread is always over an object and the guid key is never dropped.
+        existingMap.set(ts.guid, {
+          ...(existing ?? {}),
+          guid: ts.guid,
+          video_id,
+          start: ts.start,
+          comment: ts.comment,
+          write_counter: ts.write_counter,
+          device_id: ts.device_id,
+        } as typeof existingRows[number]);
         videoMerged++;
         mergedTimestamps++;
       }
