@@ -243,13 +243,16 @@ export async function getVideoTimestamps(videoId: string): Promise<TimestampReco
  * Merge remote backup data into local DB using Lamport counter conflict resolution.
  *
  * Rules:
- *   - New GUID (no local record)           → always import
- *   - Same GUID, same device_id            → higher write_counter wins
- *   - Same GUID, different device_id       → keep local (safe default)
- *   - Same GUID, no write_counter in data  → keep local (cannot determine)
+ *   - New GUID (no local record)         → always import
+ *   - Same GUID, higher remote counter   → remote wins (newer edit)
+ *   - Same GUID, equal/lower counter     → keep local
+ *   - Same GUID, no counter in remote    → keep local (old backup format)
  *
- * After merge, bumps the local write counter so subsequent local writes
- * always beat anything imported from remote.
+ * write_counter is a monotonic global sequence: every import advances the
+ * local counter past the remote max, so the device that last touched a
+ * record always has the higher counter regardless of which machine it ran on.
+ * device_id is intentionally NOT part of the comparison — comparing counters
+ * across devices is valid and necessary for sequential single-user sync.
  */
 export async function mergeBackupData(json: string): Promise<{ mergedVideos: number; mergedTimestamps: number }> {
   let parsed: unknown;
@@ -290,10 +293,9 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
       } else if (
         existing.write_counter !== undefined &&
         ts.write_counter !== undefined &&
-        existing.device_id === ts.device_id &&
         ts.write_counter > existing.write_counter
       ) {
-        // Same device, remote is newer — import
+        // Remote is newer — import
         shouldImport = true;
       }
       // else: keep local (same device but remote is older, or different device, or no counter)
