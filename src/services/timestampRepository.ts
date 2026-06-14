@@ -393,6 +393,7 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
       getRequest.onsuccess = () => {
         try {
           const existingRecords = getRequest.result as TimestampRow[];
+          const existingByGuid = new Map(existingRecords.map(r => [r.guid, r]));
           const newGuids = new Set(timestamps.map(ts => ts.guid));
           const now = Date.now();
 
@@ -404,17 +405,36 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
             }
           });
 
-          // Add/update timestamps with Lamport tracking
+          // Upsert: only bump the counter when content actually changed or the
+          // record is new.  Unchanged records keep their existing write_counter
+          // so a view-only save (no edits) doesn't make local appear newer.
           timestamps.forEach(ts => {
-            counter++;
-            store.put({
-              guid: ts.guid,
-              video_id: videoId,
-              start: ts.start,
-              comment: ts.comment,
-              write_counter: counter,
-              device_id: deviceId,
-            });
+            const existing = existingByGuid.get(ts.guid);
+            const unchanged = existing &&
+              !existing.deleted_at &&
+              existing.start === ts.start &&
+              existing.comment === ts.comment;
+
+            if (unchanged) {
+              store.put({
+                guid: ts.guid,
+                video_id: videoId,
+                start: ts.start,
+                comment: ts.comment,
+                write_counter: existing.write_counter,
+                device_id: existing.device_id,
+              });
+            } else {
+              counter++;
+              store.put({
+                guid: ts.guid,
+                video_id: videoId,
+                start: ts.start,
+                comment: ts.comment,
+                write_counter: counter,
+                device_id: deviceId,
+              });
+            }
           });
 
           saveSetting('write_counter', counter);
