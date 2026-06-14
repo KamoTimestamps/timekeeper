@@ -138,6 +138,40 @@ function getDB(): Promise<IDBDatabase> {
 }
 
 /**
+ * Backfill write_counter and device_id on every record in STORE_NAME_V2,
+ * and write the resulting counter + a fresh device_id to SETTINGS_STORE_NAME.
+ *
+ * Both stores must belong to the same upgrade transaction so all mutations
+ * land atomically before request.onsuccess resolves.
+ *
+ * Called from two places inside onupgradeneeded:
+ *  • oldVersion === 3  → outer v4 block (cursor sees all existing records)
+ *  • oldVersion < 3   → inside v3 getAllRequest.onsuccess, AFTER v3 puts are
+ *                       queued, so the cursor sees them too
+ */
+function runV4LamportMigration(v2Store: IDBObjectStore, settingsStore: IDBObjectStore): void {
+  const deviceId = crypto.randomUUID();
+  let counter = 0;
+
+  const cursorReq = v2Store.openCursor();
+  cursorReq.onsuccess = (evt: Event) => {
+    const cursor = (evt.target as IDBRequest<IDBCursorWithValue | null>).result;
+    if (cursor) {
+      counter++;
+      cursor.update({ ...cursor.value, write_counter: counter, device_id: deviceId });
+      cursor.continue();
+    } else {
+      settingsStore.put({ key: 'write_counter', value: counter });
+      settingsStore.put({ key: 'device_id', value: deviceId });
+      log(`Lamport migration: backfilled ${counter} records, device_id=${deviceId}`);
+    }
+  };
+  cursorReq.onerror = () => {
+    log('Lamport migration: cursor error during backfill', cursorReq.error, 'error');
+  };
+}
+
+/**
  * Open IndexedDB and handle migrations
  */
 function openIndexedDB(): Promise<IDBDatabase> {
@@ -236,6 +270,17 @@ function openIndexedDB(): Promise<IDBDatabase> {
             } else if (!parsedRecords.success) {
               log('Skipping v1 → v2 migration: legacy data failed validation', parsedRecords.error.format(), 'warn');
             }
+
+            // When upgrading from v1/v2 directly to v4, the v4 cursor MUST run here,
+            // after the v3 puts above are queued, not in the outer v4 block below.
+            // If it ran in the outer block its openCursor() request would be queued
+            // before these puts, so the cursor would see an empty store.
+            if (oldVersion < 4) {
+              runV4LamportMigration(
+                transaction.objectStore(STORE_NAME_V2),
+                transaction.objectStore(SETTINGS_STORE_NAME)
+              );
+            }
           };
 
           // Delete the old store after migration
@@ -245,32 +290,13 @@ function openIndexedDB(): Promise<IDBDatabase> {
       }
 
       // Version 4: Backfill write_counter and device_id on every existing record.
-      // IMPORTANT: use the upgrade transaction (not a new one) so all writes complete
-      // before request.onsuccess fires and the app begins reading the DB.
-      if (oldVersion < 4) {
-        const v4v2Store = transaction.objectStore(STORE_NAME_V2);
-        const v4settingsStore = transaction.objectStore(SETTINGS_STORE_NAME);
-        const v4deviceId = crypto.randomUUID();
-        let v4counter = 0;
-
-        const cursorReq = v4v2Store.openCursor();
-        cursorReq.onsuccess = (evt: Event) => {
-          const cursor = (evt.target as IDBRequest<IDBCursorWithValue | null>).result;
-          if (cursor) {
-            v4counter++;
-            cursor.update({ ...cursor.value, write_counter: v4counter, device_id: v4deviceId });
-            cursor.continue();
-          } else {
-            // Cursor exhausted — transaction still open; write settings here so they
-            // land in the same atomic upgrade transaction.
-            v4settingsStore.put({ key: 'write_counter', value: v4counter });
-            v4settingsStore.put({ key: 'device_id', value: v4deviceId });
-            log(`Lamport migration: backfilled ${v4counter} records, device_id=${v4deviceId}`);
-          }
-        };
-        cursorReq.onerror = () => {
-          log('Lamport migration: cursor error during backfill', cursorReq.error, 'error');
-        };
+      // Only runs when upgrading from v3 (not v1/v2): those cases are handled inside
+      // the v3 getAllRequest.onsuccess callback above so the cursor sees the v3 puts.
+      if (oldVersion === 3) {
+        runV4LamportMigration(
+          transaction.objectStore(STORE_NAME_V2),
+          transaction.objectStore(SETTINGS_STORE_NAME)
+        );
       }
     };
     request.onsuccess = event => {
