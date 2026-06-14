@@ -6,6 +6,7 @@
 
 import {
   TimestampRecord,
+  TimestampRow,
   TimestampRecordArraySchema,
   TimestampRecordSchema,
   TimestampRowSchema,
@@ -348,18 +349,6 @@ function executeTransaction<T>(
       tx.onabort = () => reject(tx.error ?? new Error(`IndexedDB transaction aborted`));
     });
   });
-}
-
-// === Repository Interface ===
-
-interface TimestampRow {
-  guid: string;
-  video_id: string;
-  start: number;
-  comment: string;
-  deleted_at?: number;
-  write_counter?: number;
-  device_id?: string;
 }
 
 // === Public Repository API ===
