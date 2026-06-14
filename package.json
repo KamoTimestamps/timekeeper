@@ -1,6 +1,6 @@
 {
   "name": "timekeeper",
-  "version": "4.10.0",
+  "version": "4.10.2",
   "private": true,
   "description": "Timekeeper browser extension",
   "scripts": {
@@ -17,6 +17,7 @@
     "clean-css-cli": "^5.6.3",
     "esbuild": "^0.27.2",
     "extension": "^3.10.3",
+    "http-server": "^14.1.1",
     "typescript": "^5.4.0"
   },
   "dependencies": {

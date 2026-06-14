@@ -1,4 +1,4 @@
-.PHONY: build server watch bump
+.PHONY: build server watch bump install
 
 build:
 	@npm install
@@ -6,11 +6,18 @@ build:
 	@npm run build:firefox
 	@npm run build:userscript
 
-server:
-	 @http-server -a 127.0.0.1 -c5
+install:
+	@pnpm install
+	@pnpm add -D http-server 2>/dev/null; true
 
-watch:
-	@watchman-make --pattern 'src/**' 'package.json' 'Makefile' --target build
+server: install
+	@npm run build:userscript
+	@pnpm dlx http-server -a 127.0.0.1 -p0 -c-1 . &
+	@sleep 1 && open "http://127.0.0.1:8080/timekeeper.user.js" 2>/dev/null || true
+	@wait
+
+watch: install
+	@pnpm dlx watchman-make --pattern 'src/**' 'package.json' 'Makefile' --target build
 
 bump:
 	@current=$$(jq -r '.version' package.json); \
