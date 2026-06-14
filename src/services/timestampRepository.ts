@@ -234,50 +234,32 @@ function openIndexedDB(): Promise<IDBDatabase> {
         }
       }
 
-      // Version 4: Add Lamport write_counter and device_id for conflict resolution
+      // Version 4: Backfill write_counter and device_id on every existing record.
+      // IMPORTANT: use the upgrade transaction (not a new one) so all writes complete
+      // before request.onsuccess fires and the app begins reading the DB.
       if (oldVersion < 4) {
-        const v2Tx = db.transaction([STORE_NAME_V2, SETTINGS_STORE_NAME], 'readwrite');
-        const v2Store = v2Tx.objectStore(STORE_NAME_V2);
-        const settingsStore = v2Tx.objectStore(SETTINGS_STORE_NAME);
+        const v4v2Store = transaction.objectStore(STORE_NAME_V2);
+        const v4settingsStore = transaction.objectStore(SETTINGS_STORE_NAME);
+        const v4deviceId = crypto.randomUUID();
+        let v4counter = 0;
 
-        // Generate a stable device_id for this install
-        const deviceId = crypto.randomUUID();
-
-        const getAllRequest = v2Store.getAll();
-        getAllRequest.onsuccess = () => {
-          const records = getAllRequest.result as Array<{
-            guid: string;
-            video_id: string;
-            start: number;
-            comment: string;
-            deleted_at?: number;
-            write_counter?: number;
-            device_id?: string;
-          }>;
-
-          // Backfill existing records with sequential write_counter
-          const now = Date.now();
-          records.forEach((record, index) => {
-            v2Store.put({
-              ...record,
-              write_counter: index + 1,
-              device_id: deviceId,
-            });
-          });
-
-          log(`Lamport migration: backfilled ${records.length} records with write_counter, device_id=${deviceId}`);
-
-          // Store the final counter value in settings so new writes start after it
-          const counterReq = settingsStore.put({ key: 'write_counter', value: records.length });
-          counterReq.onsuccess = () => {
-            const deviceReq = settingsStore.put({ key: 'device_id', value: deviceId });
-            deviceReq.onsuccess = () => {
-              log('Lamport migration: stored counter and device_id in settings');
-            };
-          };
+        const cursorReq = v4v2Store.openCursor();
+        cursorReq.onsuccess = (evt: Event) => {
+          const cursor = (evt.target as IDBRequest<IDBCursorWithValue | null>).result;
+          if (cursor) {
+            v4counter++;
+            cursor.update({ ...cursor.value, write_counter: v4counter, device_id: v4deviceId });
+            cursor.continue();
+          } else {
+            // Cursor exhausted — transaction still open; write settings here so they
+            // land in the same atomic upgrade transaction.
+            v4settingsStore.put({ key: 'write_counter', value: v4counter });
+            v4settingsStore.put({ key: 'device_id', value: v4deviceId });
+            log(`Lamport migration: backfilled ${v4counter} records, device_id=${v4deviceId}`);
+          }
         };
-        getAllRequest.onerror = () => {
-          log('Lamport migration: failed to enumerate records for backfill', getAllRequest.error, 'error');
+        cursorReq.onerror = () => {
+          log('Lamport migration: cursor error during backfill', cursorReq.error, 'error');
         };
       }
     };
