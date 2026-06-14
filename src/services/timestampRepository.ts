@@ -82,6 +82,15 @@ export async function incrementWriteCounter(): Promise<number> {
 }
 
 /**
+ * Set the Lamport write counter to an explicit value and update the in-memory cache.
+ * Use after a merge to advance the counter past all imported remote values.
+ */
+export async function setWriteCounter(value: number): Promise<void> {
+  counterCache = value;
+  await saveSetting('write_counter', value);
+}
+
+/**
  * Get or create a persistent database connection
  */
 function getDB(): Promise<IDBDatabase> {

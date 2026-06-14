@@ -318,14 +318,13 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
 
   await TimestampRepository.saveTimestampsBatch(batch);
 
-  // Bump local counter so future local writes always beat this import
+  // Advance the local counter past every imported remote value so future
+  // local writes always beat anything we just merged in.
   const localCounter = await TimestampRepository.getWriteCounter();
   const remoteMax = batch.length > 0
     ? Math.max(...batch.map(b => b.write_counter ?? 0))
     : 0;
-  await TimestampRepository.incrementWriteCounter(); // minimal bump
-  const finalCounter = Math.max(localCounter + 1, remoteMax + 1);
-  await TimestampRepository.saveSetting('write_counter', finalCounter);
+  await TimestampRepository.setWriteCounter(Math.max(localCounter + 1, remoteMax + 1));
 
   return { mergedVideos, mergedTimestamps };
 }
