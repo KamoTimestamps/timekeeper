@@ -188,7 +188,7 @@ export async function addTimestamp(videoId: string, timestamp: TimestampRecord):
   if (!videoId) {
     throw new Error('Video ID is required');
   }
-  if (!timestamp.guid || !timestamp.start) {
+  if (!timestamp.guid || timestamp.start == null) {
     throw new Error('Timestamp must have GUID and start time');
   }
   return TimestampRepository.saveTimestamp(videoId, timestamp);
