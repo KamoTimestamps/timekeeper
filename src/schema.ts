@@ -11,6 +11,8 @@ export const TimestampRecordSchema = z.object({
   guid: GuidSchema,
   start: z.number().finite().nonnegative(),
   comment: z.string(),
+  write_counter: z.number().int().positive().optional(),
+  device_id: z.string().optional(),
 });
 
 export const TimestampRecordArraySchema = TimestampRecordSchema.array();

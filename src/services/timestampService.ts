@@ -51,7 +51,9 @@ export async function buildExportPayload({ includeDeleted = false }: { includeDe
     videoGroups.get(ts.video_id)!.push({
       guid: ts.guid,
       start: ts.start,
-      comment: ts.comment
+      comment: ts.comment,
+      write_counter: ts.write_counter,
+      device_id: ts.device_id,
     });
   }
 
@@ -238,9 +240,16 @@ export async function getVideoTimestamps(videoId: string): Promise<TimestampReco
 // === Import/Merge Business Logic ===
 
 /**
- * Merge remote backup data into local DB.
- * Adds any timestamps whose GUID is not already present locally (additive merge).
- * Existing local timestamps are never modified or deleted.
+ * Merge remote backup data into local DB using Lamport counter conflict resolution.
+ *
+ * Rules:
+ *   - New GUID (no local record)           → always import
+ *   - Same GUID, same device_id            → higher write_counter wins
+ *   - Same GUID, different device_id       → keep local (safe default)
+ *   - Same GUID, no write_counter in data  → keep local (cannot determine)
+ *
+ * After merge, bumps the local write counter so subsequent local writes
+ * always beat anything imported from remote.
  */
 export async function mergeBackupData(json: string): Promise<{ mergedVideos: number; mergedTimestamps: number }> {
   let parsed: unknown;
@@ -257,27 +266,67 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
     return { mergedVideos: 0, mergedTimestamps: 0 };
   }
 
+  // Map: guid → row (for lookup + comparison)
   const existingRows = await TimestampRepository.getAllTimestamps();
-  const existingGuids = new Set(existingRows.map(r => r.guid));
+  const existingMap = new Map<string, typeof existingRows[number]>();
+  for (const row of existingRows) {
+    existingMap.set(row.guid, row);
+  }
 
   let mergedVideos = 0;
   let mergedTimestamps = 0;
-  const batch: Array<{ guid: string; video_id: string; start: number; comment: string }> = [];
+  const batch: Array<{ guid: string; video_id: string; start: number; comment: string; write_counter?: number; device_id?: string }> = [];
 
   for (const [, videoEntry] of Object.entries(result.data)) {
     const { video_id, timestamps } = videoEntry;
     let videoMerged = 0;
     for (const ts of timestamps) {
-      if (existingGuids.has(ts.guid)) continue;
-      batch.push({ guid: ts.guid, video_id, start: ts.start, comment: ts.comment });
-      existingGuids.add(ts.guid);
-      videoMerged++;
-      mergedTimestamps++;
+      const existing = existingMap.get(ts.guid);
+
+      let shouldImport = false;
+      if (!existing) {
+        // New GUID — always import
+        shouldImport = true;
+      } else if (
+        existing.write_counter !== undefined &&
+        ts.write_counter !== undefined &&
+        existing.device_id === ts.device_id &&
+        ts.write_counter > existing.write_counter
+      ) {
+        // Same device, remote is newer — import
+        shouldImport = true;
+      }
+      // else: keep local (same device but remote is older, or different device, or no counter)
+
+      if (shouldImport) {
+        batch.push({
+          guid: ts.guid,
+          video_id,
+          start: ts.start,
+          comment: ts.comment,
+          write_counter: ts.write_counter,
+          device_id: ts.device_id,
+        });
+        // Update the map so later entries in the same batch see the merged state
+        existingMap.set(ts.guid, { ...existing, video_id, start: ts.start, comment: ts.comment, write_counter: ts.write_counter, device_id: ts.device_id });
+        videoMerged++;
+        mergedTimestamps++;
+      }
     }
     if (videoMerged > 0) mergedVideos++;
   }
 
   await TimestampRepository.saveTimestampsBatch(batch);
+
+  // Bump local counter so future local writes always beat this import
+  const localCounter = await TimestampRepository.getWriteCounter();
+  const remoteMax = batch.length > 0
+    ? Math.max(...batch.map(b => b.write_counter ?? 0))
+    : 0;
+  await TimestampRepository.incrementWriteCounter(); // minimal bump
+  const finalCounter = Math.max(localCounter + 1, remoteMax + 1);
+  await TimestampRepository.saveSetting('write_counter', finalCounter);
+
   return { mergedVideos, mergedTimestamps };
 }
 

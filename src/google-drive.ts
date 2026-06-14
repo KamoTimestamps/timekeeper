@@ -368,7 +368,7 @@ function monitorOAuthPopup(popup: Window | null, timeoutMs = 5 * 60 * 1000): Pro
     let lastCheckedTimestamp = Date.now();
     const pollIndexedDB = async () => {
       try {
-        const openReq = indexedDB.open('ytls-timestamps-db', 3);
+        const openReq = indexedDB.open('ytls-timestamps-db', 4);
         openReq.onsuccess = () => {
           const db = openReq.result;
           const tx = db.transaction('settings', 'readonly');
@@ -639,7 +639,7 @@ export async function handleOAuthPopup() {
         timestamp: Date.now()
       };
       if (log) log('OAuth popup: writing error to IndexedDB', message);
-      const openReq = indexedDB.open('ytls-timestamps-db', 3);
+      const openReq = indexedDB.open('ytls-timestamps-db', 4);
       openReq.onsuccess = () => {
         const db = openReq.result;
         const tx = db.transaction('settings', 'readwrite');
@@ -685,7 +685,7 @@ export async function handleOAuthPopup() {
       };
       const messageRedacted = { ...message, token: '[REDACTED]' };
       if (log) log('OAuth popup: writing token to IndexedDB', messageRedacted);
-      const openReq = indexedDB.open('ytls-timestamps-db', 3);
+      const openReq = indexedDB.open('ytls-timestamps-db', 4);
       openReq.onsuccess = () => {
         const db = openReq.result;
         const tx = db.transaction('settings', 'readwrite');

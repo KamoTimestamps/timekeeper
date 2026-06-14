@@ -74,7 +74,7 @@ if (hash && hash.length > 1) {
           timestamp: Date.now(),
         };
         // Direct IndexedDB write (can't use async helper here as it's not defined yet)
-        const openReq = indexedDB.open("ytls-timestamps-db", 3);
+        const openReq = indexedDB.open("ytls-timestamps-db", 4);
         openReq.onsuccess = () => {
           const db = openReq.result;
           const tx = db.transaction("settings", "readwrite");
@@ -127,6 +127,18 @@ initializeDvrEnablement();
   // Initialize GoogleDrive callbacks early for OAuth handling
   (GoogleDrive as any).setLoadGlobalSettings(earlyLoadGlobalSettings);
   (GoogleDrive as any).setSaveGlobalSettings(earlySaveGlobalSettings);
+
+  // Initialize Lamport device_id so all write operations have a stable identifier
+  try {
+    const deviceId = await TimestampModel.loadGlobalSettings('device_id');
+    const id = typeof deviceId === 'string' && deviceId.length > 0
+      ? deviceId
+      : crypto.randomUUID();
+    await TimestampModel.saveGlobalSettings('device_id', id);
+    log(`Lamport: device_id = ${id}`);
+  } catch (err) {
+    log('Lamport: failed to initialize device_id:', err, 'warn');
+  }
 
   // Check if we're in an OAuth popup and handle it
   const isOAuthPopup = await GoogleDrive.handleOAuthPopup();
