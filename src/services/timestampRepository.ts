@@ -324,7 +324,7 @@ function withV2Transaction(mode: IDBTransactionMode, op: (store: IDBObjectStore)
  */
 function withV2AndSettingsTransaction(
   mode: IDBTransactionMode,
-  op: (v2Store: IDBObjectStore, settingsStore: IDBObjectStore) => void
+  op: (v2Store: IDBObjectStore, settingsStore: IDBObjectStore, onCommit: (v: number) => void) => void
 ): Promise<void> {
   return getDB().then(db => new Promise<void>((resolve, reject) => {
     let tx: IDBTransaction;
@@ -334,10 +334,18 @@ function withV2AndSettingsTransaction(
       reject(new Error(`Failed to open transaction: ${err}`));
       return;
     }
-    tx.oncomplete = () => resolve();
+    let pendingCounter: number | null = null;
+    tx.oncomplete = () => {
+      if (pendingCounter !== null) counterCache = pendingCounter;
+      resolve();
+    };
     tx.onerror = () => reject(tx.error ?? new Error('Transaction failed'));
     tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted'));
-    op(tx.objectStore(STORE_NAME_V2), tx.objectStore(SETTINGS_STORE_NAME));
+    op(
+      tx.objectStore(STORE_NAME_V2),
+      tx.objectStore(SETTINGS_STORE_NAME),
+      (v: number) => { pendingCounter = v; }
+    );
   }));
 }
 
@@ -409,7 +417,7 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
 
   const timestamps = parsed.data;
   return getDeviceId().then(deviceId => {
-    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore) => {
+    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore, onCommit) => {
       // Read the counter atomically inside this transaction to prevent cross-tab collisions
       const counterReq = settingsStore.get('write_counter');
       counterReq.onsuccess = () => {
@@ -448,7 +456,7 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
             });
 
             settingsStore.put({ key: 'write_counter', value: counter });
-            counterCache = counter;
+            onCommit(counter);
           } catch (err) {
             log('Error during save operation:', err, 'error');
           }
@@ -468,7 +476,7 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
   }
   const ts = parsed.data;
   return getDeviceId().then(deviceId => {
-    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore) => {
+    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore, onCommit) => {
       const counterReq = settingsStore.get('write_counter');
       counterReq.onsuccess = () => {
         const currentVal = (counterReq.result as { value?: unknown } | undefined)?.value;
@@ -482,7 +490,7 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
           device_id: deviceId,
         });
         settingsStore.put({ key: 'write_counter', value: nextCounter });
-        counterCache = nextCounter;
+        onCommit(nextCounter);
       };
     });
   });
@@ -501,7 +509,7 @@ export function saveTimestampsBatch(
 ): Promise<void> {
   if (records.length === 0) return Promise.resolve();
   return getDeviceId().then(deviceId => {
-    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore) => {
+    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore, onCommit) => {
       const counterReq = settingsStore.get('write_counter');
       counterReq.onsuccess = () => {
         const currentVal = (counterReq.result as { value?: unknown } | undefined)?.value;
@@ -537,7 +545,7 @@ export function saveTimestampsBatch(
         // other writer (saveTimestamp, saveTimestamps, deleteTimestamp, …).
         // The next write reads this value and increments before use.
         settingsStore.put({ key: 'write_counter', value: counter });
-        counterCache = counter;
+        onCommit(counter);
       };
     });
   });
@@ -549,7 +557,7 @@ export function saveTimestampsBatch(
 export function deleteTimestamp(guid: string): Promise<void> {
   log(`Soft-deleting timestamp ${guid}`);
   return getDeviceId().then(deviceId => {
-    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore) => {
+    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore, onCommit) => {
       const counterReq = settingsStore.get('write_counter');
       counterReq.onsuccess = () => {
         const currentVal = (counterReq.result as { value?: unknown } | undefined)?.value;
@@ -565,7 +573,7 @@ export function deleteTimestamp(guid: string): Promise<void> {
               device_id: deviceId,
             });
             settingsStore.put({ key: 'write_counter', value: nextCounter });
-            counterCache = nextCounter;
+            onCommit(nextCounter);
           }
         };
       };
@@ -630,7 +638,7 @@ export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | nul
  */
 export function deleteTimestampsForVideo(videoId: string): Promise<void> {
   return getDeviceId().then(deviceId => {
-    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore) => {
+    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore, onCommit) => {
       const counterReq = settingsStore.get('write_counter');
       counterReq.onsuccess = () => {
         const currentVal = (counterReq.result as { value?: unknown } | undefined)?.value;
@@ -655,7 +663,7 @@ export function deleteTimestampsForVideo(videoId: string): Promise<void> {
               }
             });
             settingsStore.put({ key: 'write_counter', value: counter });
-            counterCache = counter;
+            onCommit(counter);
           } catch (err) {
             log('Error during remove operation:', err, 'error');
           }
