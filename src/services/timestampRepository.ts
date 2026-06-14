@@ -50,9 +50,10 @@ export function getDeviceId(): Promise<string> {
       resolve(id);
     };
     req.onerror = () => {
-      const fallback = crypto.randomUUID();
-      deviceCache = fallback;
-      resolve(fallback);
+      // Don't cache: let the next call retry so it can pick up a persisted ID.
+      // Resolve with a one-shot ephemeral ID so the current write isn't blocked.
+      log('getDeviceId: failed to read from settings store', req.error, 'warn');
+      resolve(crypto.randomUUID());
     };
   }));
 }
