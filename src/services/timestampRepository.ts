@@ -478,50 +478,51 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
  * Does not soft-delete anything — use saveTimestamps for replace semantics.
  * Records with write_counter/device_id preserve those values (used by merge).
  * Records without them get auto-assigned from the local counter.
+ * Always advances the local counter to at least max(imported counters) + 1
+ * so future local writes are always ordered after anything in this batch.
  */
 export function saveTimestampsBatch(
   records: Array<{ guid: string; video_id: string; start: number; comment: string; write_counter?: number; device_id?: string }>
 ): Promise<void> {
   if (records.length === 0) return Promise.resolve();
   return getDeviceId().then(deviceId => {
-    // For records without a write_counter, assign from local counter
-    return getWriteCounter().then(baseCounter => {
-      const needLocalCounter = records.some(r => r.write_counter === undefined);
-      if (!needLocalCounter) {
-        // All records have their own counter (from remote import) — use as-is
-        return withV2Transaction('readwrite', store => {
-          records.forEach(record => store.put({
-            guid: record.guid,
-            video_id: record.video_id,
-            start: record.start,
-            comment: record.comment,
-            write_counter: record.write_counter,
-            device_id: record.device_id ?? deviceId,
-          }));
+    return withV2AndSettingsTransaction('readwrite', (v2Store, settingsStore) => {
+      const counterReq = settingsStore.get('write_counter');
+      counterReq.onsuccess = () => {
+        const currentVal = (counterReq.result as { value?: unknown } | undefined)?.value;
+        let counter = typeof currentVal === 'number' ? currentVal : 0;
+
+        records.forEach(record => {
+          if (record.write_counter === undefined) {
+            // Local record without a counter — assign next local counter
+            counter++;
+            v2Store.put({
+              guid: record.guid,
+              video_id: record.video_id,
+              start: record.start,
+              comment: record.comment,
+              write_counter: counter,
+              device_id: deviceId,
+            });
+          } else {
+            // Remote record — preserve its counter; bump local counter if needed
+            if (record.write_counter > counter) counter = record.write_counter;
+            v2Store.put({
+              guid: record.guid,
+              video_id: record.video_id,
+              start: record.start,
+              comment: record.comment,
+              write_counter: record.write_counter,
+              device_id: record.device_id ?? deviceId,
+            });
+          }
         });
-      }
-      // Mix of local and remote records — assign local counter to records without one
-      let counter = baseCounter;
-      const assigned = records.map(record => {
-        if (record.write_counter !== undefined) {
-          return { ...record, device_id: record.device_id ?? deviceId };
-        }
-        counter++;
-        return { ...record, write_counter: counter, device_id: deviceId };
-      });
-      return withV2Transaction('readwrite', store => {
-        assigned.forEach(record => store.put({
-          guid: record.guid,
-          video_id: record.video_id,
-          start: record.start,
-          comment: record.comment,
-          write_counter: record.write_counter,
-          device_id: record.device_id,
-        }));
-      }).then(() => {
-        saveSetting('write_counter', counter);
-        counterCache = counter;
-      });
+
+        // Ensure the stored counter is always past every value we just wrote
+        const finalCounter = counter + 1;
+        settingsStore.put({ key: 'write_counter', value: finalCounter });
+        counterCache = finalCounter;
+      };
     });
   });
 }
