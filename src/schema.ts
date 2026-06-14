@@ -1,11 +1,9 @@
 import { z } from 'zod';
 
-const GuidSchema = z.preprocess((value) => {
-  if (typeof value === 'string' && value.trim().length > 0) {
-    return value;
-  }
-  return crypto.randomUUID();
-}, z.string());
+// Accepts any non-empty string as a GUID (UUIDs and legacy formats).
+// Rejects missing or empty values — callers are responsible for generating
+// GUIDs before calling save functions.
+const GuidSchema = z.string().min(1);
 
 export const TimestampRecordSchema = z.object({
   guid: GuidSchema,
