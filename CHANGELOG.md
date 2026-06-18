@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.0.11](///compare/v5.0.10...v5.0.11) (2026-06-18)
+
+
+### Fixed
+
+* remove pnpm version pin that caused cache conflict on GitHub Actions bc081a5
+
 ## [5.0.10](///compare/v5.0.9...v5.0.10) (2026-06-18)
 
 
