@@ -46,6 +46,11 @@ export function clearTimestampsDisplay(list: HTMLUListElement | null): void {
   if (!list) return;
   list.replaceChildren();
   lastHighlightedLi = null;
+  // Also clear any pending error message
+  const errorItem = list.querySelector('.ytls-error-message');
+  if (errorItem) {
+    errorItem.remove();
+  }
 }
 
 /**
@@ -72,29 +77,72 @@ export function clearListPlaceholder(list: HTMLUListElement | null): void {
 }
 
 /**
- * Show an error message in the timestamp pane
+ * Check if the timestamp list contains an error message.
+ */
+export function hasPaneError(list: HTMLUListElement | null): boolean {
+  if (!list) return false;
+  return list.querySelector('.ytls-error-message') !== null;
+}
+
+/**
+ * Show a prominent error banner in the timestamp pane.
+ * This is displayed at the top of the list and prevents all editing.
  */
 export function displayPaneError(list: HTMLUListElement | null, message: string): void {
   if (!list) return;
   clearTimestampsDisplay(list);
-  const li = document.createElement('li');
-  li.className = 'ytls-error-message';
-  li.textContent = message;
-  li.style.color = '#ff4d4f';
-  li.style.textAlign = 'center';
-  li.style.padding = '20px';
-  list.appendChild(li);
+
+  const errorItem = document.createElement('li');
+  errorItem.className = 'ytls-error-message';
+  errorItem.style.cssText = `
+    color: #ff4d4f;
+    text-align: center;
+    padding: 16px;
+    background: rgba(255, 0, 0, 0.08);
+    border: 1px solid rgba(255, 77, 79, 0.3);
+    border-radius: 6px;
+    margin: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 1.5;
+  `;
+
+  // Create a friendly error message with a refresh hint
+  errorItem.innerHTML = `<div style="margin-bottom:8px">⚠️ ${escapeHtml(message)}</div><div style="font-size:12px;font-weight:normal;color:#aaa">Check the console for details or refresh the page.</div>`;
+  list.appendChild(errorItem);
   list.style.overflowY = 'hidden';
 }
 
 /**
- * Ensure empty placeholder is shown when no timestamps exist
+ * Clear any error message from the timestamp list.
+ */
+export function clearPaneError(list: HTMLUListElement | null): void {
+  if (!list) return;
+  const errorItem = list.querySelector('.ytls-error-message');
+  if (errorItem) {
+    errorItem.remove();
+  }
+}
+
+/**
+ * Escape HTML to prevent XSS in error messages.
+ */
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/**
+ * Ensure empty placeholder is shown when no timestamps exist (and no error is shown).
  */
 export function ensureEmptyPlaceholder(
   list: HTMLUListElement | null,
   isLoading: boolean
 ): void {
   if (!list || isLoading) return;
+  // Don't show placeholder when an error is displayed
+  if (hasPaneError(list)) return;
 
   const hasNonPlaceholderItems = Array.from(list.children).some(li => {
     return !li.classList.contains('ytls-placeholder') && !li.classList.contains('ytls-error-message');

@@ -37,6 +37,7 @@ export interface AppState {
   timestamps: {
     items: TimestampRecord[];
     currentIndex: number | null;
+    dbError: string | null;
   };
 }
 
@@ -72,6 +73,7 @@ const DEFAULT_STATE: AppState = {
   timestamps: {
     items: [],
     currentIndex: null,
+    dbError: null,
   },
 };
 
@@ -230,6 +232,26 @@ export function setCurrentTimestampIndex(index: number | null): void {
 }
 
 /**
+ * Set an IndexedDB error message. When set, timestamp editing is disabled
+ * until the error is cleared (set to null).
+ */
+export function setTimestampsDbError(message: string | null): void {
+  setState({
+    timestamps: {
+      ...appState.timestamps,
+      dbError: message,
+    },
+  });
+}
+
+/**
+ * Get the current IndexedDB error, if any.
+ */
+export function getTimestampsDbError(): string | null {
+  return appState.timestamps.dbError;
+}
+
+/**
  * Subscribe to state changes
  */
 export function subscribe(listener: StateListener): () => void {
@@ -255,5 +277,7 @@ function notifyListeners(previousState: AppState): void {
  */
 export function resetState(): void {
   appState = JSON.parse(JSON.stringify(DEFAULT_STATE));
+  // Clear any stored IndexedDB error on reset
+  setTimestampsDbError(null);
   notifyListeners(JSON.parse(JSON.stringify(DEFAULT_STATE)));
 }

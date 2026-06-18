@@ -1017,7 +1017,7 @@ initializeDvrEnablement();
     if (
       !isLoadingTimestamps &&
       list &&
-      !list.querySelector(".ytls-error-message")
+      !TimestampView.hasPaneError(list)
     ) {
       ensureEmptyPlaceholder();
     }
@@ -1189,9 +1189,7 @@ initializeDvrEnablement();
   }
 
   function offsetAllTimestamps(delta: number): boolean {
-    if (!list || list.querySelector(".ytls-error-message")) {
-      return false;
-    }
+    if (isEditingBlocked()) return false;
 
     if (!Number.isFinite(delta) || delta === 0) {
       return false;
@@ -1886,9 +1884,7 @@ initializeDvrEnablement();
   }
 
   function updateTimeDifferences() {
-    if (!list || list.querySelector(".ytls-error-message")) {
-      return;
-    }
+    if (isEditingBlocked()) return;
 
     const maxTime = getLatestTimestampValue();
     const items = getTimestampItems();
@@ -1941,13 +1937,7 @@ initializeDvrEnablement();
   }
 
   function sortTimestampsAndUpdateDisplay() {
-    if (
-      !list ||
-      list.querySelector(".ytls-error-message") ||
-      isLoadingTimestamps
-    ) {
-      return;
-    }
+    if (isEditingBlocked()) return;
 
     // Capture caret/scroll for the currently focused input so we can restore after sorting
     let restoreState: {
@@ -2133,7 +2123,8 @@ initializeDvrEnablement();
     videoId: string,
     options: { allowEmpty?: boolean } = {},
   ) {
-    if (!list || list.querySelector(".ytls-error-message")) return;
+    if (!list) return;
+    if (isEditingBlocked()) return;
     if (!videoId) return;
     // Prevent saving during loading state to avoid race conditions
     if (isLoadingTimestamps) {
@@ -2155,18 +2146,18 @@ initializeDvrEnablement();
     setTimestampsInState(currentTimestampsFromUI);
 
     saveToIndexedDB(videoId, currentTimestampsFromUI)
-      .then(() =>
+      .then(() => {
         log(
           `Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`,
-        ),
-      )
-      .catch((err) =>
-        log(
-          `Failed to save timestamps for ${videoId} to IndexedDB:`,
-          err,
-          "error",
-        ),
-      );
+        );
+        // Clear any previous DB error on successful save
+        clearPaneError();
+      })
+      .catch((err) => {
+        const errorMsg = `Failed to save timestamps: ${err.message}`;
+        log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, "error");
+        displayPaneError(errorMsg);
+      });
     safePostMessage({
       type: "timestamps_updated",
       videoId: videoId,
@@ -2181,13 +2172,21 @@ initializeDvrEnablement();
     comment: string,
   ) {
     if (!videoId || isLoadingTimestamps) return;
+    if (isEditingBlocked()) return;
 
     const timestamp: TimestampRecord = { guid, start, comment };
     log(`Saving timestamp: guid=${guid}, start=${start}, comment="${comment}"`);
 
-    saveSingleTimestampToIndexedDB(videoId, timestamp).catch((err) =>
-      log(`Failed to save timestamp ${guid}:`, err, "error"),
-    );
+    saveSingleTimestampToIndexedDB(videoId, timestamp)
+      .then(() => {
+        // Clear any previous DB error on successful save
+        if (list) clearPaneError();
+      })
+      .catch((err) => {
+        const errorMsg = `Failed to save timestamp: ${err.message}`;
+        log(`Failed to save timestamp ${guid}:`, err, "error");
+        displayPaneError(errorMsg);
+      });
 
     safePostMessage({
       type: "timestamps_updated",
@@ -2201,10 +2200,18 @@ initializeDvrEnablement();
     guid: string,
   ) {
     if (!videoId || isLoadingTimestamps) return;
+    if (isEditingBlocked()) return;
 
-    deleteSingleTimestampFromIndexedDB(videoId, guid).catch((err) =>
-      log(`Failed to delete timestamp ${guid}:`, err, "error"),
-    );
+    deleteSingleTimestampFromIndexedDB(videoId, guid)
+      .then(() => {
+        // Clear any previous DB error on successful delete
+        if (list) clearPaneError();
+      })
+      .catch((err) => {
+        const errorMsg = `Failed to delete timestamp: ${err.message}`;
+        log(`Failed to delete timestamp ${guid}:`, err, "error");
+        displayPaneError(errorMsg);
+      });
 
     safePostMessage({
       type: "timestamps_updated",
@@ -2214,8 +2221,8 @@ initializeDvrEnablement();
   }
 
   async function saveTimestampsAs(format) {
-    if (!list || list.querySelector(".ytls-error-message")) {
-      alert("Cannot export timestamps while displaying an error message.");
+    if (isEditingBlocked()) {
+      alert("Cannot export timestamps while an error is being displayed.");
       return;
     }
     const videoId = currentLoadedVideoId;
@@ -2259,18 +2266,30 @@ initializeDvrEnablement();
       return;
     }
 
-    clearTimestampsDisplay();
-
-    const errorItem = document.createElement("li");
-    errorItem.textContent = message;
-    errorItem.classList.add("ytls-error-message");
-    errorItem.style.color = "#ff6b6b";
-    errorItem.style.fontWeight = "bold";
-    errorItem.style.padding = "8px";
-    errorItem.style.background = "rgba(255, 0, 0, 0.1)";
-
-    list.appendChild(errorItem);
+    TimestampView.displayPaneError(list, message);
+    // Set the dbError state so editing is globally blocked
+    AppState.setTimestampsDbError(message);
     updateSeekbarMarkers();
+  }
+
+  /**
+   * Clear any error from the timestamp list and re-enable editing.
+   */
+  function clearPaneError() {
+    if (!list) return;
+    TimestampView.clearPaneError(list);
+    AppState.setTimestampsDbError(null);
+  }
+
+  /**
+   * Check if all editing is currently blocked (due to loading or DB errors).
+   */
+  function isEditingBlocked(): boolean {
+    if (!list) return true;
+    if (TimestampView.hasPaneError(list)) return true;
+    if (isLoadingTimestamps) return true;
+    if (AppState.getTimestampsDbError() !== null) return true;
+    return false;
   }
 
   function removeSeekbarMarkers() {
@@ -2533,18 +2552,19 @@ initializeDvrEnablement();
           log(
             `Loaded ${finalTimestampsToDisplay.length} timestamps from IndexedDB for ${videoId}`,
           );
+          // Clear any previous DB error on successful load
+          clearPaneError();
         } else {
           log(`No timestamps found in IndexedDB for ${videoId}`);
         }
       } catch (dbError) {
+        const errorMsg = `Failed to load timestamps: ${dbError.message}`;
         log(
           `Failed to load timestamps from IndexedDB for ${videoId}:`,
           dbError,
           "error",
         );
-        displayPaneError(
-          "Failed to load timestamps from IndexedDB. Try refreshing the page.",
-        );
+        displayPaneError(errorMsg);
         updateSeekbarMarkers();
         return;
       }
@@ -2629,7 +2649,7 @@ initializeDvrEnablement();
       if (recalculateTimestampsAreaFn)
         requestAnimationFrame(recalculateTimestampsAreaFn);
       // If there is no error being shown, ensure a friendly placeholder appears when the list is empty
-      if (list && !list.querySelector(".ytls-error-message")) {
+      if (list && !TimestampView.hasPaneError(list)) {
         ensureEmptyPlaceholder();
       }
     }
@@ -3568,13 +3588,7 @@ initializeDvrEnablement();
 
       // Define handlers for main buttons
       const handleAddTimestamp = () => {
-        if (
-          !list ||
-          list.querySelector(".ytls-error-message") ||
-          isLoadingTimestamps
-        ) {
-          return;
-        }
+        if (isEditingBlocked()) return;
 
         // Use configuredOffset if available, otherwise default to 0
         const offset =
@@ -3593,11 +3607,7 @@ initializeDvrEnablement();
       };
 
       const handleCopyTimestamps = function (e) {
-        if (
-          !list ||
-          list.querySelector(".ytls-error-message") ||
-          isLoadingTimestamps
-        ) {
+        if (isEditingBlocked()) {
           setIcon(this as Element, "circle-x", 20);
           setTimeout(() => {
             setIcon(this as Element, "clipboard", 20);
@@ -3640,11 +3650,7 @@ initializeDvrEnablement();
       };
 
       const handleBulkOffset = () => {
-        if (
-          !list ||
-          list.querySelector(".ytls-error-message") ||
-          isLoadingTimestamps
-        ) {
+        if (isEditingBlocked()) {
           return;
         }
 
