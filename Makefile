@@ -34,7 +34,8 @@ bump:
 # Legacy: use 'make release patch' instead
 
 release:
-	@BUMP_TYPE="${BUMP_TYPE:-patch}"; \
+	@BUMP_TYPE=$(filter-out $@,$(MAKECMDGOALS)); \
+	if [ -z "$$BUMP_TYPE" ]; then BUMP_TYPE=patch; fi; \
 	echo "Running release: $$BUMP_TYPE"; \
 	npm run release:"$$BUMP_TYPE"
 

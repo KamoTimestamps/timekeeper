@@ -8,8 +8,6 @@ module.exports = {
     { type: 'docs', section: 'Changed' },
     { type: 'perf', section: 'Changed' }
   ],
-  compareUrlFormat: 'https://github.com/KamoTimestamps/timekeeper/compare/{{current}}...{{previous}}',
-  commitUrlFormat: 'https://github.com/KamoTimestamps/timekeeper/commit/{{hash}}',
   issueUrlFormat: 'https://github.com/KamoTimestamps/timekeeper/issues/{{id}}',
   issuePrefixes: ['#'],
   packageFiles: [
