@@ -1,4 +1,5 @@
 {
+  "packageManager": "pnpm@11.6.0",
   "name": "timekeeper",
   "version": "5.0.12",
   "private": true,
