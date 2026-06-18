@@ -1,7 +1,7 @@
 {
   "packageManager": "pnpm@11.6.0",
   "name": "timekeeper",
-  "version": "5.0.13",
+  "version": "5.0.14",
   "private": true,
   "description": "Timekeeper browser extension",
   "scripts": {
