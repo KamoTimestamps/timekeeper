@@ -1,4 +1,4 @@
-.PHONY: build server watch bump install
+.PHONY: build server watch bump install release release-push
 
 build:
 	@npm install
@@ -30,3 +30,11 @@ bump:
 	jq ".version = \"$$new_version\"" manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json; \
 	printf "export const TIMEKEEPER_VERSION = '%s';\n" "$$new_version" > src/version.ts; \
 	echo "Version bumped from $$current to $$new_version"
+
+# Legacy: use 'make release patch' instead
+
+release:
+	@npm run release:$(filter-out $@,$(MAKECMDGOALS))
+
+release-push:
+	git push origin main --follow-tags

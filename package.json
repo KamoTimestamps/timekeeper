@@ -10,7 +10,12 @@
     "prebuild:firefox": "node build-tools/sync-version.js",
     "build:firefox": "npx extension@latest build --browser firefox",
     "build:userscript": "node build-tools/build.js",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "release": "bash build-tools/release.sh",
+    "release:patch": "bash build-tools/release.sh patch",
+    "release:minor": "bash build-tools/release.sh minor",
+    "release:major": "bash build-tools/release.sh major",
+    "release:prerelease": "bash build-tools/release.sh prerelease"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.320",
@@ -18,7 +23,8 @@
     "esbuild": "^0.27.2",
     "extension": "^3.10.3",
     "http-server": "^14.1.1",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "commit-and-tag-version": "^12.5.0"
   },
   "dependencies": {
     "@tabler/icons": "^3.40.0",
