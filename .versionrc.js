@@ -1,4 +1,5 @@
 module.exports = {
+  compareUrlFormat: 'https://github.com/KamoTimestamps/timekeeper/compare/{{previous}}...{{current}}',
   types: [
     { type: 'feat', section: 'Added' },
     { type: 'fix', section: 'Fixed' },
