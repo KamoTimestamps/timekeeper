@@ -34,7 +34,9 @@ bump:
 # Legacy: use 'make release patch' instead
 
 release:
-	@npm run release:$(filter-out $@,$(MAKECMDGOALS))
+	@BUMP_TYPE="${BUMP_TYPE:-patch}"; \
+	echo "Running release: $$BUMP_TYPE"; \
+	npm run release:"$$BUMP_TYPE"
 
 release-push:
 	git push origin main --follow-tags
