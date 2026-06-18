@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.0.17](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-06-18)
+
+
+### Fixed
+
+* restore compareUrlFormat and fix broken compare links for 5.0.10–5.0.15 13c37a7
+
 ## [5.0.15](https://github.com/KamoTimestamps/timekeeper/compare/v5.0.14...v5.0.15) (2026-06-18)
 
 ## [5.0.14](https://github.com/KamoTimestamps/timekeeper/compare/v5.0.13...v5.0.14) (2026-06-18)
