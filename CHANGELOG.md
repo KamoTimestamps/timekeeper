@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.0.20](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-07-06)
+
 ## [5.0.17](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-06-18)
 
 
