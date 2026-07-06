@@ -3917,7 +3917,7 @@ initializeDvrEnablement();
 
       // Function to create and toggle the settings modal
       function toggleSettingsModal(
-        initialTab: "general" | "google" | "backend" | "drive" = "general",
+        initialTab: "general" | "google" | "drive" = "general",
       ) {
         if (
           settingsModalInstance &&
@@ -4023,24 +4023,17 @@ initializeDvrEnablement();
         const generalSection = document.createElement("div");
         const googleSection = document.createElement("div");
         googleSection.className = "ytls-button-grid";
-        const backendSection = document.createElement("div");
-        backendSection.className = "ytls-button-grid";
 
-        function showSection(section: "general" | "google" | "backend") {
+        function showSection(section: "general" | "google") {
           generalSection.style.display =
             section === "general" ? "block" : "none";
           googleSection.style.display = section === "google" ? "block" : "none";
-          backendSection.style.display =
-            section === "backend" ? "block" : "none";
           generalTab.classList.toggle("active", section === "general");
           googleTab.classList.toggle("active", section === "google");
-          backendTab.classList.toggle("active", section === "backend");
           sectionHeading.textContent =
             section === "general"
               ? "General"
-              : section === "google"
-                ? "Google"
-                : "Timekeeper Backend";
+              : "Google";
         }
 
         const generalTab = document.createElement("button");
@@ -4068,18 +4061,8 @@ initializeDvrEnablement();
           }
           showSection("google");
         };
-        const backendTab = document.createElement("button");
-        backendTab.appendChild(createIcon("server", 16));
-        const backendTabText = document.createElement("span");
-        backendTabText.className = "ytls-tab-text";
-        backendTabText.textContent = " TKB";
-        backendTab.appendChild(backendTabText);
-        addTooltip(backendTab, "Timekeeper backend backup settings");
-        backendTab.classList.add("ytls-settings-modal-button");
-        backendTab.onclick = () => showSection("backend");
         nav.appendChild(generalTab);
         nav.appendChild(googleTab);
-        nav.appendChild(backendTab);
 
         header.appendChild(nav);
         header.appendChild(closeButton);
@@ -4179,50 +4162,6 @@ initializeDvrEnablement();
           "clock-plus",
         );
 
-        const backendToggleButton = createButton(
-          GoogleDrive.getTimekeeperBackendBackupEnabled()
-            ? "Backend: On"
-            : "Backend: Off",
-          "Toggle Timekeeper backend backup",
-          async () => {
-            await GoogleDrive.toggleTimekeeperBackendBackup();
-            refreshBackupButtons();
-          },
-          "server",
-        );
-
-        const backendHostButton = createButton(
-          `Backend Host: ${GoogleDrive.getTimekeeperBackendHost()}`,
-          "Set the Timekeeper backend host",
-          async () => {
-            await GoogleDrive.setTimekeeperBackendHostPrompt();
-            refreshBackupButtons();
-          },
-          "world",
-        );
-
-        const backendPortButton = createButton(
-          `Backend Port: ${GoogleDrive.getTimekeeperBackendPort()}`,
-          "Set the Timekeeper backend port",
-          async () => {
-            await GoogleDrive.setTimekeeperBackendPortPrompt();
-            refreshBackupButtons();
-          },
-          "plug-connected",
-        );
-
-        const backendTokenButton = createButton(
-          GoogleDrive.getTimekeeperBackendBearerToken()
-            ? "Backend Token: Set"
-            : "Backend Token: Missing",
-          "Set or clear the Timekeeper backend bearer token",
-          async () => {
-            await GoogleDrive.setTimekeeperBackendBearerTokenPrompt();
-            refreshBackupButtons();
-          },
-          "key",
-        );
-
         const refreshBackupButtons = () => {
           setIconLabel(
             signButton,
@@ -4247,30 +4186,6 @@ initializeDvrEnablement();
             "clock-plus",
             `Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`,
           );
-          setIconLabel(
-            backendToggleButton,
-            "server",
-            GoogleDrive.getTimekeeperBackendBackupEnabled()
-              ? "Backend: On"
-              : "Backend: Off",
-          );
-          setIconLabel(
-            backendHostButton,
-            "world",
-            `Backend Host: ${GoogleDrive.getTimekeeperBackendHost()}`,
-          );
-          setIconLabel(
-            backendPortButton,
-            "plug-connected",
-            `Backend Port: ${GoogleDrive.getTimekeeperBackendPort()}`,
-          );
-          setIconLabel(
-            backendTokenButton,
-            "key",
-            GoogleDrive.getTimekeeperBackendBearerToken()
-              ? "Backend Token: Set"
-              : "Backend Token: Missing",
-          );
           if (
             typeof (GoogleDrive as any).updateBackupStatusDisplay === "function"
           ) {
@@ -4281,11 +4196,6 @@ initializeDvrEnablement();
         googleSection.appendChild(signButton);
         googleSection.appendChild(autoToggleButton);
         googleSection.appendChild(intervalButton);
-
-        backendSection.appendChild(backendToggleButton);
-        backendSection.appendChild(backendHostButton);
-        backendSection.appendChild(backendPortButton);
-        backendSection.appendChild(backendTokenButton);
 
         googleSection.appendChild(
           createButton(
@@ -4340,9 +4250,7 @@ initializeDvrEnablement();
         settingsContent.appendChild(sectionHeading);
         settingsContent.appendChild(generalSection);
         settingsContent.appendChild(googleSection);
-        settingsContent.appendChild(backendSection);
-        const normalizedInitialTab =
-          initialTab === "drive" ? "google" : initialTab;
+        const normalizedInitialTab = initialTab === "drive" ? "google" : initialTab;
         showSection(normalizedInitialTab);
 
         settingsModalInstance.appendChild(settingsContent);

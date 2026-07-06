@@ -62,22 +62,6 @@ export function getAutoBackupIntervalMinutes() {
   return AppState.getState().auth.autoBackupIntervalMinutes;
 }
 
-export function getTimekeeperBackendBackupEnabled() {
-  return AppState.getState().auth.timekeeperBackendBackupEnabled;
-}
-
-export function getTimekeeperBackendHost() {
-  return AppState.getState().auth.timekeeperBackendHost;
-}
-
-export function getTimekeeperBackendPort() {
-  return AppState.getState().auth.timekeeperBackendPort;
-}
-
-export function getTimekeeperBackendBearerToken() {
-  return AppState.getState().auth.timekeeperBackendBearerToken;
-}
-
 // Display elements (set from main script)
 export let googleUserDisplay: any = null;
 export let backupStatusDisplay: any = null;
@@ -149,8 +133,6 @@ export function setReloadCurrentVideoTimestamps(fn: any) {
 const GOOGLE_CLIENT_ID = '1023528652072-45cu3dr7o5j79vsdn8643bhle9ee8kds.apps.googleusercontent.com';
 const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile';
 const GOOGLE_REDIRECT_URI = 'https://www.youtube.com/';
-const DEFAULT_TIMEKEEPER_BACKEND_HOST = 'localhost';
-const DEFAULT_TIMEKEEPER_BACKEND_PORT = 8443;
 const DETERMINISTIC_ZIP_MTIME = new Date(Date.UTC(2000, 0, 1, 0, 0, 0));
 
 // Auto-backup constants
@@ -159,14 +141,6 @@ const AUTO_BACKUP_MAX_BACKOFF_MS = 30 * 60 * 1000; // 30m
 const AUTO_BACKUP_MAX_RETRY_ATTEMPTS = 5;
 let autoBackupIntervalId: ReturnType<typeof setInterval> | null = null;
 let autoBackupBackoffTimeoutId: ReturnType<typeof setTimeout> | null = null;
-
-type BackupDestinationErrorKind = 'auth' | 'other';
-
-interface BackupDestination {
-  type: 'google' | 'timekeeper-backend';
-  label: string;
-  exportPayload: (payload: ExportPayload) => Promise<void>;
-}
 
 interface RunAutoBackupOptions {
   silent?: boolean;
@@ -757,35 +731,13 @@ export async function verifySignedIn(): Promise<boolean> {
   }
 }
 
-function getTimekeeperBackendHostNormalized(): string {
-  return getTimekeeperBackendHost().trim() || DEFAULT_TIMEKEEPER_BACKEND_HOST;
-}
-
-function getTimekeeperBackendBearerTokenNormalized(): string | null {
-  const token = getTimekeeperBackendBearerToken();
-  if (typeof token !== 'string') {
-    return null;
-  }
-  const trimmed = token.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 function hasGoogleDriveBackupDestination(): boolean {
   const authState = getGoogleAuthState();
   return authState.isSignedIn && !!authState.accessToken;
 }
 
-function hasTimekeeperBackendBackupConfiguration(): boolean {
-  const port = getTimekeeperBackendPort();
-  return !!getTimekeeperBackendHostNormalized() && Number.isInteger(port) && port >= 1 && port <= 65535 && !!getTimekeeperBackendBearerTokenNormalized();
-}
-
-function hasTimekeeperBackendBackupDestination(): boolean {
-  return getTimekeeperBackendBackupEnabled() && hasTimekeeperBackendBackupConfiguration();
-}
-
 function hasAnyBackupDestination(): boolean {
-  return hasGoogleDriveBackupDestination() || hasTimekeeperBackendBackupDestination();
+  return hasGoogleDriveBackupDestination();
 }
 
 function getConfiguredDestinationLabels(): string[] {
@@ -793,16 +745,7 @@ function getConfiguredDestinationLabels(): string[] {
   if (hasGoogleDriveBackupDestination()) {
     labels.push('Google Drive');
   }
-  if (hasTimekeeperBackendBackupDestination()) {
-    labels.push(`Timekeeper Backend (${getTimekeeperBackendHostNormalized()}:${getTimekeeperBackendPort()})`);
-  }
   return labels;
-}
-
-function getTimekeeperBackendBaseUrl(): string {
-  const rawHost = getTimekeeperBackendHostNormalized();
-  const host = rawHost.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-  return `https://${host}:${getTimekeeperBackendPort()}`;
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 30000): Promise<Response> {
@@ -818,62 +761,10 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 3000
   }
 }
 
-async function sendUserscriptRequest(details: {
-  method: string;
-  url: string;
-  headers?: Record<string, string>;
-  data?: string | ArrayBuffer | Blob | FormData;
-  timeout?: number;
-}): Promise<{ status: number; responseText: string }> {
-  try {
-    const response = await fetchWithTimeout(details.url, {
-      method: details.method,
-      headers: {
-        'User-Agent': `Timekeeper/${TIMEKEEPER_VERSION}`,
-        ...(details.headers || {}),
-      },
-      body: details.data as BodyInit | null | undefined,
-    }, details.timeout);
-    const responseText = await response.text();
-    return { status: response.status, responseText };
-  } catch (err: any) {
-    throw new Error(err.message || 'request failed');
-  }
-}
-
 function decodeFirstZipEntry(buffer: ArrayBuffer): string | null {
   const unzipped = unzipSync(new Uint8Array(buffer));
   const firstFile = Object.values(unzipped)[0];
   return firstFile ? new TextDecoder().decode(firstFile) : null;
-}
-
-async function uploadJsonToTimekeeperBackend(filename: string, json: string): Promise<void> {
-  const bearerToken = getTimekeeperBackendBearerTokenNormalized();
-  if (!bearerToken) {
-    throw new Error('unauthorized');
-  }
-
-  const zipFilename = filename.replace(/\.json$/, '.zip');
-  const zipData = createZipFromJson(json, filename);
-  const zipBytes = Uint8Array.from(zipData);
-  const formData = new FormData();
-  formData.append('file', new Blob([zipBytes], { type: 'application/zip' }), zipFilename);
-
-  const response = await sendUserscriptRequest({
-    method: 'POST',
-    url: `${getTimekeeperBackendBaseUrl()}/api/v1/backups`,
-    headers: {
-      Authorization: `Bearer ${bearerToken}`,
-    },
-    data: formData,
-  });
-
-  if (response.status === 401 || response.status === 403) {
-    throw new Error('unauthorized');
-  }
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error(`timekeeper backend upload failed: ${response.status} ${response.responseText}`.trim());
-  }
 }
 
 // Ensure a folder named "Timekeeper" exists in Google Drive
@@ -938,60 +829,24 @@ async function fetchLatestDriveBackup(accessToken: string): Promise<string | nul
   }
 }
 
-// Download and decompress the latest backup from the Timekeeper backend
-async function fetchLatestBackendBackup(): Promise<string | null> {
-  const bearerToken = getTimekeeperBackendBearerTokenNormalized();
-  if (!bearerToken) return null;
-  try {
-    const response = await fetchWithTimeout(`${getTimekeeperBackendBaseUrl()}/api/v1/backups/latest`, {
-      headers: {
-        Authorization: `Bearer ${bearerToken}`,
-        'User-Agent': `Timekeeper/${TIMEKEEPER_VERSION}`,
-      },
-    });
-    if (response.status === 401 || response.status === 403) throw new Error('unauthorized');
-    if (!response.ok) return null;
-    return decodeFirstZipEntry(await response.arrayBuffer());
-  } catch (err: any) {
-    if (err.message === 'request timed out') return null;
-    if (err.message === 'unauthorized') throw err;
-    log('Failed to fetch latest backend backup for merge:', err, 'warn');
-    return null;
-  }
-}
-
-// Fetch and merge the latest remote backup from all configured destinations before uploading.
+// Fetch and merge the latest remote backup before uploading.
 // Errors during fetch/merge are logged but never block the backup.
 async function mergeFromAllRemotesBeforeBackup(): Promise<void> {
   if (!mergeBackupData) return;
 
-  const fetches: Array<Promise<string | null>> = [];
+  const authState = getGoogleAuthState();
+  if (!authState.isSignedIn || !authState.accessToken) return;
 
-  if (hasGoogleDriveBackupDestination()) {
-    const authState = getGoogleAuthState();
-    if (authState.isSignedIn && authState.accessToken) {
-      const token = authState.accessToken;
-      fetches.push(
-        fetchLatestDriveBackup(token).catch(async (err: Error) => {
-          if (err.message === 'unauthorized') await handleAuthExpiration({ silent: true });
-          return null;
-        })
-      );
+  const json = await fetchLatestDriveBackup(authState.accessToken).catch(async (err: Error) => {
+    if (err.message === 'unauthorized') {
+      await handleAuthExpiration({ silent: true });
+      return null;
     }
-  }
+    log('Failed to fetch latest Drive backup for merge:', err, 'warn');
+    return null;
+  });
 
-  if (hasTimekeeperBackendBackupDestination()) {
-    fetches.push(
-      fetchLatestBackendBackup().catch((err: Error) => {
-        if (err.message === 'unauthorized') {
-          log('Backend backup: unauthorized during pre-merge fetch', null, 'warn');
-        }
-        return null;
-      })
-    );
-  }
-
-  const jsons = await Promise.all(fetches);
+  const jsons: Array<string | null> = json ? [json] : [];
 
   let totalMergedTimestamps = 0;
   for (const json of jsons) {
@@ -1169,34 +1024,7 @@ export async function exportAllTimestampsToGoogleDrive(opts?: { silent?: boolean
 }
 
 async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boolean }): Promise<void> {
-  const destinations: BackupDestination[] = [];
-
-  if (hasGoogleDriveBackupDestination()) {
-    destinations.push({
-      type: 'google',
-      label: 'Google Drive',
-      exportPayload: async (payload) => {
-        const authState = getGoogleAuthState();
-        if (!authState.accessToken) {
-          throw new Error('unauthorized');
-        }
-        const folderId = await ensureDriveFolder(authState.accessToken);
-        await uploadJsonToDrive(payload.filename, payload.json, folderId, authState.accessToken);
-      },
-    });
-  }
-
-  if (hasTimekeeperBackendBackupDestination()) {
-    destinations.push({
-      type: 'timekeeper-backend',
-      label: 'Timekeeper backend',
-      exportPayload: async (payload) => {
-        await uploadJsonToTimekeeperBackend(payload.filename, payload.json);
-      },
-    });
-  }
-
-  if (destinations.length === 0) {
+  if (!hasGoogleDriveBackupDestination()) {
     if (!opts?.silent) {
       updateAuthStatusDisplay('error', 'Configure a backup destination first');
     }
@@ -1213,44 +1041,13 @@ async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boo
     return;
   }
 
-  const failures: Array<{ label: string; kind: BackupDestinationErrorKind; error: unknown }> = [];
-  const successes: string[] = [];
-
-  const results = await Promise.allSettled(
-    destinations.map(destination => destination.exportPayload(payload))
-  );
-
-  for (let i = 0; i < results.length; i++) {
-    const result = results[i];
-    const destination = destinations[i];
-    if (result.status === 'fulfilled') {
-      log(`Exported backup to ${destination.label} (${payload.filename}) with ${payload.totalVideos} videos / ${payload.totalTimestamps} timestamps.`);
-      successes.push(destination.label);
-    } else {
-      const error = result.reason as Error;
-      const kind: BackupDestinationErrorKind = error.message === 'unauthorized' ? 'auth' : 'other';
-      failures.push({ label: destination.label, kind, error: result.reason });
-
-      if (destination.type === 'google' && kind === 'auth') {
-        await handleAuthExpiration({ silent: opts?.silent });
-      } else {
-        log(`${destination.label} export failed:`, result.reason, 'error');
-      }
-    }
-  }
-
-  if (successes.length > 0) {
-    if (failures.length > 0) {
-      log(`Backup partially succeeded. Successful destinations: ${successes.join(', ')}. Failed destinations: ${failures.map(failure => failure.label).join(', ')}`, null, 'warn');
-    }
-    return;
-  }
-
-  if (failures.every(failure => failure.kind === 'auth')) {
+  const authState = getGoogleAuthState();
+  if (!authState.accessToken) {
     throw new Error('unauthorized');
   }
-
-  throw new Error('backup failed');
+  const folderId = await ensureDriveFolder(authState.accessToken);
+  await uploadJsonToDrive(payload.filename, payload.json, folderId, authState.accessToken);
+  log(`Exported backup to Google Drive (${payload.filename}) with ${payload.totalVideos} videos / ${payload.totalTimestamps} timestamps.`);
 }
 
 // Auto-backup settings
@@ -1260,39 +1057,21 @@ export async function loadAutoBackupSettings() {
       storedLastAutoBackupAt,
       autoBackupEnabled,
       autoBackupIntervalMinutes,
-      timekeeperBackendBackupEnabled,
-      timekeeperBackendHost,
-      timekeeperBackendPort,
-      timekeeperBackendBearerToken,
     ] = await Promise.all([
       loadGlobalSettings('lastAutoBackupAt'),
       loadGlobalSettings('autoBackupEnabled'),
       loadGlobalSettings('autoBackupIntervalMinutes'),
-      loadGlobalSettings('timekeeperBackendBackupEnabled'),
-      loadGlobalSettings('timekeeperBackendHost'),
-      loadGlobalSettings('timekeeperBackendPort'),
-      loadGlobalSettings('timekeeperBackendBearerToken'),
     ]);
     const parsed = BackupSettingsSchema.partial().safeParse({
       autoBackupEnabled,
       autoBackupIntervalMinutes,
       lastAutoBackupAt: typeof storedLastAutoBackupAt === 'number' && storedLastAutoBackupAt > 0 ? storedLastAutoBackupAt : null,
-      timekeeperBackendBackupEnabled,
-      timekeeperBackendHost,
-      timekeeperBackendPort,
-      timekeeperBackendBearerToken,
     });
 
     if (parsed.success) {
       if (typeof parsed.data.autoBackupEnabled === 'boolean') AppState.setAutoBackupEnabled(parsed.data.autoBackupEnabled);
       if (typeof parsed.data.autoBackupIntervalMinutes === 'number') AppState.setAutoBackupIntervalMinutes(parsed.data.autoBackupIntervalMinutes);
       if (typeof parsed.data.lastAutoBackupAt === 'number') AppState.setLastAutoBackupAt(parsed.data.lastAutoBackupAt);
-      if (typeof parsed.data.timekeeperBackendBackupEnabled === 'boolean') AppState.setTimekeeperBackendBackupEnabled(parsed.data.timekeeperBackendBackupEnabled);
-      if (typeof parsed.data.timekeeperBackendHost === 'string') AppState.setTimekeeperBackendHost(parsed.data.timekeeperBackendHost);
-      if (typeof parsed.data.timekeeperBackendPort === 'number') AppState.setTimekeeperBackendPort(parsed.data.timekeeperBackendPort);
-      if (typeof parsed.data.timekeeperBackendBearerToken === 'string' || parsed.data.timekeeperBackendBearerToken === null) {
-        AppState.setTimekeeperBackendBearerToken(parsed.data.timekeeperBackendBearerToken);
-      }
     } else {
       log('Failed to validate auto backup settings:', parsed.error.format(), 'warn');
     }
@@ -1309,10 +1088,6 @@ export async function saveAutoBackupSettings() {
       autoBackupEnabled: auth.autoBackupEnabled,
       autoBackupIntervalMinutes: auth.autoBackupIntervalMinutes,
       lastAutoBackupAt: auth.lastAutoBackupAt,
-      timekeeperBackendBackupEnabled: auth.timekeeperBackendBackupEnabled,
-      timekeeperBackendHost: getTimekeeperBackendHostNormalized(),
-      timekeeperBackendPort: auth.timekeeperBackendPort,
-      timekeeperBackendBearerToken: getTimekeeperBackendBearerTokenNormalized(),
     };
 
     const validationResult = BackupSettingsSchema.safeParse(settings);
@@ -1325,10 +1100,6 @@ export async function saveAutoBackupSettings() {
       saveGlobalSettings('autoBackupEnabled', auth.autoBackupEnabled),
       saveGlobalSettings('autoBackupIntervalMinutes', auth.autoBackupIntervalMinutes),
       saveGlobalSettings('lastAutoBackupAt', auth.lastAutoBackupAt),
-      saveGlobalSettings('timekeeperBackendBackupEnabled', auth.timekeeperBackendBackupEnabled),
-      saveGlobalSettings('timekeeperBackendHost', getTimekeeperBackendHostNormalized()),
-      saveGlobalSettings('timekeeperBackendPort', auth.timekeeperBackendPort),
-      saveGlobalSettings('timekeeperBackendBearerToken', getTimekeeperBackendBearerTokenNormalized()),
     ]);
   } catch (err) {
     log('Failed to save auto backup settings:', err, 'error');
@@ -1363,11 +1134,6 @@ function getDestinationSummaryText(): string {
   if (configured.length > 0) {
     return `Destinations: ${configured.join(', ')}`;
   }
-
-  if (getTimekeeperBackendBackupEnabled() && !hasTimekeeperBackendBackupConfiguration()) {
-    return 'Timekeeper backend is enabled but incomplete';
-  }
-
   return 'No backup destination configured';
 }
 
@@ -1634,56 +1400,4 @@ export async function setAutoBackupIntervalPrompt() {
   updateBackupStatusDisplay();
 }
 
-export async function toggleTimekeeperBackendBackup() {
-  AppState.setTimekeeperBackendBackupEnabled(!getTimekeeperBackendBackupEnabled());
-  await saveAutoBackupSettings();
-  await scheduleAutoBackup();
-  updateBackupStatusDisplay();
-}
 
-export async function setTimekeeperBackendHostPrompt() {
-  const input = prompt('Set the Timekeeper backend host:', getTimekeeperBackendHostNormalized());
-  if (input === null) return;
-
-  const host = input.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-  if (!host) {
-    alert('Please enter a host name or IP address.');
-    return;
-  }
-
-  AppState.setTimekeeperBackendHost(host);
-  await saveAutoBackupSettings();
-  await scheduleAutoBackup();
-  updateBackupStatusDisplay();
-}
-
-export async function setTimekeeperBackendPortPrompt() {
-  const input = prompt('Set the Timekeeper backend port:', String(getTimekeeperBackendPort()));
-  if (input === null) return;
-
-  const port = Number.parseInt(input.trim(), 10);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    alert('Please enter a valid port between 1 and 65535.');
-    return;
-  }
-
-  AppState.setTimekeeperBackendPort(port);
-  await saveAutoBackupSettings();
-  await scheduleAutoBackup();
-  updateBackupStatusDisplay();
-}
-
-export async function setTimekeeperBackendBearerTokenPrompt() {
-  const currentToken = getTimekeeperBackendBearerTokenNormalized();
-  const promptMessage = currentToken
-    ? 'Set the Timekeeper backend bearer token (leave blank to clear it):'
-    : 'Set the Timekeeper backend bearer token:';
-  const input = prompt(promptMessage, currentToken ?? '');
-  if (input === null) return;
-
-  const token = input.trim();
-  AppState.setTimekeeperBackendBearerToken(token.length > 0 ? token : null);
-  await saveAutoBackupSettings();
-  await scheduleAutoBackup();
-  updateBackupStatusDisplay();
-}
