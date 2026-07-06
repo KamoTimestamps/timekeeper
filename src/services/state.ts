@@ -18,10 +18,6 @@ export interface AppState {
     autoBackupBackoffMs: number | null;
     lastAutoBackupAt: number | null;
     isAutoBackupRunning: boolean;
-    timekeeperBackendBackupEnabled: boolean;
-    timekeeperBackendHost: string;
-    timekeeperBackendPort: number;
-    timekeeperBackendBearerToken: string | null;
   };
 
   // UI state
@@ -58,10 +54,6 @@ const DEFAULT_STATE: AppState = {
     autoBackupBackoffMs: null,
     lastAutoBackupAt: null,
     isAutoBackupRunning: false,
-    timekeeperBackendBackupEnabled: false,
-    timekeeperBackendHost: 'localhost',
-    timekeeperBackendPort: 8443,
-    timekeeperBackendBearerToken: null,
   },
   ui: {
     panePosition: null,
@@ -161,22 +153,6 @@ export function setAutoBackupBackoffMs(backoff: number | null): void {
 
 export function setLastAutoBackupAt(timestamp: number | null): void {
   setAuth('lastAutoBackupAt', timestamp);
-}
-
-export function setTimekeeperBackendBackupEnabled(enabled: boolean): void {
-  setAuth('timekeeperBackendBackupEnabled', enabled);
-}
-
-export function setTimekeeperBackendHost(host: string): void {
-  setAuth('timekeeperBackendHost', host);
-}
-
-export function setTimekeeperBackendPort(port: number): void {
-  setAuth('timekeeperBackendPort', port);
-}
-
-export function setTimekeeperBackendBearerToken(token: string | null): void {
-  setAuth('timekeeperBackendBearerToken', token);
 }
 
 /**
