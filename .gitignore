@@ -2,3 +2,6 @@ dist/*
 node_modules/*
 graphify-out/manifest.json
 graphify-out/cost.json
+
+# Extension.js local session state
+.extension-js

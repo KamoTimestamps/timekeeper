@@ -517,11 +517,12 @@ initializeDvrEnablement();
   }
 
   function syncPlaybackSpeedState(rate: number) {
-    // If speed would be saved as 1x, save 2x instead
-    const speedToSave = rate === 1 ? 2 : rate;
-    lastSavedSpeed = speedToSave;
+    // 1x carries no "preferred speed" info, so leave the last remembered
+    // non-1x rate untouched rather than clobbering it (e.g. when toggling off).
+    if (rate === 1) return;
+    lastSavedSpeed = rate;
     try {
-      localStorage.setItem("ytls-last-speed", String(speedToSave));
+      localStorage.setItem("ytls-last-speed", String(rate));
     } catch (_) { }
   }
 
@@ -1293,7 +1294,7 @@ initializeDvrEnablement();
         log(`Seeking to timestamp ${newTime}`);
         isSeeking = true;
         const player = getActivePlayer();
-        if (player) { player.setPlaybackRate(1); player.seekTo(newTime); }
+        if (player) { player.seekTo(newTime); }
         setTimeout(() => {
           isSeeking = false;
         }, 500);
@@ -1338,7 +1339,6 @@ initializeDvrEnablement();
       log(
         `Timestamps changed: Timestamp time incremented from ${currTime} to ${newTime}`,
       );
-      getActivePlayer()?.setPlaybackRate(1);
       invalidateLatestTimestampValue();
       formatTime(timeLink, newTime);
 
@@ -1657,7 +1657,6 @@ initializeDvrEnablement();
       const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
       if (Number.isFinite(currentTime)) {
         log(`Timestamps changed: set to current playback time ${currentTime}`);
-        getActivePlayer()?.setPlaybackRate(1);
         invalidateLatestTimestampValue();
         formatTime(anchor, currentTime);
         updateTimeDifferences();
@@ -1683,7 +1682,7 @@ initializeDvrEnablement();
       log(`Seeking to timestamp ${newTime}`);
       isSeeking = true;
       const player = getActivePlayer();
-      if (player) { player.setPlaybackRate(1); player.seekTo(newTime); }
+      if (player) { player.seekTo(newTime); }
       const videoElement = getVideoElement();
       if (videoElement?.paused) videoElement.play();
       setTimeout(() => { isSeeking = false; }, 500);
