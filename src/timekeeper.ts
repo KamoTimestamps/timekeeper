@@ -183,6 +183,10 @@ initializeDvrEnablement();
       return 2;
     }
   })();
+  // True while Timekeeper's own toggle (indicator click / Z shortcut) is
+  // changing the rate, so the resulting "ratechange" event isn't mistaken
+  // for a fresh manual speed selection.
+  let isTogglingPlaybackSpeed = false;
 
   let versionDisplay: HTMLSpanElement | null = null;
   let backupStatusIndicator: HTMLSpanElement | null = null;
@@ -517,12 +521,11 @@ initializeDvrEnablement();
   }
 
   function syncPlaybackSpeedState(rate: number) {
-    // 1x carries no "preferred speed" info, so leave the last remembered
-    // non-1x rate untouched rather than clobbering it (e.g. when toggling off).
-    if (rate === 1) return;
-    lastSavedSpeed = rate;
+    // If the last *manually* set speed was 1x, fall back to 2x as the toggle target.
+    const speedToSave = rate === 1 ? 2 : rate;
+    lastSavedSpeed = speedToSave;
     try {
-      localStorage.setItem("ytls-last-speed", String(rate));
+      localStorage.setItem("ytls-last-speed", String(speedToSave));
     } catch (_) { }
   }
 
@@ -550,15 +553,20 @@ initializeDvrEnablement();
     const player = getActivePlayer();
     const video = getVideoElement();
 
+    // Toggling (via the indicator or the Z shortcut) fires a native
+    // "ratechange" event too; mark it so handleRatechange doesn't treat
+    // our own toggle-off as a fresh manual speed selection.
+    isTogglingPlaybackSpeed = true;
+
     if (player && typeof player.setPlaybackRate === "function") {
       player.setPlaybackRate(rate);
     } else if (video) {
       video.playbackRate = rate;
     } else {
+      isTogglingPlaybackSpeed = false;
       return false;
     }
 
-    syncPlaybackSpeedState(rate);
     updatePlaybackSpeedUI(rate);
     return true;
   }
@@ -2839,7 +2847,11 @@ initializeDvrEnablement();
 
     const handleRatechange = () => {
       const rate = video.playbackRate;
-      syncPlaybackSpeedState(rate);
+      if (isTogglingPlaybackSpeed) {
+        isTogglingPlaybackSpeed = false;
+      } else {
+        syncPlaybackSpeedState(rate);
+      }
       updatePlaybackSpeedUI(rate);
     };
 
