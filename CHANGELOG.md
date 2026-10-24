@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.0.29](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)
+
+
+### Changed
+
+* stop deleting serverAbrStreamingUrl in DVR enablement (no-op for SABR-only streams); useServerDrivenAbr=false is still required for rewind
+
 ## [5.0.27](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)
 
 ## [5.0.26](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)

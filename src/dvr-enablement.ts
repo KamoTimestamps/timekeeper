@@ -60,6 +60,7 @@ function modifyPlayerResponse(pr: Record<string, unknown>): void {
   (videoDetails as Record<string, unknown>).isLiveDvrEnabled = true;
 
   // 2) Disable server-driven playback that blocks client-side seeking.
+  //    Required for rewind: leaving useServerDrivenAbr on broke DVR (v5.0.28).
   if (isObject(playerConfig)) {
     const mc = (playerConfig as Record<string, unknown>).mediaCommonConfig;
     if (isObject(mc)) {
@@ -72,16 +73,9 @@ function modifyPlayerResponse(pr: Record<string, unknown>): void {
   }
 
   if (isObject(streamingData)) {
-    // 3) Drop the ad-carrying server-ABR stream URL when a clean manifest exists.
     const sd = streamingData as Record<string, unknown>;
-    if (
-      sd.serverAbrStreamingUrl &&
-      (sd.hlsManifestUrl || sd.dashManifestUrl)
-    ) {
-      delete sd.serverAbrStreamingUrl;
-    }
 
-    // 4) For streams already running > 12 h, widen each format's DVR window.
+    // 3) For streams already running > 12 h, widen each format's DVR window.
     if (
       Array.isArray(sd.adaptiveFormats) &&
       streamRunningOver12h(microformat)
