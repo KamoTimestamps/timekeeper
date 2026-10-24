@@ -15,6 +15,7 @@ import * as TimestampModel from "./timestamp-model";
 import * as TimestampView from "./timestamp-view";
 import * as AppState from "./services/state";
 import { initializeDvrEnablement } from "./dvr-enablement";
+import { initializeChatHandleCleanup, isLiveChatFrame } from "./chat-handles";
 
 function getExtensionStorageValue<T = unknown>(
   key: string,
@@ -106,14 +107,18 @@ if (hash && hash.length > 1) {
   }
 }
 
-// Initialize DVR/Rewind enablement for live streams
-initializeDvrEnablement();
+if (isLiveChatFrame()) {
+  initializeChatHandleCleanup();
+} else {
+  // Initialize DVR/Rewind enablement for live streams
+  initializeDvrEnablement();
+}
 
 (async function () {
   "use strict";
 
   if (window.top !== window.self) {
-    return; // Don't run in iframes
+    return; // Don't run the main app in iframes (live chat only needs handle cleanup)
   }
 
   // Setup minimal logging and storage functions early for OAuth handling
