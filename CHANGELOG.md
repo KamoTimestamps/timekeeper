@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.1.0](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)
+
+
+### Changed
+
+* flush pending comment edits on navigation, pagehide and tab hide, using the video id captured at edit time (previously dropped or at risk of being misfiled)
+* make UI saves row-level: bulk offset, import and clear-all no longer rewrite the whole video from the view, so a stale pane can't tombstone rows it hasn't loaded; sort no longer saves
+* repository: single write helper, fail closed when the Lamport counter can't be read, skip rewriting unchanged rows, tolerate invalid rows on load, handle IndexedDB onversionchange/onblocked
+* Drive sync fails closed: failed listing/download/merge aborts the run for retry instead of uploading a duplicate or local-only file; newest remote copy wins; export validates row by row; lastAutoBackupAt only advances after a real upload
+* add build-tools/e2e/storage-resilience.js
+
 ## [5.0.29](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)
 
 

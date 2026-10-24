@@ -748,10 +748,13 @@ initializeDvrEnablement();
   }
 
   let loadTimeoutId: ReturnType<typeof setTimeout> | null = null; // Variable to hold the timeout ID for debouncing loads from broadcast
-  let commentSaveTimeouts: Map<
+  // Debounced comment saves still waiting on their timer, per GUID. `flush` persists
+  // immediately with the video id captured when the user typed, so navigation or page
+  // unload can neither drop an edit nor file it under the next video.
+  const pendingCommentSaves = new Map<
     string,
-    ReturnType<typeof setTimeout>
-  > = new Map(); // Track comment save timeouts per GUID
+    { timeoutId: ReturnType<typeof setTimeout>; flush: () => void }
+  >();
   let isMouseOverTimestamps = false; // Default to false
   let settingsModalInstance: HTMLDivElement | null = null; // To keep a reference to the settings modal
   let settingsCogButtonElement: HTMLButtonElement | null = null; // To keep a reference to the settings cog button
@@ -1222,7 +1225,7 @@ initializeDvrEnablement();
       return false;
     }
 
-    let changed = false;
+    const changedRows: TimestampRecord[] = [];
 
     items.forEach((li) => {
       const anchor = li.querySelector<HTMLElement>("[data-time]");
@@ -1239,18 +1242,26 @@ initializeDvrEnablement();
       const newTime = Math.max(0, currentTime + delta);
       if (newTime !== currentTime) {
         formatTime(anchor, newTime);
-        changed = true;
+        const guid = li.dataset.guid;
+        if (guid) {
+          changedRows.push({
+            guid,
+            start: newTime,
+            comment: li.querySelector<HTMLInputElement>("input")?.value ?? "",
+          });
+        }
       }
     });
 
-    if (!changed) {
+    if (changedRows.length === 0) {
       return false;
     }
 
     updateTimeDifferences();
     updateIndentMarkers();
     updateSeekbarMarkers();
-    saveTimestamps(currentLoadedVideoId);
+    syncTimestampStateFromUI();
+    saveTimestampRows(currentLoadedVideoId, changedRows);
     mostRecentlyModifiedTimestampGuid = null;
     return true;
   }
@@ -1406,7 +1417,10 @@ initializeDvrEnablement();
       invalidateLatestTimestampValue();
       updateSeekbarMarkers();
       updateScroll();
-      saveTimestamps(currentLoadedVideoId, { allowEmpty: true });
+      // Drop typed-but-unsaved edits so they can't resurrect the rows we're clearing
+      cancelPendingCommentSaves();
+      setTimestampsInState([]);
+      clearVideoTimestamps(currentLoadedVideoId);
       mostRecentlyModifiedTimestampGuid = null;
       // Show placeholder when the list is empty after a clear
       ensureEmptyPlaceholder();
@@ -1586,6 +1600,33 @@ initializeDvrEnablement();
         commentInput.blur();
       }
     });
+    // Debounced save of this row's comment. The video id is captured now rather than when
+    // the timer fires, and flushPendingCommentSaves() can run the save early.
+    const scheduleCommentSave = (delayMs: number) => {
+      const existing = pendingCommentSaves.get(timestampGuid);
+      if (existing) {
+        clearTimeout(existing.timeoutId);
+      }
+
+      const videoIdAtEdit = currentLoadedVideoId;
+      const flush = () => {
+        const entry = pendingCommentSaves.get(timestampGuid);
+        if (entry) {
+          clearTimeout(entry.timeoutId);
+          pendingCommentSaves.delete(timestampGuid);
+        }
+        persistTimestamp(
+          videoIdAtEdit,
+          timestampGuid,
+          Number.parseInt(anchor.dataset.time ?? "0", 10),
+          commentInput.value,
+        );
+      };
+      pendingCommentSaves.set(timestampGuid, {
+        timeoutId: setTimeout(flush, delayMs),
+        flush,
+      });
+    };
     // Save on input, but avoid saving mid-composition (IME/emoji picker)
     commentInput.addEventListener("input", (ev) => {
       const ie = ev as InputEvent;
@@ -1593,36 +1634,12 @@ initializeDvrEnablement();
         return;
       }
       // Debounce comment saves with 500ms delay
-      const existingTimeout = commentSaveTimeouts.get(timestampGuid);
-      if (existingTimeout) {
-        clearTimeout(existingTimeout);
-      }
-
-      const timeout = setTimeout(() => {
-        const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
-        saveSingleTimestampDirect(
-          currentLoadedVideoId,
-          timestampGuid,
-          currentTime,
-          commentInput.value,
-        );
-        commentSaveTimeouts.delete(timestampGuid);
-      }, 500);
-
-      commentSaveTimeouts.set(timestampGuid, timeout);
+      scheduleCommentSave(500);
     });
     // Commit a quick save when composition ends (e.g., emoji/IME finalized)
     commentInput.addEventListener("compositionend", () => {
-      const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
       // Let the finalized character land, then save
-      setTimeout(() => {
-        saveSingleTimestampDirect(
-          currentLoadedVideoId,
-          timestampGuid,
-          currentTime,
-          commentInput.value,
-        );
-      }, 50);
+      scheduleCommentSave(50);
     });
 
     const rowIconColor = "#f4ba78";
@@ -1752,11 +1769,11 @@ initializeDvrEnablement();
         log("Timestamps changed: Timestamp deleted");
         const guid = li.dataset.guid ?? "";
 
-        // Remove any pending comment-save timeouts for this GUID
-        const pendingTimeout = commentSaveTimeouts.get(guid);
-        if (pendingTimeout) {
-          clearTimeout(pendingTimeout);
-          commentSaveTimeouts.delete(guid);
+        // Remove any pending comment save for this GUID
+        const pendingSave = pendingCommentSaves.get(guid);
+        if (pendingSave) {
+          clearTimeout(pendingSave.timeoutId);
+          pendingCommentSaves.delete(guid);
         }
 
         // Clean up listeners immediately to avoid dangling document handlers
@@ -2048,10 +2065,11 @@ initializeDvrEnablement();
       }
     }
 
-    // Only save if order actually changed
+    // Row order isn't stored (rows load sorted by start time), so a re-sort has nothing
+    // to persist; just keep the centralized state in step with the view.
     if (orderChanged) {
       log("Timestamps changed: Timestamps sorted");
-      saveTimestamps(currentLoadedVideoId);
+      syncTimestampStateFromUI();
     }
   }
 
@@ -2136,45 +2154,35 @@ initializeDvrEnablement();
     });
   }
 
-  function saveTimestamps(
-    videoId: string,
-    options: { allowEmpty?: boolean } = {},
-  ) {
-    if (!list) return;
-    if (isEditingBlocked()) return;
-    if (!videoId) return;
-    // Prevent saving during loading state to avoid race conditions
-    if (isLoadingTimestamps) {
-      log("Save blocked: timestamps are currently loading");
-      return;
-    }
-    updateIndentMarkers();
-    const currentTimestampsFromUI = extractTimestampRecords().sort(
-      (a, b) => a.start - b.start,
+  // Mirror the rows currently shown into the centralized state.
+  function syncTimestampStateFromUI() {
+    setTimestampsInState(
+      extractTimestampRecords().sort((a, b) => a.start - b.start),
     );
+  }
 
-    // Skip saving if the list is empty, unless explicitly allowed (e.g., user cleared all timestamps)
-    if (currentTimestampsFromUI.length === 0 && !options.allowEmpty) {
-      log("Save skipped: no timestamps to save");
-      return;
-    }
+  // Persist exactly these rows. Saves are row-level on purpose: the view is never treated
+  // as the full list, so a stale pane (another tab or a sync merge just added rows) can't
+  // tombstone rows it hasn't shown yet.
+  function saveTimestampRows(
+    videoId: string | null | undefined,
+    rows: TimestampRecord[],
+  ) {
+    if (!videoId || rows.length === 0 || isLoadingTimestamps) return;
+    if (isEditingBlocked()) return;
 
-    // Sync timestamps to centralized state before saving
-    setTimestampsInState(currentTimestampsFromUI);
-
-    saveToIndexedDB(videoId, currentTimestampsFromUI)
+    saveRowsToIndexedDB(videoId, rows)
       .then(() => {
-        log(
-          `Successfully saved ${currentTimestampsFromUI.length} timestamps for ${videoId} to IndexedDB`,
-        );
+        log(`Saved ${rows.length} timestamps for ${videoId} to IndexedDB`);
         // Clear any previous DB error on successful save
-        clearPaneError();
+        if (list) clearPaneError();
       })
       .catch((err) => {
         const errorMsg = `Failed to save timestamps: ${err.message}`;
         log(`Failed to save timestamps for ${videoId} to IndexedDB:`, err, "error");
         displayPaneError(errorMsg);
       });
+
     safePostMessage({
       type: "timestamps_updated",
       videoId: videoId,
@@ -2182,6 +2190,42 @@ initializeDvrEnablement();
     });
   }
 
+  // Soft-delete every timestamp of the video ("clear all").
+  function clearVideoTimestamps(videoId: string | null | undefined) {
+    if (!videoId || isLoadingTimestamps) return;
+    if (isEditingBlocked()) return;
+
+    removeFromIndexedDB(videoId)
+      .then(() => {
+        if (list) clearPaneError();
+      })
+      .catch((err) => {
+        const errorMsg = `Failed to clear timestamps: ${err.message}`;
+        log(`Failed to clear timestamps for ${videoId}:`, err, "error");
+        displayPaneError(errorMsg);
+      });
+
+    safePostMessage({
+      type: "timestamps_updated",
+      videoId: videoId,
+      action: "saved",
+    });
+  }
+
+  // Run every debounced comment save now. Called before anything that would drop or
+  // block them: navigation, page hide/unload, and tearing the UI down.
+  function flushPendingCommentSaves() {
+    for (const { flush } of [...pendingCommentSaves.values()]) {
+      flush();
+    }
+  }
+
+  function cancelPendingCommentSaves() {
+    pendingCommentSaves.forEach(({ timeoutId }) => clearTimeout(timeoutId));
+    pendingCommentSaves.clear();
+  }
+
+  // Guarded entry point for user edits made while the pane is live.
   function saveSingleTimestampDirect(
     videoId: string | null | undefined,
     guid: string,
@@ -2190,6 +2234,19 @@ initializeDvrEnablement();
   ) {
     if (!videoId || isLoadingTimestamps) return;
     if (isEditingBlocked()) return;
+
+    persistTimestamp(videoId, guid, start, comment);
+  }
+
+  // Unguarded write used by flushes: it must run even while a navigation has locked the
+  // pane, using the video id that was current when the user typed.
+  function persistTimestamp(
+    videoId: string | null | undefined,
+    guid: string,
+    start: number,
+    comment: string,
+  ) {
+    if (!videoId) return;
 
     const timestamp: TimestampRecord = { guid, start, comment };
     log(`Saving timestamp: guid=${guid}, start=${start}, comment="${comment}"`);
@@ -2417,9 +2474,8 @@ initializeDvrEnablement();
   function unloadTimekeeper() {
     removeSeekbarMarkers();
 
-    // Clear all pending comment saves
-    commentSaveTimeouts.forEach((timeout) => clearTimeout(timeout));
-    commentSaveTimeouts.clear();
+    // Persist (not discard) any comment edits still waiting on their debounce timer
+    flushPendingCommentSaves();
 
     if (loadTimeoutId) {
       clearTimeout(loadTimeoutId);
@@ -2891,6 +2947,7 @@ initializeDvrEnablement();
   // Using model functions from timestamp-model module
   const {
     saveToIndexedDB,
+    saveRowsToIndexedDB,
     saveSingleTimestampToIndexedDB,
     deleteSingleTimestampFromIndexedDB,
     loadFromIndexedDB,
@@ -3055,6 +3112,22 @@ initializeDvrEnablement();
       return;
     }
     let processedSuccessfully = false;
+    // New rows save themselves in addTimestamp(); rows whose comment is overwritten here
+    // are collected so only those get persisted afterwards.
+    const editedRows: TimestampRecord[] = [];
+    const overwriteComment = (li: HTMLLIElement, comment: string) => {
+      const commentInput = li.querySelector<HTMLInputElement>("input");
+      if (!commentInput) return;
+      commentInput.value = comment;
+      const guid = li.dataset.guid;
+      const start = Number.parseInt(
+        li.querySelector<HTMLElement>("[data-time]")?.dataset.time ?? "",
+        10,
+      );
+      if (guid && Number.isFinite(start)) {
+        editedRows.push({ guid, start, comment });
+      }
+    };
     // Try parsing as JSON first
     try {
       const parsed = JSON.parse(contentString);
@@ -3105,11 +3178,7 @@ initializeDvrEnablement();
                 (li) => li.dataset.guid === ts.guid,
               );
               if (existingLi) {
-                const commentInput =
-                  existingLi.querySelector<HTMLInputElement>("input");
-                if (commentInput) {
-                  commentInput.value = ts.comment;
-                }
+                overwriteComment(existingLi, ts.comment);
               } else {
                 addTimestamp(ts.start, ts.comment, false, ts.guid);
               }
@@ -3186,11 +3255,7 @@ initializeDvrEnablement();
               });
             }
             if (existingLi) {
-              const commentInput =
-                existingLi.querySelector<HTMLInputElement>("input");
-              if (commentInput) {
-                commentInput.value = comment;
-              }
+              overwriteComment(existingLi, comment);
             } else {
               addTimestamp(start, comment, false, guid || crypto.randomUUID()); // Use existing GUID or generate new one
             }
@@ -3205,7 +3270,8 @@ initializeDvrEnablement();
     if (processedSuccessfully) {
       log("Timestamps changed: Imported timestamps from file/clipboard");
       updateIndentMarkers();
-      saveTimestamps(currentLoadedVideoId);
+      syncTimestampStateFromUI();
+      saveTimestampRows(currentLoadedVideoId, editedRows);
       updateSeekbarMarkers();
       updateScroll();
       // alert("Timestamps loaded and merged successfully!");
@@ -5561,6 +5627,8 @@ initializeDvrEnablement();
   // Listen for navigation start and lock UI with loading state
   window.addEventListener("yt-navigate-start", () => {
     log("Navigation started (yt-navigate-start event fired)");
+    // Persist typed-but-unsaved comments before the loading lock below blocks saves
+    flushPendingCommentSaves();
     if (isSupportedUrl() && pane && list) {
       log("Locking UI and showing loading state for navigation");
       setLoadingState(true);
@@ -5600,6 +5668,15 @@ initializeDvrEnablement();
     }
   };
   document.addEventListener("keydown", keydownHandler);
+
+  // Persist pending comment edits when the page is closed, reloaded, or backgrounded
+  // (on mobile and bfcache pages `pagehide` may be the only chance we get).
+  window.addEventListener("pagehide", flushPendingCommentSaves);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      flushPendingCommentSaves();
+    }
+  });
 
   // Listen for navigation completion and load timestamps when navigation finishes
   window.addEventListener("yt-navigate-finish", () => {

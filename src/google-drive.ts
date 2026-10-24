@@ -767,12 +767,16 @@ async function ensureDriveFolder(accessToken: string): Promise<string> {
 async function findFileInFolder(filename: string, folderId: string, accessToken: string): Promise<string | null> {
   const query = `name='${filename}' and '${folderId}' in parents and trashed=false`;
   const encodedQuery = encodeURIComponent(query);
-  const resp = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodedQuery}&fields=files(id,name)`, {
+  // Newest first, so if duplicate copies ever exist every device resolves to the same one.
+  const orderBy = encodeURIComponent('modifiedTime desc');
+  const resp = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodedQuery}&orderBy=${orderBy}&fields=files(id,name)`, {
     method: 'GET',
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   if (resp.status === 401) throw new Error('unauthorized');
-  if (!resp.ok) return null;
+  // A failed listing is not "file not found": treating it as such would skip the merge
+  // and create a second remote copy on upload.
+  if (!resp.ok) throw new Error(`drive search failed (${resp.status})`);
   const data = await resp.json();
   if (data.files && data.files.length > 0) {
     return data.files[0].id;
@@ -780,62 +784,61 @@ async function findFileInFolder(filename: string, folderId: string, accessToken:
   return null;
 }
 
-// Download and decompress the latest backup from Google Drive
+// Download and decompress the latest backup from Google Drive.
+// Returns null only when there is no usable remote backup. Transport and HTTP errors
+// throw, so callers never mistake "couldn't check" for "nothing there" and upload local
+// data over a remote they couldn't read.
 async function fetchLatestDriveBackup(accessToken: string): Promise<string | null> {
+  const folderId = await ensureDriveFolder(accessToken);
+  const fileId = await findFileInFolder('timekeeper-data.zip', folderId, accessToken);
+  if (!fileId) return null;
+
+  const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (resp.status === 401) throw new Error('unauthorized');
+  if (!resp.ok) throw new Error(`drive download failed (${resp.status})`);
+
+  const buffer = await resp.arrayBuffer();
   try {
-    const folderId = await ensureDriveFolder(accessToken);
-    const fileId = await findFileInFolder('timekeeper-data.zip', folderId, accessToken);
-    if (!fileId) return null;
-
-    const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    if (resp.status === 401) throw new Error('unauthorized');
-    if (!resp.ok) return null;
-
-    return decodeFirstZipEntry(await resp.arrayBuffer());
-  } catch (err: any) {
-    if (err.message === 'unauthorized') throw err;
-    log('Failed to fetch latest Drive backup for merge:', err, 'warn');
+    return decodeFirstZipEntry(buffer);
+  } catch (err) {
+    // Retrying can't repair a corrupt remote file; the next upload replaces it.
+    log('Remote backup could not be decoded; the next upload will replace it:', err, 'warn');
     return null;
   }
 }
 
 // Fetch and merge the latest remote backup before uploading.
-// Errors during fetch/merge are logged but never block the backup.
+// Any failure to fetch or merge propagates and aborts this backup run (the scheduler
+// retries with backoff): uploading local-only data over a remote we couldn't read would
+// drop rows that other devices have backed up.
 async function mergeFromAllRemotesBeforeBackup(): Promise<void> {
   if (!mergeBackupData) return;
 
   const authState = getGoogleAuthState();
   if (!authState.isSignedIn || !authState.accessToken) return;
 
-  const json = await fetchLatestDriveBackup(authState.accessToken).catch(async (err: Error) => {
-    if (err.message === 'unauthorized') {
-      await handleAuthExpiration({ silent: true });
-      return null;
-    }
-    log('Failed to fetch latest Drive backup for merge:', err, 'warn');
-    return null;
-  });
-
-  const jsons: Array<string | null> = json ? [json] : [];
-
-  let totalMergedTimestamps = 0;
-  for (const json of jsons) {
-    if (!json) continue;
-    try {
-      const { mergedVideos, mergedTimestamps } = await mergeBackupData(json);
-      if (mergedTimestamps > 0) {
-        log(`Pre-backup merge: added ${mergedTimestamps} timestamps from ${mergedVideos} videos from remote`);
-        totalMergedTimestamps += mergedTimestamps;
-      }
-    } catch (err) {
-      log('Failed to merge remote backup data:', err, 'warn');
-    }
+  let json: string | null;
+  try {
+    json = await fetchLatestDriveBackup(authState.accessToken);
+  } catch (err) {
+    if ((err as Error).message !== 'unauthorized') throw err;
+    // Token expired: refresh silently, then retry once with the new token.
+    await handleAuthExpiration({ silent: true });
+    const refreshed = getGoogleAuthState();
+    if (!refreshed.isSignedIn || !refreshed.accessToken) throw err;
+    json = await fetchLatestDriveBackup(refreshed.accessToken);
   }
 
-  if (totalMergedTimestamps > 0 && reloadCurrentVideoTimestamps) {
-    reloadCurrentVideoTimestamps();
+  if (!json) return;
+
+  const { mergedVideos, mergedTimestamps } = await mergeBackupData(json);
+  if (mergedTimestamps > 0) {
+    log(`Pre-backup merge: added ${mergedTimestamps} timestamps from ${mergedVideos} videos from remote`);
+    if (reloadCurrentVideoTimestamps) {
+      reloadCurrentVideoTimestamps();
+    }
   }
 }
 
@@ -972,7 +975,8 @@ async function handleAuthExpiration(opts?: { silent?: boolean }): Promise<void> 
   updateBackupStatusDisplay();
 }
 
-async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boolean }): Promise<void> {
+// Resolves 'uploaded' after a real upload, or 'skipped' when there was nothing to back up.
+async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boolean }): Promise<'uploaded' | 'skipped'> {
   if (!hasGoogleDriveBackupDestination()) {
     if (!opts?.silent) {
       updateAuthStatusDisplay('error', 'Configure a backup destination first');
@@ -984,10 +988,14 @@ async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boo
 
   const payload = await buildExportPayload({ includeDeleted: true });
   if (payload.totalTimestamps === 0) {
+    // Rows exist but none could be exported: that is a failed backup, not an empty one.
+    if (payload.invalidRows > 0) {
+      throw new Error(`export-invalid-data: ${payload.invalidRows} stored rows failed validation`);
+    }
     if (!opts?.silent) {
       log('Skipping export: no timestamps to back up');
     }
-    return;
+    return 'skipped';
   }
 
   const authState = getGoogleAuthState();
@@ -997,6 +1005,7 @@ async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boo
   const folderId = await ensureDriveFolder(authState.accessToken);
   await uploadJsonToDrive(payload.filename, payload.json, folderId, authState.accessToken);
   log(`Exported backup to Google Drive (${payload.filename}) with ${payload.totalVideos} videos / ${payload.totalTimestamps} timestamps.`);
+  return 'uploaded';
 }
 
 // Auto-backup settings
@@ -1251,9 +1260,11 @@ export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
   AppState.setAutoBackupRunning(true);
   updateBackupStatusDisplay();
   try {
-    await exportAllTimestampsToConfiguredDestinations({ silent });
-    // Only update last backup time if the backup succeeded
-    AppState.setLastAutoBackupAt(Date.now());
+    const outcome = await exportAllTimestampsToConfiguredDestinations({ silent });
+    // Only a real upload counts as a backup; an empty local DB has nothing to back up
+    if (outcome === 'uploaded') {
+      AppState.setLastAutoBackupAt(Date.now());
+    }
     AppState.setAutoBackupRetryAttempts(0);
     AppState.setAutoBackupBackoffMs(null);
     if (autoBackupBackoffTimeoutId) {

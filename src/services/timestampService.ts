@@ -6,6 +6,7 @@
 
 import {
   TimestampRecord,
+  TimestampRow,
   TimestampRowSchema,
   ExportDataSchema,
 } from '../schema';
@@ -22,18 +23,28 @@ export async function buildExportPayload({ includeDeleted = false }: { includeDe
   filename: string;
   totalVideos: number;
   totalTimestamps: number;
+  invalidRows: number;
 }> {
   const exportData = {} as Record<string, unknown>;
 
   const allTimestamps = await TimestampRepository.getAllTimestamps();
-  const parsedRows = TimestampRowSchema.array().safeParse(allTimestamps);
 
-  if (!parsedRows.success) {
-    log('Failed to parse timestamp rows for export:', parsedRows.error.message, 'warn');
-    return { json: '{}', filename: 'timekeeper-data.json', totalVideos: 0, totalTimestamps: 0 };
+  // Validate row by row: one corrupt row must not silently empty the whole export.
+  const validRows: TimestampRow[] = [];
+  let invalidRows = 0;
+  for (const row of allTimestamps) {
+    const parsedRow = TimestampRowSchema.safeParse(row);
+    if (parsedRow.success) {
+      validRows.push(parsedRow.data);
+    } else {
+      invalidRows++;
+    }
+  }
+  if (invalidRows > 0) {
+    log(`Skipped ${invalidRows} timestamp rows that failed validation during export`, null, 'warn');
   }
 
-  const rows = includeDeleted ? parsedRows.data : parsedRows.data.filter(r => !r.deleted_at);
+  const rows = includeDeleted ? validRows : validRows.filter(r => !r.deleted_at);
   const sortedRows = [...rows].sort((a, b) => {
     const videoCompare = a.video_id.localeCompare(b.video_id);
     if (videoCompare !== 0) return videoCompare;
@@ -70,7 +81,7 @@ export async function buildExportPayload({ includeDeleted = false }: { includeDe
 
   const filename = `timekeeper-data.json`;
   const json = JSON.stringify(exportData, null, 2);
-  return { json, filename, totalVideos: videoGroups.size, totalTimestamps: sortedRows.length };
+  return { json, filename, totalVideos: videoGroups.size, totalTimestamps: sortedRows.length, invalidRows };
 }
 
 /**
@@ -193,6 +204,16 @@ export async function addTimestamp(videoId: string, timestamp: TimestampRecord):
     throw new Error('Timestamp must have GUID and start time');
   }
   return TimestampRepository.saveTimestamp(videoId, timestamp);
+}
+
+/**
+ * Save specific timestamps for a video without touching its other rows
+ */
+export async function saveTimestampRows(videoId: string, timestamps: TimestampRecord[]): Promise<void> {
+  if (!videoId) {
+    throw new Error('Video ID is required');
+  }
+  return TimestampRepository.upsertTimestamps(videoId, timestamps);
 }
 
 /**

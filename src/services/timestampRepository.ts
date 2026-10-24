@@ -59,6 +59,15 @@ function getDB(): Promise<IDBDatabase> {
       dbConnection = null;
     };
 
+    // Another tab (running a newer script) wants to upgrade the database. Release our
+    // connection so the upgrade isn't blocked; the next operation reopens it, and fails
+    // loudly (VersionError) if this tab's script is older than the stored schema.
+    db.onversionchange = () => {
+      log('IndexedDB upgrade requested by another tab; closing this connection', null, 'warn');
+      db.close();
+      if (dbConnection === db) dbConnection = null;
+    };
+
     db.onerror = (event) => {
       log('IndexedDB connection error:', event, 'error');
     };
@@ -241,6 +250,11 @@ function openIndexedDB(): Promise<IDBDatabase> {
       const error = (event.target as IDBOpenDBRequest).error;
       reject(error ?? new Error('Failed to open IndexedDB'));
     };
+    // Open requests wait for other tabs' connections to close. Without a log line a
+    // blocked upgrade looks like an endless "Loading timestamps...".
+    request.onblocked = () => {
+      log('IndexedDB open is blocked by another tab holding an older connection; waiting', null, 'warn');
+    };
   });
 }
 
@@ -286,10 +300,60 @@ function executeTransaction<T>(
   });
 }
 
+/**
+ * Run `body` inside one readwrite transaction over the timestamp and settings stores.
+ * Resolves when the transaction commits and rejects if it aborts. An exception thrown by
+ * `body` (or by a request callback it registers) aborts the transaction, so a partial
+ * write is never committed.
+ */
+function runWrite(
+  body: (v2Store: IDBObjectStore, settingsStore: IDBObjectStore) => void
+): Promise<void> {
+  return getDB().then(db => new Promise<void>((resolve, reject) => {
+    let tx: IDBTransaction;
+    try {
+      tx = db.transaction([STORE_NAME_V2, SETTINGS_STORE_NAME], 'readwrite');
+    } catch (err) {
+      reject(new Error(`Failed to create transaction: ${err}`));
+      return;
+    }
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(new Error(`IndexedDB write failed: ${tx.error?.message ?? 'unknown'}`));
+    tx.onabort = () => reject(new Error(`IndexedDB transaction aborted: ${tx.error?.message ?? 'unknown'}`));
+
+    try {
+      body(tx.objectStore(STORE_NAME_V2), tx.objectStore(SETTINGS_STORE_NAME));
+    } catch (err) {
+      try { tx.abort(); } catch { /* transaction already finished */ }
+      reject(err instanceof Error ? err : new Error(String(err)));
+    }
+  }));
+}
+
+/**
+ * Read the Lamport write_counter and store whatever `use` returns as the new value.
+ * A failed read aborts the transaction instead of falling back to 0: resetting the
+ * counter would make later local writes lose merges to older remote versions.
+ */
+function withWriteCounter(
+  settingsStore: IDBObjectStore,
+  use: (current: number) => number
+): void {
+  const counterReq = settingsStore.get('write_counter');
+  counterReq.onsuccess = () => {
+    const current = typeof counterReq.result?.value === 'number' ? counterReq.result.value : 0;
+    settingsStore.put({ key: 'write_counter', value: use(current) });
+  };
+}
+
 // === Public Repository API ===
 
 /**
- * Save all timestamps for a video. Throws on IndexedDB errors.
+ * Replace all timestamps for a video: rows missing from `data` are soft-deleted.
+ * Only for callers that hold the authoritative list (e.g. a file import). UI edits
+ * must use upsertTimestamps / deleteTimestamp so a stale view can't tombstone rows.
+ * Throws on IndexedDB errors.
  */
 export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promise<void> {
   const parsed = TimestampRecordArraySchema.safeParse(data);
@@ -298,284 +362,128 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
   }
 
   const timestamps = parsed.data;
-  return getDB().then(db => new Promise<void>((resolve, reject) => {
-    let tx: IDBTransaction;
-    try {
-      tx = db.transaction([STORE_NAME_V2, SETTINGS_STORE_NAME], 'readwrite');
-    } catch (err) {
-      reject(new Error(`Failed to create transaction: ${err}`));
-      return;
-    }
-
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(new Error(`IndexedDB save failed: ${tx.error?.message ?? 'unknown'}`));
-    tx.onabort = () => reject(new Error(`IndexedDB transaction aborted`));
-
-    const v2Store = tx.objectStore(STORE_NAME_V2);
-    const settingsStore = tx.objectStore(SETTINGS_STORE_NAME);
-
-    // Read existing records
-    const v2Index = v2Store.index('video_id');
-    const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
+  return runWrite((v2Store, settingsStore) => {
+    const getRequest = v2Store.index('video_id').getAll(IDBKeyRange.only(videoId));
 
     getRequest.onsuccess = () => {
-      try {
-        const existingRecords = (getRequest.result as TimestampRow[]) ?? [];
-        const existingByGuid = new Map(existingRecords.map(r => [r.guid, r]));
-        const newGuids = new Set(timestamps.map(ts => ts.guid));
-        const now = Date.now();
+      const existingRecords = (getRequest.result as TimestampRow[]) ?? [];
+      const existingByGuid = new Map(existingRecords.map(r => [r.guid, r]));
+      const newGuids = new Set(timestamps.map(ts => ts.guid));
+      const now = Date.now();
 
-        let counter: number;
-        // Read counter from the transaction's write to SETTINGS_STORE_NAME
-        const counterReq = settingsStore.get('write_counter');
-        counterReq.onsuccess = () => {
-          try {
-            counter = (typeof counterReq.result?.value === 'number') ? counterReq.result.value : 0;
-          } catch {
-            counter = 0;
+      withWriteCounter(settingsStore, current => {
+        let counter = current;
+
+        // Soft-delete removed timestamps
+        existingRecords.forEach(record => {
+          if (!newGuids.has(record.guid) && !record.deleted_at) {
+            counter++;
+            v2Store.put({ ...record, deleted_at: now, write_counter: counter });
           }
+        });
 
-          // Soft-delete removed timestamps
-          existingRecords.forEach(record => {
-            if (!newGuids.has(record.guid) && !record.deleted_at) {
-              counter++;
-              v2Store.put({ ...record, deleted_at: now, write_counter: counter });
-            }
+        // Upsert changed or new timestamps; unchanged rows are left untouched
+        timestamps.forEach(ts => {
+          const existing = existingByGuid.get(ts.guid);
+          const unchanged = existing &&
+            !existing.deleted_at &&
+            !ts.deleted_at &&
+            existing.start === ts.start &&
+            existing.comment === ts.comment;
+          if (unchanged) return;
+
+          counter++;
+          v2Store.put({
+            guid: ts.guid,
+            video_id: videoId,
+            start: ts.start,
+            comment: ts.comment,
+            write_counter: counter,
+            deleted_at: ts.deleted_at ?? (existing?.deleted_at ?? undefined),
           });
+        });
 
-          // Upsert
-          timestamps.forEach(ts => {
-            const existing = existingByGuid.get(ts.guid);
-            const unchanged = existing &&
-              !existing.deleted_at &&
-              existing.start === ts.start &&
-              existing.comment === ts.comment &&
-              existing.deleted_at === ts.deleted_at;
-
-            if (unchanged) {
-              v2Store.put({
-                guid: ts.guid,
-                video_id: videoId,
-                start: ts.start,
-                comment: ts.comment,
-                write_counter: existing.write_counter,
-                deleted_at: ts.deleted_at,
-                device_id: existing.device_id,
-              });
-            } else {
-              counter++;
-              const finalDeletedAt = ts.deleted_at ?? (existing?.deleted_at ?? undefined);
-              v2Store.put({
-                guid: ts.guid,
-                video_id: videoId,
-                start: ts.start,
-                comment: ts.comment,
-                write_counter: counter,
-                deleted_at: finalDeletedAt,
-              });
-            }
-          });
-
-          // Update counter in settings store
-          settingsStore.put({ key: 'write_counter', value: counter });
-        };
-
-        counterReq.onerror = () => {
-          // If we can't read the counter, fall back to 0
-          log('Failed to read write_counter during save, proceeding with counter=0', counterReq.error, 'warn');
-          counter = 0;
-
-          // Soft-delete removed timestamps
-          existingRecords.forEach(record => {
-            if (!newGuids.has(record.guid) && !record.deleted_at) {
-              counter++;
-              v2Store.put({ ...record, deleted_at: now, write_counter: counter });
-            }
-          });
-
-          // Upsert
-          timestamps.forEach(ts => {
-            const existing = existingByGuid.get(ts.guid);
-            const unchanged = existing &&
-              !existing.deleted_at &&
-              existing.start === ts.start &&
-              existing.comment === ts.comment &&
-              existing.deleted_at === ts.deleted_at;
-
-            if (unchanged) {
-              v2Store.put({
-                guid: ts.guid,
-                video_id: videoId,
-                start: ts.start,
-                comment: ts.comment,
-                write_counter: existing.write_counter,
-                deleted_at: ts.deleted_at,
-                device_id: existing.device_id,
-              });
-            } else {
-              counter++;
-              const finalDeletedAt = ts.deleted_at ?? (existing?.deleted_at ?? undefined);
-              v2Store.put({
-                guid: ts.guid,
-                video_id: videoId,
-                start: ts.start,
-                comment: ts.comment,
-                write_counter: counter,
-                deleted_at: finalDeletedAt,
-              });
-            }
-          });
-
-          settingsStore.put({ key: 'write_counter', value: counter });
-        };
-      } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
-      }
+        return counter;
+      });
     };
+  });
+}
 
-    getRequest.onerror = () => {
-      const msg = `Failed to load existing records for save: ${getRequest.error?.message ?? 'unknown'}`;
-      log(msg, getRequest.error, 'error');
-      reject(new Error(msg));
-    };
-  }));
+/**
+ * Row-level save: puts exactly the supplied timestamps, stamping each with a fresh
+ * write_counter. Never touches other rows of the video. Throws on IndexedDB errors.
+ */
+export function upsertTimestamps(videoId: string, data: TimestampRecord[]): Promise<void> {
+  const parsed = TimestampRecordArraySchema.safeParse(data);
+  if (!parsed.success) {
+    return Promise.reject(new Error(`Invalid timestamp payload for ${videoId}`));
+  }
+
+  const timestamps = parsed.data;
+  if (timestamps.length === 0) return Promise.resolve();
+
+  return runWrite((v2Store, settingsStore) => {
+    withWriteCounter(settingsStore, current => {
+      let counter = current;
+      timestamps.forEach(ts => {
+        counter++;
+        v2Store.put({
+          guid: ts.guid,
+          video_id: videoId,
+          start: ts.start,
+          comment: ts.comment,
+          write_counter: counter,
+          deleted_at: ts.deleted_at,
+        });
+      });
+      return counter;
+    });
+  });
 }
 
 /**
  * Save a single timestamp. Throws on IndexedDB errors.
  */
 export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Promise<void> {
-  const parsed = TimestampRecordSchema.safeParse(timestamp);
-  if (!parsed.success) {
-    return Promise.reject(new Error(`Invalid timestamp: ${parsed.error.message}`));
-  }
-  const ts = parsed.data;
-  return getDB().then(db => new Promise<void>((resolve, reject) => {
-    let tx: IDBTransaction;
-    try {
-      tx = db.transaction([STORE_NAME_V2, SETTINGS_STORE_NAME], 'readwrite');
-    } catch (err) {
-      reject(new Error(`Failed to create transaction: ${err}`));
-      return;
-    }
-
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(new Error(`IndexedDB save failed: ${tx.error?.message ?? 'unknown'}`));
-    tx.onabort = () => reject(new Error(`IndexedDB transaction aborted`));
-
-    const v2Store = tx.objectStore(STORE_NAME_V2);
-    const settingsStore = tx.objectStore(SETTINGS_STORE_NAME);
-
-    // Write the timestamp
-    v2Store.put({
-      guid: ts.guid,
-      video_id: videoId,
-      start: ts.start,
-      comment: ts.comment,
-      write_counter: 0,
-      deleted_at: ts.deleted_at,
-    });
-
-    // Read the current counter
-    const counterReq = settingsStore.get('write_counter');
-    counterReq.onsuccess = () => {
-      try {
-        const counter = (typeof counterReq.result?.value === 'number') ? counterReq.result.value : 0;
-        v2Store.put({
-          guid: ts.guid,
-          video_id: videoId,
-          start: ts.start,
-          comment: ts.comment,
-          write_counter: counter + 1,
-          deleted_at: ts.deleted_at,
-        });
-        settingsStore.put({ key: 'write_counter', value: counter + 1 });
-      } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
-      }
-    };
-    counterReq.onerror = () => {
-      // Fallback: just increment from 0
-      v2Store.put({
-        guid: ts.guid,
-        video_id: videoId,
-        start: ts.start,
-        comment: ts.comment,
-        write_counter: 1,
-        deleted_at: ts.deleted_at,
-      });
-      settingsStore.put({ key: 'write_counter', value: 1 });
-    };
-  }));
+  return upsertTimestamps(videoId, [timestamp]);
 }
 
 /**
  * Additive batch insert: puts all supplied records in one transaction.
  * Does not soft-delete anything — use saveTimestamps for replace semantics.
- * Records with write_counter preserve it; records without get auto-assigned.
- * Always advances the local counter to at least max(imported counters).
+ * Records with write_counter preserve it; records without get a counter above both the
+ * local counter and every incoming one. Always advances the local counter to at least
+ * max(local, imported counters)+1.
  * Throws on IndexedDB errors.
  */
 export function saveTimestampsBatch(
   records: Array<{ guid: string; video_id: string; start: number; comment: string; write_counter?: number; deleted_at?: number }>
 ): Promise<void> {
   if (records.length === 0) return Promise.resolve();
-  return getDB().then(db => new Promise<void>((resolve, reject) => {
-    let tx: IDBTransaction;
-    try {
-      tx = db.transaction([STORE_NAME_V2, SETTINGS_STORE_NAME], 'readwrite');
-    } catch (err) {
-      reject(new Error(`Failed to create transaction: ${err}`));
-      return;
-    }
+  return runWrite((v2Store, settingsStore) => {
+    withWriteCounter(settingsStore, current => {
+      let counter = current;
+      records.forEach(record => {
+        if (record.write_counter !== undefined && record.write_counter > counter) {
+          counter = record.write_counter;
+        }
+      });
 
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(new Error(`IndexedDB batch save failed: ${tx.error?.message ?? 'unknown'}`));
-    tx.onabort = () => reject(new Error(`IndexedDB transaction aborted`));
+      records.forEach(record => {
+        const row: TimestampRow = {
+          guid: record.guid,
+          video_id: record.video_id,
+          start: record.start,
+          comment: record.comment,
+          deleted_at: record.deleted_at,
+          write_counter: record.write_counter ?? ++counter,
+        };
+        v2Store.put(row);
+      });
 
-    const v2Store = tx.objectStore(STORE_NAME_V2);
-    const settingsStore = tx.objectStore(SETTINGS_STORE_NAME);
-
-    // Calculate max counter from incoming records
-    let maxCounter = 0;
-    records.forEach(record => {
-      if (record.write_counter !== undefined && record.write_counter > maxCounter) {
-        maxCounter = record.write_counter;
-      }
+      return counter + 1;
     });
-
-    records.forEach(record => {
-      const row: TimestampRow = {
-        guid: record.guid,
-        video_id: record.video_id,
-        start: record.start,
-        comment: record.comment,
-        deleted_at: record.deleted_at,
-      };
-      if (record.write_counter === undefined) {
-        maxCounter++;
-        row.write_counter = maxCounter;
-      } else {
-        row.write_counter = record.write_counter;
-      }
-      v2Store.put(row);
-    });
-
-    // Set counter to max(incoming, current)+1
-    const counterReq = settingsStore.get('write_counter');
-    counterReq.onsuccess = () => {
-      try {
-        const currentCounter = (typeof counterReq.result?.value === 'number') ? counterReq.result.value : 0;
-        const newCounter = Math.max(maxCounter, currentCounter) + 1;
-        settingsStore.put({ key: 'write_counter', value: newCounter });
-      } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
-      }
-    };
-    counterReq.onerror = () => {
-      settingsStore.put({ key: 'write_counter', value: maxCounter + 1 });
-    };
-  }));
+  });
 }
 
 /**
@@ -584,65 +492,24 @@ export function saveTimestampsBatch(
  */
 export function deleteTimestamp(guid: string): Promise<void> {
   log(`Soft-deleting timestamp ${guid}`);
-  return getDB().then(db => new Promise<void>((resolve, reject) => {
-    let tx: IDBTransaction;
-    try {
-      tx = db.transaction([STORE_NAME_V2, SETTINGS_STORE_NAME], 'readwrite');
-    } catch (err) {
-      reject(new Error(`Failed to create transaction: ${err}`));
-      return;
-    }
-
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(new Error(`IndexedDB delete failed: ${tx.error?.message ?? 'unknown'}`));
-    tx.onabort = () => reject(new Error(`IndexedDB transaction aborted`));
-
-    const v2Store = tx.objectStore(STORE_NAME_V2);
-    const settingsStore = tx.objectStore(SETTINGS_STORE_NAME);
-
+  return runWrite((v2Store, settingsStore) => {
     const getRequest = v2Store.get(guid);
     getRequest.onsuccess = () => {
-      try {
-        const record = getRequest.result as TimestampRow | undefined;
-        if (record) {
-          const counterReq = settingsStore.get('write_counter');
-          counterReq.onsuccess = () => {
-            try {
-              const counter = (typeof counterReq.result?.value === 'number') ? counterReq.result.value : 0;
-              v2Store.put({
-                ...record,
-                deleted_at: Date.now(),
-                write_counter: counter + 1,
-              });
-              settingsStore.put({ key: 'write_counter', value: counter + 1 });
-            } catch (err) {
-              reject(err instanceof Error ? err : new Error(String(err)));
-            }
-          };
-          counterReq.onerror = () => {
-            v2Store.put({
-              ...record,
-              deleted_at: Date.now(),
-              write_counter: 1,
-            });
-            settingsStore.put({ key: 'write_counter', value: 1 });
-          };
-        }
-      } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
-      }
+      const record = getRequest.result as TimestampRow | undefined;
+      if (!record) return;
+      withWriteCounter(settingsStore, current => {
+        v2Store.put({ ...record, deleted_at: Date.now(), write_counter: current + 1 });
+        return current + 1;
+      });
     };
-    getRequest.onerror = () => {
-      const msg = `Failed to load record for deletion: ${getRequest.error?.message ?? 'unknown'}`;
-      log(msg, getRequest.error, 'error');
-      reject(new Error(msg));
-    };
-  }));
+  });
 }
 
 /**
  * Load all timestamps for a video.
  * Returns null only when no timestamps are found; throws on actual IndexedDB errors.
+ * Rows that fail validation are skipped (and logged) so one bad row can't hide the rest;
+ * if every stored row is invalid it throws rather than reporting an empty video.
  */
 export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | null> {
   return getDB().then(db => new Promise<TimestampRecord[] | null>((resolve, reject) => {
@@ -666,27 +533,32 @@ export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | nul
 
     v2Request.onsuccess = () => {
       try {
-        const v2Records = (v2Request.result as TimestampRow[]).filter(r => !r.deleted_at);
+        const liveRows = (v2Request.result as TimestampRow[]).filter(r => !r.deleted_at);
 
-        if (v2Records.length === 0) {
-          resolve(null);
+        const records: TimestampRecord[] = [];
+        let invalid = 0;
+        for (const row of liveRows) {
+          const parsed = TimestampRecordSchema.safeParse({ guid: row.guid, start: row.start, comment: row.comment });
+          if (parsed.success) {
+            records.push(parsed.data);
+          } else {
+            invalid++;
+          }
+        }
+
+        if (invalid > 0) {
+          log(`Skipped ${invalid} stored timestamps for ${videoId} that failed validation`, null, 'warn');
+        }
+        if (records.length === 0) {
+          if (invalid > 0) {
+            reject(new Error(`Stored timestamps for this video failed validation (${invalid} rows)`));
+          } else {
+            resolve(null);
+          }
           return;
         }
 
-        const mapped = v2Records.map(r => ({
-          guid: r.guid,
-          start: r.start,
-          comment: r.comment
-        }));
-
-        const parsed = TimestampRecordArraySchema.safeParse(mapped);
-        if (!parsed.success) {
-          log('Failed to parse timestamps from IndexedDB:', parsed.error.message, 'warn');
-          resolve(null);
-          return;
-        }
-
-        resolve([...parsed.data].sort((a, b) => a.start - b.start));
+        resolve(records.sort((a, b) => a.start - b.start));
       } catch (err) {
         reject(err);
       }
@@ -705,80 +577,25 @@ export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | nul
  * Throws on IndexedDB errors.
  */
 export function deleteTimestampsForVideo(videoId: string): Promise<void> {
-  return getDB().then(db => new Promise<void>((resolve, reject) => {
-    let tx: IDBTransaction;
-    try {
-      tx = db.transaction([STORE_NAME_V2, SETTINGS_STORE_NAME], 'readwrite');
-    } catch (err) {
-      reject(new Error(`Failed to create transaction: ${err}`));
-      return;
-    }
-
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(new Error(`IndexedDB delete failed: ${tx.error?.message ?? 'unknown'}`));
-    tx.onabort = () => reject(new Error(`IndexedDB transaction aborted`));
-
-    const v2Store = tx.objectStore(STORE_NAME_V2);
-    const settingsStore = tx.objectStore(SETTINGS_STORE_NAME);
-
-    const v2Index = v2Store.index('video_id');
-    const getRequest = v2Index.getAll(IDBKeyRange.only(videoId));
+  return runWrite((v2Store, settingsStore) => {
+    const getRequest = v2Store.index('video_id').getAll(IDBKeyRange.only(videoId));
 
     getRequest.onsuccess = () => {
-      try {
-        const records = (getRequest.result as TimestampRow[]) ?? [];
-        const now = Date.now();
+      const records = (getRequest.result as TimestampRow[]) ?? [];
+      const now = Date.now();
 
-        // Read current counter
-        const counterReq = settingsStore.get('write_counter');
-        counterReq.onsuccess = () => {
-          try {
-            let counter: number;
-            counter = (typeof counterReq.result?.value === 'number') ? counterReq.result.value : 0;
-
-            records.forEach(record => {
-              if (!record.deleted_at) {
-                counter++;
-                v2Store.put({
-                  ...record,
-                  deleted_at: now,
-                  write_counter: counter,
-                });
-              }
-            });
-
-            settingsStore.put({ key: 'write_counter', value: counter });
-          } catch (err) {
-            reject(err instanceof Error ? err : new Error(String(err)));
+      withWriteCounter(settingsStore, current => {
+        let counter = current;
+        records.forEach(record => {
+          if (!record.deleted_at) {
+            counter++;
+            v2Store.put({ ...record, deleted_at: now, write_counter: counter });
           }
-        };
-
-        counterReq.onerror = () => {
-          // If we can't read the counter, proceed with 0
-          let counter = 0;
-          records.forEach(record => {
-            if (!record.deleted_at) {
-              counter++;
-              v2Store.put({
-                ...record,
-                deleted_at: now,
-                write_counter: counter,
-              });
-            }
-          });
-          settingsStore.put({ key: 'write_counter', value: counter });
-        };
-      } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
-      }
+        });
+        return counter;
+      });
     };
-
-    getRequest.onerror = () => {
-      const msg = `Failed to load records for deletion: ${getRequest.error?.message ?? 'unknown'}`;
-      log(msg, getRequest.error, 'error');
-      reject(new Error(msg));
-    };
-  }));
+  });
 }
 
 /**

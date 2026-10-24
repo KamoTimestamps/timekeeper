@@ -26,7 +26,15 @@ export function addTimestamp(videoId: string, timestamp: TimestampRecord): Promi
 }
 
 /**
- * Update all timestamps for a video
+ * Save specific timestamps for a video without touching its other rows
+ */
+export function saveRowsToIndexedDB(videoId: string, timestamps: TimestampRecord[]): Promise<void> {
+  return TimestampService.saveTimestampRows(videoId, timestamps);
+}
+
+/**
+ * Replace all timestamps for a video (rows not supplied are soft-deleted).
+ * Only for authoritative sources such as a file import.
  */
 export function saveToIndexedDB(videoId: string, timestamps: TimestampRecord[]): Promise<void> {
   return TimestampService.updateVideoTimestamps(videoId, timestamps);

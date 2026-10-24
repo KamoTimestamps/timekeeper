@@ -30,6 +30,7 @@ Build first so `dist/timekeeper.js` is current: `npm run build:userscript`.
 | `bench.js [bundle] [rows] [seconds] [videoId]` | Seeds `rows` timestamps (default 600), plays for `seconds` (default 15) and reports main-thread time spent inside the bundle's call stacks per second of playback, from a CDP CPU profile. Compare before/after a change. |
 | `build-profile-bundle.js <outfile>` | Builds an unminified bundle with readable function names. Pass it to `bench.js` to see which functions are hot. |
 | `history-state.js [bundle]` | Player API surface (`getProgressState`, `getVideoData`, ...) and that pause/play does not wipe YouTube's `history.state`. |
+| `storage-resilience.js [bundle]` | Data-safety checks: pending comment edits are flushed on `yt-navigate-start` / `pagehide` / `visibilitychange`; UI edits are row-level (a stale pane can't tombstone rows it hasn't loaded, "clear all" isn't undone by a pending save); one corrupt row doesn't hide the rest; a failed Drive listing (mocked `googleapis.com`) aborts the backup instead of uploading a duplicate file; a DB upgrade from another tab isn't blocked. Run it against an older bundle to see each check fail. Exit code is non-zero on any failure. |
 | `dvr-flag.js [bundle] [url]` | The `ytcfg` hook installs and `html5_max_live_dvr_window_plus_margin_secs` is lifted from `46800` to `604800`. |
 
 `bundle` defaults to `dist/timekeeper.js` for `behavior.js` and `bench.js`. When you pass
