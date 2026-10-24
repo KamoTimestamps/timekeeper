@@ -12,6 +12,7 @@
 // @grant        GM.setValue
 // @grant        GM.setClipboard
 // @grant        GM.xmlHttpRequest
+// @grant        unsafeWindow
 // @connect      *
 // @homepageURL  https://github.com/KamoTimestamps/timekeeper
 // @supportURL   https://github.com/KamoTimestamps/timekeeper/issues

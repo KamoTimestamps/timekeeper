@@ -23,6 +23,16 @@
 
 import { log } from './util';
 
+declare const unsafeWindow: Window | undefined;
+
+/**
+ * The page's real `window`. Userscript managers sandbox scripts that use `@grant GM.*`:
+ * built-ins like `JSON` are shared, but properties defined on the sandbox `window`
+ * (ytcfg, ytInitialPlayerResponse) never reach the page. `unsafeWindow` is the page's
+ * window; extension builds run in the page's MAIN world and fall back to `window`.
+ */
+const pageWindow: any = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+
 /**
  * Default live DVR window is 12 hours (43 200 s). We open it up to 7 days (14×).
  */
@@ -121,17 +131,17 @@ function patchResponse(data: unknown): boolean {
 
 function hookYtInitialPlayerResponse(): void {
   const previousInitialDescriptor = Object.getOwnPropertyDescriptor(
-    window,
+    pageWindow,
     "ytInitialPlayerResponse",
   );
   const previousInitialSetter =
     previousInitialDescriptor && previousInitialDescriptor.set;
 
-  let initialResponse = (window as any).ytInitialPlayerResponse;
+  let initialResponse = pageWindow.ytInitialPlayerResponse;
 
   if (!patchResponse(initialResponse)) {
     try {
-      Object.defineProperty(window, "ytInitialPlayerResponse", {
+      Object.defineProperty(pageWindow, "ytInitialPlayerResponse", {
         configurable: true,
         get() {
           return initialResponse;
@@ -144,7 +154,7 @@ function hookYtInitialPlayerResponse(): void {
           if (patchResponse(value)) {
             // Once patched, replace the descriptor so uBO / other scriptlets
             // can keep editing the global normally.
-            Object.defineProperty(window, "ytInitialPlayerResponse", {
+            Object.defineProperty(pageWindow, "ytInitialPlayerResponse", {
               configurable: true,
               writable: true,
               value: value,
@@ -227,12 +237,12 @@ function hookYtcfg(ytcfg: Record<string, unknown>): Record<string, unknown> {
 function hookYtcfgGlobal(): void {
   let cfgRef: Record<string, unknown> = {} as Record<string, unknown>;
 
-  if ((window as any).ytcfg) {
-    cfgRef = hookYtcfg((window as any).ytcfg);
+  if (pageWindow.ytcfg) {
+    cfgRef = hookYtcfg(pageWindow.ytcfg);
   }
 
   try {
-    Object.defineProperty(window, "ytcfg", {
+    Object.defineProperty(pageWindow, "ytcfg", {
       configurable: true,
       get() {
         return cfgRef;

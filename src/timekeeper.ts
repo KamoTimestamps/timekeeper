@@ -2786,7 +2786,8 @@ initializeDvrEnablement();
         } else {
           url.searchParams.delete("t");
         }
-        window.history.replaceState({}, "", url.toString());
+        // Preserve YouTube's router state (endpoint, saved component state)
+        window.history.replaceState(window.history.state, "", url.toString());
       } catch (err) {
         // Silently fail if URL manipulation doesn't work
       }
