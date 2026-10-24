@@ -32,7 +32,7 @@ The codebase follows a repository-service-model pattern:
 | **Repository** | `src/services/timestampRepository.ts` | Raw IndexedDB operations (open, CRUD, migrations) |
 | **Service** | `src/services/timestampService.ts` | Business logic: export/import, merge, validation |
 | **Model (facade)** | `src/timestamp-model.ts` | Public API exports that delegate to service + repository |
-| **State** | `src/services/state.ts` | Centralized AppState with listeners. All modules read/write through here. |
+| **State** | `src/services/state.ts` | Centralized AppState. All modules read/write through here. |
 | **View** | `src/timestamp-view.ts` | DOM manipulation, rendering, UI state management |
 
 ### Key Modules
@@ -54,7 +54,7 @@ The codebase follows a repository-service-model pattern:
 3. URL observation detects video changes -> loads timestamps from IndexedDB via `timestamp-model`
 4. `timestamp-view` renders the timestamp pane UI
 5. User interactions -> service layer -> repository layer -> IndexedDB
-6. State changes propagate via AppState listeners
+6. State changes go through AppState setters
 
 ### Key Constants
 

@@ -3,7 +3,7 @@
  * Single source of truth for application state across all modules
  */
 
-import { GoogleAuthStateParsed, AutoBackupSettings, TimestampRecord, PanePosition } from '../schema';
+import { GoogleAuthStateParsed, TimestampRecord, PanePosition } from '../schema';
 
 /**
  * Complete application state structure
@@ -75,12 +75,6 @@ const DEFAULT_STATE: AppState = {
 let appState: AppState = JSON.parse(JSON.stringify(DEFAULT_STATE));
 
 /**
- * State change listeners
- */
-type StateListener = (state: AppState, previousState: AppState) => void;
-const listeners: Set<StateListener> = new Set();
-
-/**
  * Get the current complete state.
  * Returns the live state object — callers must not mutate it.
  * All writes must go through setState() or the typed setters.
@@ -93,8 +87,6 @@ export function getState(): AppState {
  * Update state with partial changes
  */
 export function setState(updates: Partial<AppState>): void {
-  const previousState = listeners.size > 0 ? JSON.parse(JSON.stringify(appState)) : appState;
-
   appState = {
     ...appState,
     ...updates,
@@ -102,8 +94,6 @@ export function setState(updates: Partial<AppState>): void {
     ui: { ...appState.ui, ...(updates.ui || {}) },
     timestamps: { ...appState.timestamps, ...(updates.timestamps || {}) },
   };
-
-  notifyListeners(previousState);
 }
 
 /**
@@ -155,17 +145,6 @@ export function setLastAutoBackupAt(timestamp: number | null): void {
   setAuth('lastAutoBackupAt', timestamp);
 }
 
-/**
- * UI State Getters/Setters
- */
-export function getUiState() {
-  return appState.ui;
-}
-
-export function setCurrentVideoId(videoId: string): void {
-  setUi('currentVideoId', videoId);
-}
-
 export function setMinPaneHeight(height: number): void {
   setUi('minPaneHeight', height);
 }
@@ -182,27 +161,11 @@ export function setUrlChangeHandlersSetup(setup: boolean): void {
   setUi('urlChangeHandlersSetup', setup);
 }
 
-/**
- * Timestamps State Getters/Setters
- */
-export function getTimestamps(): TimestampRecord[] {
-  return appState.timestamps.items;
-}
-
 export function setTimestamps(items: TimestampRecord[]): void {
   setState({
     timestamps: {
       ...appState.timestamps,
       items,
-    },
-  });
-}
-
-export function setCurrentTimestampIndex(index: number | null): void {
-  setState({
-    timestamps: {
-      ...appState.timestamps,
-      currentIndex: index,
     },
   });
 }
@@ -225,35 +188,4 @@ export function setTimestampsDbError(message: string | null): void {
  */
 export function getTimestampsDbError(): string | null {
   return appState.timestamps.dbError;
-}
-
-/**
- * Subscribe to state changes
- */
-export function subscribe(listener: StateListener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-/**
- * Notify all listeners of state changes
- */
-function notifyListeners(previousState: AppState): void {
-  listeners.forEach(listener => {
-    try {
-      listener(appState, previousState);
-    } catch (error) {
-      console.error('Error in state listener:', error);
-    }
-  });
-}
-
-/**
- * Reset state to defaults (useful for testing or clearing)
- */
-export function resetState(): void {
-  appState = JSON.parse(JSON.stringify(DEFAULT_STATE));
-  // Clear any stored IndexedDB error on reset
-  setTimestampsDbError(null);
-  notifyListeners(JSON.parse(JSON.stringify(DEFAULT_STATE)));
 }

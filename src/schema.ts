@@ -247,4 +247,3 @@ export const AutoBackupSettingsSchema = object<AutoBackupSettings>({
 });
 
 export const BackupSettingsSchema = AutoBackupSettingsSchema;
-export type BackupSettings = AutoBackupSettings;

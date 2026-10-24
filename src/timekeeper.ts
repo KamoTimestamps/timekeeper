@@ -3,7 +3,6 @@ import { createIcon, setIcon, setIconLabel, TablerIconName } from "./icons";
 import {
   log,
   formatTimeString,
-  buildYouTubeUrlWithTimestamp,
   getTimestampSuffix,
 } from "./util";
 import { TIMEKEEPER_VERSION } from "./version";
@@ -33,7 +32,6 @@ import * as GoogleDrive from "./google-drive";
 import {
   PanePositionSchema,
   TimestampRecord,
-  TimestampRecordSchema,
 } from "./schema";
 
 // OAuth detection - always check URL for auth token, runs synchronously before any async operations
@@ -196,7 +194,6 @@ initializeDvrEnablement();
 
   // Track last handled URL to avoid duplicate reloads from history events
   let lastHandledUrl: string | null = null;
-  let urlChangeHandlersSetup = false;
 
   // ============================================================================
   // UI State Getters/Setters (using centralized AppState)
@@ -208,10 +205,6 @@ initializeDvrEnablement();
 
   function setMinPaneHeight(height: number): void {
     AppState.setMinPaneHeight(height);
-  }
-
-  function getLastHandledUrl(): string | null {
-    return AppState.getState().ui.lastHandledUrl;
   }
 
   function setLastHandledUrl(url: string | null): void {
@@ -246,21 +239,8 @@ initializeDvrEnablement();
     AppState.setPanePosition(position as any);
   }
 
-  // --- Timestamp state helpers ---
-  function getTimestampsFromState(): TimestampRecord[] {
-    return AppState.getState().timestamps.items;
-  }
-
   function setTimestampsInState(items: TimestampRecord[]): void {
     AppState.setTimestamps(items);
-  }
-
-  function getCurrentTimestampIndexFromState(): number | null {
-    return AppState.getState().timestamps.currentIndex;
-  }
-
-  function setCurrentTimestampIndexInState(index: number | null): void {
-    AppState.setCurrentTimestampIndex(index);
   }
 
   // --- Pane sizing helpers (available across module) ---
@@ -791,12 +771,6 @@ initializeDvrEnablement();
   let pendingTimestampsResolve: (() => void) | null = null;
   let headerButtonImage: HTMLImageElement | null = null;
   let isHeaderButtonHovered = false;
-  let lastSavedPanePosition: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  } | null = null;
   let isPaneInitializing = false; // Lock flag to prevent concurrent pane initialization
 
   // Event listener references for cleanup to prevent memory leaks
@@ -1071,14 +1045,6 @@ initializeDvrEnablement();
     }
 
     syncToggleButtons();
-  }
-
-  // Helper function to format timestamps based on total duration
-  function isTimestampRecord(
-    value: TimestampRecord | null | undefined,
-  ): value is TimestampRecord {
-    if (!value) return false;
-    return TimestampRecordSchema.safeParse(value).success;
   }
 
   function formatTime(anchor: HTMLElement, timeInSeconds: number) {
@@ -2934,7 +2900,6 @@ initializeDvrEnablement();
     buildExportPayload,
     mergeBackupData,
     exportAllTimestamps,
-    buildExportCsvPayload,
     exportAllTimestampsCsv,
   } = TimestampModel;
 
@@ -3294,13 +3259,11 @@ initializeDvrEnablement();
       // Add event listeners to `list` after it is initialized
       list.addEventListener("mouseenter", () => {
         isMouseOverTimestamps = true;
-        TimestampView.setMouseOverTimestamps(true);
         suppressSortUntilRefocus = false;
       });
 
       list.addEventListener("mouseleave", () => {
         isMouseOverTimestamps = false;
-        TimestampView.setMouseOverTimestamps(false);
         // Hide any visible tooltips when leaving the list
         try {
           hideActiveTooltip();
@@ -3928,7 +3891,6 @@ initializeDvrEnablement();
         setIcon(button, config.icon, 20);
         addTooltip(button, config.title);
         button.classList.add("ytls-main-button");
-
 
         if (config.id === "copy") {
           // For copy button, bind to an event handler that includes the event object
@@ -5254,7 +5216,6 @@ initializeDvrEnablement();
 
       pane.addEventListener("mouseenter", () => {
         isMouseOverTimestamps = true;
-        TimestampView.setMouseOverTimestamps(true);
         showScrollbar();
       });
 
@@ -5263,7 +5224,6 @@ initializeDvrEnablement();
       pane.addEventListener("mouseleave", () => {
         if (!isResizing && !isDragging) document.body.style.cursor = "";
         isMouseOverTimestamps = false;
-        TimestampView.setMouseOverTimestamps(false);
         // Hide any visible tooltips when leaving the pane
         try {
           hideActiveTooltip();

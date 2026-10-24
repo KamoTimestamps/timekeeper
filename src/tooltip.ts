@@ -309,15 +309,3 @@ export function cleanupAllTooltips() {
   allTooltipObservers.length = 0;
   hideTooltip();
 }
-
-/**
- * Remove tooltip from an element
- */
-export function removeTooltip(element: HTMLElement) {
-  if ((element as any).__tooltipCleanup) {
-    (element as any).__tooltipCleanup();
-    delete (element as any).__tooltipCleanup;
-  }
-  // Ensure tooltip is hidden when tooltip is explicitly removed
-  hideTooltip();
-}

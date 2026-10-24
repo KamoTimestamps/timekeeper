@@ -4,20 +4,11 @@
  */
 
 import { log } from './util';
-import { TIMEKEEPER_VERSION } from './version';
 import { addTooltip } from './tooltip';
 import { zipSync, unzipSync } from 'fflate';
 import { BackupSettingsSchema, GoogleAuthStateSchema, object, string, number, optional } from './schema';
-import { createIcon, setIcon, setIconLabel } from './icons';
+import { setIconLabel } from './icons';
 import * as AppState from './services/state';
-
-// Types
-export interface ExportPayload {
-  json: string;
-  filename: string;
-  totalVideos: number;
-  totalTimestamps: number;
-}
 
 // ============================================================================
 // State Management - Using Centralized AppState
@@ -685,11 +676,6 @@ export async function handleOAuthPopup() {
 
   return false;
 }
-
-// OAuth redirect handler no longer needed (removed for popup-based flow)
-export async function handleOAuthRedirect() {
-  return false;
-}
 // Sign out from Google Drive
 export async function signOutFromGoogle() {
   AppState.setGoogleAuthState({
@@ -745,19 +731,6 @@ function getConfiguredDestinationLabels(): string[] {
     labels.push('Google Drive');
   }
   return labels;
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 30000): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } catch (err: any) {
-    if (err.name === 'AbortError') throw new Error('request timed out');
-    throw err;
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }
 
 function decodeFirstZipEntry(buffer: ArrayBuffer): string | null {
@@ -905,8 +878,6 @@ function createZipFromJson(json: string, filename: string): Uint8Array {
   return zipData;
 }
 
-
-
 // Upload JSON content to Google Drive (creates new or updates existing)
 async function uploadJsonToDrive(filename: string, json: string, folderId: string, accessToken: string): Promise<void> {
   // Convert JSON filename to ZIP filename
@@ -999,27 +970,6 @@ async function handleAuthExpiration(opts?: { silent?: boolean }): Promise<void> 
   await scheduleAutoBackup();
   updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
   updateBackupStatusDisplay();
-}
-
-// Export all timestamps to Google Drive
-export async function exportAllTimestampsToGoogleDrive(opts?: { silent?: boolean; isRetry?: boolean }): Promise<void> {
-  void opts;
-
-  const authState = getGoogleAuthState();
-  if (!authState.isSignedIn || !authState.accessToken) {
-    throw new Error('unauthorized');
-  }
-
-  await mergeFromAllRemotesBeforeBackup();
-
-  const payload = await buildExportPayload({ includeDeleted: true });
-  if (payload.totalTimestamps === 0) {
-    return;
-  }
-
-  const folderId = await ensureDriveFolder(authState.accessToken);
-  await uploadJsonToDrive(payload.filename, payload.json, folderId, authState.accessToken);
-  log(`Exported to Google Drive (${payload.filename}) with ${payload.totalVideos} videos / ${payload.totalTimestamps} timestamps.`);
 }
 
 async function exportAllTimestampsToConfiguredDestinations(opts?: { silent?: boolean }): Promise<void> {
@@ -1398,5 +1348,4 @@ export async function setAutoBackupIntervalPrompt() {
   await scheduleAutoBackup();
   updateBackupStatusDisplay();
 }
-
 

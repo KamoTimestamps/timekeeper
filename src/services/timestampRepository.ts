@@ -9,9 +9,7 @@ import {
   TimestampRow,
   TimestampRecordArraySchema,
   TimestampRecordSchema,
-  TimestampRowSchema,
   VideoEntrySchema,
-  ExportDataSchema,
 } from '../schema';
 import { log, getTimestampSuffix } from '../util';
 
@@ -26,50 +24,7 @@ export const SETTINGS_STORE_NAME = 'settings';
 let dbConnection: IDBDatabase | null = null;
 let dbConnectionPromise: Promise<IDBDatabase> | null = null;
 
-// === Lamport Counter & Device ID ===
-let deviceCache: string | null = null;
-let counterCache: number | null = null;
 
-/**
- * Get (or create) a stable device identifier for this install.
- * Stored in the settings store so it survives page reloads.
- */
-export function getDeviceId(): Promise<string> {
-  if (deviceCache) return Promise.resolve(deviceCache);
-  return getDB().then(db => new Promise<string>(resolve => {
-    const tx = db.transaction([SETTINGS_STORE_NAME], 'readonly');
-    const req = tx.objectStore(SETTINGS_STORE_NAME).get('device_id');
-    req.onsuccess = () => {
-      const val = req.result as { value?: unknown } | undefined;
-      const id = typeof val?.value === 'string' ? val.value : crypto.randomUUID();
-      deviceCache = id;
-      // If this was a newly generated id, persist it
-      if (typeof val?.value !== 'string') {
-        const writeTx = db.transaction([SETTINGS_STORE_NAME], 'readwrite');
-        writeTx.objectStore(SETTINGS_STORE_NAME).put({ key: 'device_id', value: id });
-      }
-      resolve(id);
-    };
-    req.onerror = () => {
-      // Don't cache: let the next call retry so it can pick up a persisted ID.
-      // Resolve with a one-shot ephemeral ID so the current write isn't blocked.
-      log('getDeviceId: failed to read from settings store', req.error, 'warn');
-      resolve(crypto.randomUUID());
-    };
-  }));
-}
-
-/**
- * Get the current Lamport write counter from settings.
- */
-export function getWriteCounter(): Promise<number> {
-  if (counterCache !== null) return Promise.resolve(counterCache);
-  return loadSetting('write_counter').then(val => {
-    const counter = typeof val === 'number' ? val : 0;
-    counterCache = counter;
-    return counter;
-  });
-}
 
 /**
  * Get or create a persistent database connection
@@ -290,26 +245,6 @@ function openIndexedDB(): Promise<IDBDatabase> {
 }
 
 /**
- * Run an operation inside a readwrite or readonly transaction on STORE_NAME_V2.
- * Resolves when the transaction completes, rejects on error or abort.
- */
-function withV2Transaction(mode: IDBTransactionMode, op: (store: IDBObjectStore) => void): Promise<void> {
-  return getDB().then(db => new Promise<void>((resolve, reject) => {
-    let tx: IDBTransaction;
-    try {
-      tx = db.transaction([STORE_NAME_V2], mode);
-    } catch (err) {
-      reject(new Error(`Failed to open transaction: ${err}`));
-      return;
-    }
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error('Transaction failed'));
-    tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted'));
-    op(tx.objectStore(STORE_NAME_V2));
-  }));
-}
-
-/**
  * Execute a transaction with error handling
  */
 function executeTransaction<T>(
@@ -443,7 +378,6 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
 
           // Update counter in settings store
           settingsStore.put({ key: 'write_counter', value: counter });
-          counterCache = counter;
         };
 
         counterReq.onerror = () => {
@@ -493,7 +427,6 @@ export function saveTimestamps(videoId: string, data: TimestampRecord[]): Promis
           });
 
           settingsStore.put({ key: 'write_counter', value: counter });
-          counterCache = counter;
         };
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)));
@@ -557,7 +490,6 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
           deleted_at: ts.deleted_at,
         });
         settingsStore.put({ key: 'write_counter', value: counter + 1 });
-        counterCache = counter + 1;
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)));
       }
@@ -573,7 +505,6 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
         deleted_at: ts.deleted_at,
       });
       settingsStore.put({ key: 'write_counter', value: 1 });
-      counterCache = 1;
     };
   }));
 }
@@ -637,14 +568,12 @@ export function saveTimestampsBatch(
         const currentCounter = (typeof counterReq.result?.value === 'number') ? counterReq.result.value : 0;
         const newCounter = Math.max(maxCounter, currentCounter) + 1;
         settingsStore.put({ key: 'write_counter', value: newCounter });
-        counterCache = newCounter;
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     };
     counterReq.onerror = () => {
       settingsStore.put({ key: 'write_counter', value: maxCounter + 1 });
-      counterCache = maxCounter + 1;
     };
   }));
 }
@@ -686,7 +615,6 @@ export function deleteTimestamp(guid: string): Promise<void> {
                 write_counter: counter + 1,
               });
               settingsStore.put({ key: 'write_counter', value: counter + 1 });
-              counterCache = counter + 1;
             } catch (err) {
               reject(err instanceof Error ? err : new Error(String(err)));
             }
@@ -698,7 +626,6 @@ export function deleteTimestamp(guid: string): Promise<void> {
               write_counter: 1,
             });
             settingsStore.put({ key: 'write_counter', value: 1 });
-            counterCache = 1;
           };
         }
       } catch (err) {
@@ -821,7 +748,6 @@ export function deleteTimestampsForVideo(videoId: string): Promise<void> {
             });
 
             settingsStore.put({ key: 'write_counter', value: counter });
-            counterCache = counter;
           } catch (err) {
             reject(err instanceof Error ? err : new Error(String(err)));
           }
@@ -841,7 +767,6 @@ export function deleteTimestampsForVideo(videoId: string): Promise<void> {
             }
           });
           settingsStore.put({ key: 'write_counter', value: counter });
-          counterCache = counter;
         };
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)));
