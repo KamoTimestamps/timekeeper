@@ -107,9 +107,9 @@ if (hash && hash.length > 1) {
   }
 }
 
-if (isLiveChatFrame()) {
-  initializeChatHandleCleanup();
-} else {
+// Handles in live chat (iframe) and comments (top frame)
+initializeChatHandleCleanup();
+if (!isLiveChatFrame()) {
   // Initialize DVR/Rewind enablement for live streams
   initializeDvrEnablement();
 }
@@ -5614,6 +5614,37 @@ if (isLiveChatFrame()) {
       log("Navigation finished but URL already handled, skipping.");
     }
   });
+
+  // Comment timestamp links: YouTube seeks and then scrolls the page to the top. Seek directly instead.
+  function parseTimeParam(value: string): number | null {
+    const m = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(value);
+    if (m && (m[1] || m[2] || m[3])) {
+      return Number(m[1] || 0) * 3600 + Number(m[2] || 0) * 60 + Number(m[3] || 0);
+    }
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  document.addEventListener(
+    "click",
+    (e) => {
+      if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      const link = (e.target as HTMLElement | null)?.closest?.(
+        "ytd-comments a[href]",
+      ) as HTMLAnchorElement | null;
+      if (!link) return;
+      const url = new URL(link.href, location.href);
+      const t = url.searchParams.get("t");
+      if (url.pathname !== "/watch" || !t || url.searchParams.get("v") !== getVideoId()) return;
+      const time = parseTimeParam(t);
+      const player = getActivePlayer();
+      if (time === null || !player) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      player.seekTo(time);
+    },
+    true,
+  );
 
   // Timekeeper initialization: ensure handlers are active and wait for navigation finish before drawing UI
   setupUrlChangeHandlers();

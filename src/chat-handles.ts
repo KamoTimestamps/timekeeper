@@ -1,11 +1,12 @@
 /**
- * Removes the leading "@" from author names in YouTube live chat and live chat replay.
+ * Removes the leading "@" from author names in YouTube live chat, live chat replay and comments.
  *
- * Chat renders inside its own iframe (/live_chat and /live_chat_replay), so this must run
- * in that frame rather than the top-level watch page.
+ * Chat renders inside its own iframe (/live_chat and /live_chat_replay), so the cleanup must
+ * also run in that frame; comments live on the top-level watch page.
  */
 
-const AUTHOR_NAME_SELECTOR = "#author-name";
+// #author-name: live chat. #author-text: comments (name is in a child span).
+const AUTHOR_NAME_SELECTOR = "#author-name, #author-text";
 
 export function isLiveChatFrame(): boolean {
   return (
@@ -14,18 +15,19 @@ export function isLiveChatFrame(): boolean {
 }
 
 function stripAt(el: Element): void {
-  for (const node of Array.from(el.childNodes)) {
-    if (node.nodeType === Node.TEXT_NODE && node.nodeValue?.startsWith("@")) {
-      node.nodeValue = node.nodeValue.slice(1);
-      return;
-    }
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node.nodeValue ?? "";
+    if (!text.trim()) continue;
+    if (/^\s*@/.test(text)) node.nodeValue = text.replace(/^(\s*)@/, "$1");
+    return;
   }
 }
 
 function processTree(root: Node): void {
   if (root.nodeType === Node.TEXT_NODE) {
-    const parent = root.parentElement;
-    if (parent?.matches(AUTHOR_NAME_SELECTOR)) stripAt(parent);
+    const author = root.parentElement?.closest(AUTHOR_NAME_SELECTOR);
+    if (author) stripAt(author);
     return;
   }
   if (!(root instanceof Element)) return;
