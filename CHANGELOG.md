@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.0.26](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)
+
+
+### Changed
+
+* add browser e2e/benchmark harnesses under build-tools/e2e 0ef1833
+* gitignore .playwright-mcp session output 6824b67
+* remove graphify (graphify-out, .graphifyignore, .claude hook) and update build docs 34efee3
+
 ## [5.0.25](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)
 
 ## [5.0.24](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)

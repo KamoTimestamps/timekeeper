@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { boolean } from "./schema";
 import { createIcon, setIcon, setIconLabel, TablerIconName } from "./icons";
 import {
   log,
@@ -2968,7 +2968,7 @@ initializeDvrEnablement();
 
     loadGlobalSettings("uiVisible")
       .then((value) => {
-        const parsed = z.boolean().safeParse(value);
+        const parsed = boolean().safeParse(value);
         const isVisible = parsed.success ? parsed.data : undefined;
 
         if (typeof isVisible === "boolean") {
@@ -2985,7 +2985,7 @@ initializeDvrEnablement();
           if (!parsed.success && value !== undefined) {
             log(
               "UI visibility state failed validation, defaulting to visible",
-              parsed.error.format(),
+              parsed.error.message,
               "warn",
             );
           }
@@ -4756,7 +4756,7 @@ initializeDvrEnablement();
               if (!parsed.success) {
                 log(
                   "Window position in IndexedDB failed validation:",
-                  parsed.error.format(),
+                  parsed.error.message,
                   "warn",
                 );
               } else {

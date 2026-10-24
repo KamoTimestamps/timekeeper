@@ -3,12 +3,11 @@
  * Handles OAuth2 authentication, backup scheduling, and Drive uploads
  */
 
-import { z } from 'zod';
 import { log } from './util';
 import { TIMEKEEPER_VERSION } from './version';
 import { addTooltip } from './tooltip';
 import { zipSync, unzipSync } from 'fflate';
-import { BackupSettingsSchema, GoogleAuthStateSchema } from './schema';
+import { BackupSettingsSchema, GoogleAuthStateSchema, object, string, number, optional } from './schema';
 import { createIcon, setIcon, setIconLabel } from './icons';
 import * as AppState from './services/state';
 
@@ -173,7 +172,7 @@ export async function loadGoogleAuthState() {
       }
     } else if (stored !== undefined) {
       const storedRedacted = stored && typeof stored === 'object' ? { ...stored, accessToken: stored.accessToken ? '[REDACTED]' : null } : stored;
-      log('Google auth state failed validation:', { stored: storedRedacted, errors: parsed.error.format() }, 'warn');
+      log('Google auth state failed validation:', { stored: storedRedacted, errors: parsed.error.message }, 'warn');
     }
   } catch (err) {
     log('Failed to load Google auth state:', err, 'error');
@@ -188,7 +187,7 @@ export async function saveGoogleAuthState() {
     const validationResult = GoogleAuthStateSchema.safeParse(currentAuthState);
     if (!validationResult.success) {
       const stateRedacted = { ...currentAuthState, accessToken: currentAuthState.accessToken ? '[REDACTED]' : null };
-      log('Invalid auth state, cannot save', { state: stateRedacted, errors: validationResult.error.format() }, 'error');
+      log('Invalid auth state, cannot save', { state: stateRedacted, errors: validationResult.error.message }, 'error');
       return;
     }
 
@@ -310,10 +309,10 @@ function monitorOAuthPopup(popup: Window | null, timeoutMs = 5 * 60 * 1000): Pro
         if (log) log('OAuth monitor: received BroadcastChannel message', dataRedacted);
 
         // Validate message structure
-        const parsed = z.object({
-          type: z.string(),
-          token: z.string().optional(),
-          error: z.string().optional(),
+        const parsed = object({
+          type: string(),
+          token: optional(string()),
+          error: optional(string()),
         }).safeParse(event.data);
 
         if (!parsed.success) {
@@ -354,11 +353,11 @@ function monitorOAuthPopup(popup: Window | null, timeoutMs = 5 * 60 * 1000): Pro
               const data = result.value;
 
               // Validate message structure
-              const parsed = z.object({
-                type: z.string(),
-                token: z.string().optional(),
-                error: z.string().optional(),
-                timestamp: z.number().optional(),
+              const parsed = object({
+                type: string(),
+                token: optional(string()),
+                error: optional(string()),
+                timestamp: optional(number()),
               }).safeParse(data);
 
               if (!parsed.success) {
@@ -463,9 +462,9 @@ export async function signInToGoogle() {
         const userInfoJson = await userInfoResponse.json();
 
         // Validate user info response
-        const userInfoParsed = z.object({
-          name: z.string().optional(),
-          email: z.string().optional(),
+        const userInfoParsed = object({
+          name: optional(string()),
+          email: optional(string()),
         }).safeParse(userInfoJson);
 
         if (!userInfoParsed.success) {
@@ -1073,7 +1072,7 @@ export async function loadAutoBackupSettings() {
       if (typeof parsed.data.autoBackupIntervalMinutes === 'number') AppState.setAutoBackupIntervalMinutes(parsed.data.autoBackupIntervalMinutes);
       if (typeof parsed.data.lastAutoBackupAt === 'number') AppState.setLastAutoBackupAt(parsed.data.lastAutoBackupAt);
     } else {
-      log('Failed to validate auto backup settings:', parsed.error.format(), 'warn');
+      log('Failed to validate auto backup settings:', parsed.error.message, 'warn');
     }
   } catch (err) {
     log('Failed to load auto backup settings:', err, 'error');
@@ -1092,7 +1091,7 @@ export async function saveAutoBackupSettings() {
 
     const validationResult = BackupSettingsSchema.safeParse(settings);
     if (!validationResult.success) {
-      log('Invalid auto backup settings, cannot save', { settings, errors: validationResult.error.format() }, 'error');
+      log('Invalid auto backup settings, cannot save', { settings, errors: validationResult.error.message }, 'error');
       return;
     }
 

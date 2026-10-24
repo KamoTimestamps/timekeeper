@@ -213,7 +213,7 @@ function openIndexedDB(): Promise<IDBDatabase> {
                 log('Failed to export pre-migration backup:', err, 'error');
               }
             } else if (!parsedRecords.success) {
-              log('Skipping pre-migration backup: legacy data failed validation', parsedRecords.error.format(), 'warn');
+              log('Skipping pre-migration backup: legacy data failed validation', parsedRecords.error.message, 'warn');
             }
           };
         }
@@ -248,7 +248,7 @@ function openIndexedDB(): Promise<IDBDatabase> {
               });
               log(`Migrated ${totalMigrated} timestamps from ${parsedRecords.data.length} videos to v2 store`);
             } else if (!parsedRecords.success) {
-              log('Skipping v1 → v2 migration: legacy data failed validation', parsedRecords.error.format(), 'warn');
+              log('Skipping v1 → v2 migration: legacy data failed validation', parsedRecords.error.message, 'warn');
             }
 
             // When upgrading from v1/v2 directly to v4, the v4 cursor MUST run here,
@@ -754,7 +754,7 @@ export function loadTimestamps(videoId: string): Promise<TimestampRecord[] | nul
 
         const parsed = TimestampRecordArraySchema.safeParse(mapped);
         if (!parsed.success) {
-          log('Failed to parse timestamps from IndexedDB:', parsed.error.format(), 'warn');
+          log('Failed to parse timestamps from IndexedDB:', parsed.error.message, 'warn');
           resolve(null);
           return;
         }

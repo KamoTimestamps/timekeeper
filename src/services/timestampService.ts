@@ -29,7 +29,7 @@ export async function buildExportPayload({ includeDeleted = false }: { includeDe
   const parsedRows = TimestampRowSchema.array().safeParse(allTimestamps);
 
   if (!parsedRows.success) {
-    log('Failed to parse timestamp rows for export:', parsedRows.error.format(), 'warn');
+    log('Failed to parse timestamp rows for export:', parsedRows.error.message, 'warn');
     return { json: '{}', filename: 'timekeeper-data.json', totalVideos: 0, totalTimestamps: 0 };
   }
 
@@ -110,7 +110,7 @@ export async function buildExportCsvPayload(): Promise<{
   // Early return with header when no timestamps or parse failure
   if (!allTimestampsResult.success || allTimestampsResult.data.length === 0) {
     if (!allTimestampsResult.success) {
-      log('Failed to parse timestamp rows for CSV export:', allTimestampsResult.error.format(), 'warn');
+      log('Failed to parse timestamp rows for CSV export:', allTimestampsResult.error.message, 'warn');
     }
     const header = 'Tag,Timestamp,URL\n';
     const filename = `timestamps-${getTimestampSuffix()}.csv`;
@@ -267,7 +267,7 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
 
   const result = ExportDataSchema.safeParse(parsed);
   if (!result.success) {
-    log('mergeBackupData: data failed validation', result.error.format(), 'warn');
+    log('mergeBackupData: data failed validation', result.error.message, 'warn');
     return { mergedVideos: 0, mergedTimestamps: 0 };
   }
 
