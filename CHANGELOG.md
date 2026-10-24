@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.3.0](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)
+
+
+### Added
+
+* strip leading @ from author names in live chat and chat replay d019222
+
 ## [5.2.0](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)
 
 
