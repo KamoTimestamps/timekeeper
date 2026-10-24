@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { syncVersion } = require('./sync-version');
+const { syncGenerated } = require('./sync-generated');
 
 const repoRoot = path.join(__dirname, '..');
 const headerTemplateFile = path.join(repoRoot, 'src', 'userscript-header.txt');
@@ -35,6 +36,10 @@ async function buildUserscript() {
 
   // Sync version from package.json to src/version.ts and manifest.json
   syncVersion();
+
+  // Regenerate src/styles.ts and src/header-icons.ts from their sources so the bundle
+  // can never ship stale CSS or icons
+  syncGenerated();
 
   // Bundle with esbuild
   await esbuild.build({

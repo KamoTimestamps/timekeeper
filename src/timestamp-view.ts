@@ -269,62 +269,6 @@ export function highlightNearestTimestampAtTime(
 }
 
 /**
- * Remove all seekbar markers from YouTube's progress bar
- */
-export function removeSeekbarMarkers(): void {
-  const markers = document.querySelectorAll(".ytls-marker");
-  markers.forEach(m => m.remove());
-}
-
-/**
- * Update seekbar markers based on current timestamps
- */
-export function updateSeekbarMarkers(
-  list: HTMLUListElement | null,
-  getVideoElement: () => HTMLVideoElement | null,
-  getActivePlayer: () => any,
-  isLiveStream: boolean
-): void {
-  if (!list) return;
-  const video = getVideoElement();
-  const progressBar = document.querySelector<HTMLDivElement>(".ytp-progress-bar");
-
-  // Skip if video isn't ready, progress bar isn't found, or if it's a live stream
-  if (!video || !progressBar || !isFinite(video.duration) || isLiveStream) return;
-
-  removeSeekbarMarkers();
-
-  const timestamps = getTimestampItems(list);
-
-  timestamps.forEach(li => {
-    const startLink = li.querySelector<HTMLElement>('[data-time]');
-    const timeValue = startLink?.dataset.time;
-    if (!startLink || !timeValue) {
-      return;
-    }
-    const startTime = Number.parseInt(timeValue, 10);
-    if (!Number.isFinite(startTime)) {
-      return;
-    }
-
-    const marker = document.createElement("div");
-    marker.className = "ytls-marker";
-    marker.style.position = "absolute";
-    marker.style.height = "100%";
-    marker.style.width = "2px";
-    marker.style.backgroundColor = "#ff0000";
-    marker.style.cursor = "pointer";
-    marker.style.left = (startTime / video.duration * 100) + "%";
-    marker.dataset.time = String(startTime);
-    marker.addEventListener("click", () => {
-      const player = getActivePlayer();
-      if (player) player.seekTo(startTime);
-    });
-    progressBar.appendChild(marker);
-  });
-}
-
-/**
  * Extract timestamp records from the UI
  */
 export function extractTimestampRecords(list: HTMLUListElement | null): TimestampRecord[] {

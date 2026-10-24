@@ -8,6 +8,7 @@ import {
 } from "./util";
 import { TIMEKEEPER_VERSION } from "./version";
 import { PANE_STYLES } from "./styles";
+import { HEADER_ICON_DEFAULT_URL, HEADER_ICON_HOVER_URL } from "./header-icons";
 import { addTooltip, hideActiveTooltip, cleanupAllTooltips } from "./tooltip";
 import * as TimestampModel from "./timestamp-model";
 import * as TimestampView from "./timestamp-view";
@@ -441,21 +442,6 @@ initializeDvrEnablement();
   let isLoadingTimestamps = false; // Track if timestamps are currently loading
   const TIMESTAMP_DELETE_CLASS = "ytls-timestamp-pending-delete";
   const TIMESTAMP_HIGHLIGHT_CLASS = "ytls-timestamp-highlight";
-  const HEADER_ICON_DEFAULT_URL =
-    "https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_64px_Indexed.png";
-  const HEADER_ICON_HOVER_URL =
-    "https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_Eyebrow_64px_Indexed.png";
-
-  // Preload header images once at script startup so they're cached for later use
-  function preloadHeaderIcons() {
-    const preloadImage = (url: string) => {
-      const img = new Image();
-      img.src = url;
-    };
-    preloadImage(HEADER_ICON_DEFAULT_URL);
-    preloadImage(HEADER_ICON_HOVER_URL);
-  }
-  preloadHeaderIcons();
 
   // Wait for YouTube interface to load completely
   async function waitForYouTubeReady() {
@@ -538,8 +524,15 @@ initializeDvrEnablement();
         : getVideoElement()?.playbackRate ?? 1;
     const display = formatPlaybackSpeed(rate);
 
-    playbackSpeedDisplay.textContent = `${display}x`;
-    playbackSpeedDisplay.setAttribute("aria-label", `Playback speed ${display}x`);
+    // Called every playback tick; only touch the DOM when the rendered speed changes.
+    if (playbackSpeedDisplay.dataset.speed !== display) {
+      playbackSpeedDisplay.dataset.speed = display;
+      playbackSpeedDisplay.textContent = `${display}x`;
+      playbackSpeedDisplay.setAttribute(
+        "aria-label",
+        `Playback speed ${display}x`,
+      );
+    }
 
     // Add active class when speed is not 1x for glow effect
     if (Math.abs(rate - 1.0) > 0.01) {
@@ -1103,12 +1096,17 @@ initializeDvrEnablement();
   let isSeeking = false;
 
   // Detect whether playback is behind the live edge using YouTube player internals.
-  function isBehindLiveEdge(playerInstance: any): boolean {
+  // `knownIsLive` lets per-tick callers that already read getVideoData() skip a second call
+  // (YouTube builds a fresh ~30-key object on every getVideoData()).
+  function isBehindLiveEdge(playerInstance: any, knownIsLive?: boolean): boolean {
     if (!playerInstance || typeof playerInstance.getVideoData !== "function") {
       return false;
     }
-    const videoData = playerInstance.getVideoData();
-    if (!videoData?.isLive) {
+    const isLive =
+      knownIsLive !== undefined
+        ? knownIsLive
+        : !!playerInstance.getVideoData()?.isLive;
+    if (!isLive) {
       return false;
     }
 
@@ -2756,7 +2754,7 @@ initializeDvrEnablement();
     const { isLive } = player
       ? player.getVideoData() || { isLive: false }
       : { isLive: false };
-    const behindLive = player ? isBehindLiveEdge(player) : false;
+    const behindLive = player ? isBehindLiveEdge(player, !!isLive) : false;
 
     const timestamps = list ? getTimestampIndex().rawTimes : [];
 
@@ -3472,13 +3470,7 @@ initializeDvrEnablement();
       };
 
       // Update cursor and interaction state based on live stream status
-      const updateTimeDisplayInteractivity = () => {
-        const player = getActivePlayer();
-        if (!player) {
-          timeDisplay.style.cursor = "default";
-          return;
-        }
-        const { isLive } = player.getVideoData() || { isLive: false };
+      const updateTimeDisplayInteractivity = (isLive: boolean) => {
         timeDisplay.style.cursor = isLive ? "pointer" : "default";
       };
 
@@ -3510,7 +3502,7 @@ initializeDvrEnablement();
         const { isLive } = player
           ? player.getVideoData() || { isLive: false }
           : { isLive: false };
-        const behindLive = player ? isBehindLiveEdge(player) : false;
+        const behindLive = player ? isBehindLiveEdge(player, !!isLive) : false;
 
         const timestamps = list ? getTimestampIndex().rawTimes : [];
 
@@ -3549,7 +3541,7 @@ initializeDvrEnablement();
         timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
 
         // Update cursor state based on live stream status
-        updateTimeDisplayInteractivity();
+        updateTimeDisplayInteractivity(!!isLive);
         // Update playback speed UI to reflect actual video rate
         try {
           updatePlaybackSpeedUI();

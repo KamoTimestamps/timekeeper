@@ -1,14 +1,14 @@
 {
   "packageManager": "pnpm@11.6.0",
   "name": "timekeeper",
-  "version": "5.0.24",
+  "version": "5.0.25",
   "private": true,
   "description": "Timekeeper browser extension",
   "scripts": {
     "dev": "npx extension@latest dev",
-    "prebuild": "node build-tools/sync-version.js",
+    "prebuild": "node build-tools/sync-version.js && node build-tools/sync-generated.js",
     "build": "npx extension@latest build --browser chromium",
-    "prebuild:firefox": "node build-tools/sync-version.js",
+    "prebuild:firefox": "node build-tools/sync-version.js && node build-tools/sync-generated.js",
     "build:firefox": "npx extension@latest build --browser firefox",
     "build:userscript": "node build-tools/build.js",
     "clean": "rm -rf dist",
