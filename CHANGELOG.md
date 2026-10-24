@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.1.1](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)
+
+
+### Changed
+
+* DVR enablement leaves the playback path (useServerDrivenAbr, serverPlaybackStartConfig) untouched for live streams that already have DVR enabled; the >12h rewind window is still widened
+
 ## [5.1.0](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)
 
 

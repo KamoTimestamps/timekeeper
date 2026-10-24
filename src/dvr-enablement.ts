@@ -57,11 +57,13 @@ function modifyPlayerResponse(pr: Record<string, unknown>): void {
   if (!isObject(videoDetails) || !videoDetails.isLive) return;
 
   // 1) Enable rewind even when the broadcaster turned DVR off.
+  const dvrAlreadyEnabled = videoDetails.isLiveDvrEnabled === true;
   (videoDetails as Record<string, unknown>).isLiveDvrEnabled = true;
 
   // 2) Disable server-driven playback that blocks client-side seeking.
   //    Required for rewind: leaving useServerDrivenAbr on broke DVR (v5.0.28).
-  if (isObject(playerConfig)) {
+  //    Streams that already have DVR keep YouTube's own playback path untouched.
+  if (!dvrAlreadyEnabled && isObject(playerConfig)) {
     const mc = (playerConfig as Record<string, unknown>).mediaCommonConfig;
     if (isObject(mc)) {
       (mc as Record<string, unknown>).useServerDrivenAbr = false;
