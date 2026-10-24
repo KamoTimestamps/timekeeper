@@ -3,6 +3,8 @@ import { createIcon, setIcon, setIconLabel, TablerIconName } from "./icons";
 import {
   log,
   formatTimeString,
+  formatTimeDisplay,
+  formatTimestampLines,
   getTimestampSuffix,
 } from "./util";
 import { TIMEKEEPER_VERSION } from "./version";
@@ -876,6 +878,25 @@ initializeDvrEnablement();
     latestTimestampValue = null;
   }
 
+  // Video length in seconds, or 0 when unknown (e.g. metadata not loaded).
+  function getVideoDuration(
+    player: any = getActivePlayer(),
+    video: HTMLVideoElement | null = getVideoElement(),
+  ): number {
+    const playerDuration = player?.getDuration?.();
+    if (Number.isFinite(playerDuration) && playerDuration > 0) {
+      return playerDuration;
+    }
+    return Number.isFinite(video?.duration) && video.duration > 0
+      ? video.duration
+      : 0;
+  }
+
+  // Width reference for displayed times: the video length, else the latest timestamp.
+  function getDisplayMaxTime(): number {
+    return getVideoDuration() || getLatestTimestampValue();
+  }
+
   function hasNegativeTimeDifference(li: HTMLLIElement): boolean {
     const timeDiffSpan = li.querySelector<HTMLSpanElement>(".time-diff");
     if (!timeDiffSpan) return false;
@@ -998,42 +1019,13 @@ initializeDvrEnablement();
             ? Math.max(0, Math.floor(rawTime))
             : Math.max(0, getLatestTimestampValue());
 
-          const { isLive } = playerInstance.getVideoData() || { isLive: false };
-
           const timestamps = list ? getTimestampIndex().rawTimes : [];
 
-          let timestampDisplay = "";
-          if (timestamps.length > 0) {
-            if (isLive) {
-              const currentTimeMinutes = Math.max(1, currentSeconds / 60);
-              const liveTimestamps = timestamps.filter(
-                (time) => time <= currentSeconds,
-              );
-              if (liveTimestamps.length > 0) {
-                const timestampsPerMin = (
-                  liveTimestamps.length / currentTimeMinutes
-                ).toFixed(2);
-                if (parseFloat(timestampsPerMin) > 0) {
-                  timestampDisplay = ` (${timestampsPerMin}/min)`;
-                }
-              }
-            } else {
-              const durationSeconds = playerInstance.getDuration();
-              const validDuration =
-                Number.isFinite(durationSeconds) && durationSeconds > 0
-                  ? durationSeconds
-                  : 0;
-              const totalMinutes = Math.max(1, validDuration / 60);
-              const timestampsPerMin = (
-                timestamps.length / totalMinutes
-              ).toFixed(1);
-              if (parseFloat(timestampsPerMin) > 0) {
-                timestampDisplay = ` (${timestampsPerMin}/min)`;
-              }
-            }
-          }
-
-          timeDisplay.textContent = `${formatTimeString(currentSeconds)}${timestampDisplay}`;
+          timeDisplay.textContent = formatTimeDisplay(
+            currentSeconds,
+            timestamps,
+            getVideoDuration(playerInstance),
+          );
         }
       }
     }
@@ -1052,10 +1044,7 @@ initializeDvrEnablement();
 
   function formatTime(anchor: HTMLElement, timeInSeconds: number) {
     anchor.dataset.time = String(timeInSeconds);
-    anchor.textContent = formatTimeString(
-      timeInSeconds,
-      getLatestTimestampValue(),
-    );
+    anchor.textContent = formatTimeString(timeInSeconds, getDisplayMaxTime());
   }
 
   // Debounce state for seeking
@@ -1923,14 +1912,14 @@ initializeDvrEnablement();
   function updateTimeDifferences() {
     if (isEditingBlocked()) return;
 
-    const maxTime = getLatestTimestampValue();
+    const maxTime = getDisplayMaxTime();
     const items = getTimestampItems();
     items.forEach((item, index) => {
       const timeDiffSpan = item.querySelector<HTMLSpanElement>(".time-diff");
       const timeLink = item.querySelector<HTMLElement>("[data-time]");
       const currentTimeStr = timeLink?.dataset.time;
 
-      // Reformat anchor text with shared maxTime so all timestamps use consistent width
+      // Reformat anchor text with shared maxTime (video length) so all timestamps use consistent width
       if (timeLink && currentTimeStr) {
         const t = Number.parseInt(currentTimeStr, 10);
         if (Number.isFinite(t)) {
@@ -2303,7 +2292,6 @@ initializeDvrEnablement();
     if (!videoId) return;
     log(`Exporting timestamps for video ID: ${videoId}`);
     const timestamps = extractTimestampRecords();
-    const videoDuration = Math.max(getLatestTimestampValue(), 0);
     const timestampSuffix = getTimestampSuffix();
     if (format === "json") {
       const blob = new Blob([JSON.stringify(timestamps, null, 2)], {
@@ -2316,14 +2304,7 @@ initializeDvrEnablement();
       a.click();
       URL.revokeObjectURL(url);
     } else if (format === "text") {
-      const plainText = timestamps
-        .map((ts) => {
-          const timeString = formatTimeString(ts.start, videoDuration);
-          const commentWithGuid =
-            `${ts.comment} <!-- guid:${ts.guid} -->`.trimStart();
-          return `${timeString} ${commentWithGuid}`;
-        })
-        .join("\n");
+      const plainText = formatTimestampLines(timestamps, true);
       const blob = new Blob([plainText], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -2780,36 +2761,11 @@ initializeDvrEnablement();
 
     const timestamps = list ? getTimestampIndex().rawTimes : [];
 
-    let timestampDisplay = "";
-    if (timestamps.length > 0) {
-      if (isLive) {
-        const currentTimeMinutes = Math.max(1, seconds / 60);
-        const liveTimestamps = timestamps.filter((time) => time <= seconds);
-        if (liveTimestamps.length > 0) {
-          const timestampsPerMin = (
-            liveTimestamps.length / currentTimeMinutes
-          ).toFixed(2);
-          if (parseFloat(timestampsPerMin) > 0) {
-            timestampDisplay = ` (${timestampsPerMin}/min)`;
-          }
-        }
-      } else {
-        const durationSeconds = player ? player.getDuration() : 0;
-        const validDuration =
-          Number.isFinite(durationSeconds) && durationSeconds > 0
-            ? durationSeconds
-            : video && Number.isFinite(video.duration) && video.duration > 0
-              ? video.duration
-              : 0;
-        const totalMinutes = Math.max(1, validDuration / 60);
-        const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(1);
-        if (parseFloat(timestampsPerMin) > 0) {
-          timestampDisplay = ` (${timestampsPerMin}/min)`;
-        }
-      }
-    }
-
-    timeDisplay.textContent = `${formatTimeString(seconds)}${timestampDisplay}`;
+    timeDisplay.textContent = formatTimeDisplay(
+      seconds,
+      timestamps,
+      getVideoDuration(player, video),
+    );
     timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
   }
 
@@ -3535,38 +3491,11 @@ initializeDvrEnablement();
 
         const timestamps = list ? getTimestampIndex().rawTimes : [];
 
-        let timestampDisplay = "";
-        if (timestamps.length > 0) {
-          if (isLive) {
-            const currentTimeMinutes = Math.max(1, seconds / 60);
-            const liveTimestamps = timestamps.filter((time) => time <= seconds);
-            if (liveTimestamps.length > 0) {
-              const timestampsPerMin = (
-                liveTimestamps.length / currentTimeMinutes
-              ).toFixed(2);
-              if (parseFloat(timestampsPerMin) > 0) {
-                timestampDisplay = ` (${timestampsPerMin}/min)`;
-              }
-            }
-          } else {
-            const durationSeconds = player ? player.getDuration() : 0;
-            const validDuration =
-              Number.isFinite(durationSeconds) && durationSeconds > 0
-                ? durationSeconds
-                : video && Number.isFinite(video.duration) && video.duration > 0
-                  ? video.duration
-                  : 0;
-            const totalMinutes = Math.max(1, validDuration / 60);
-            const timestampsPerMin = (timestamps.length / totalMinutes).toFixed(
-              1,
-            );
-            if (parseFloat(timestampsPerMin) > 0) {
-              timestampDisplay = ` (${timestampsPerMin}/min)`;
-            }
-          }
-        }
-
-        timeDisplay.textContent = `${formatTimeString(seconds)}${timestampDisplay}`;
+        timeDisplay.textContent = formatTimeDisplay(
+          seconds,
+          timestamps,
+          getVideoDuration(player, video),
+        );
         timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
 
         // Update cursor state based on live stream status
@@ -3693,7 +3622,6 @@ initializeDvrEnablement();
           return;
         }
         const timestamps = extractTimestampRecords();
-        const videoDuration = Math.max(getLatestTimestampValue(), 0);
         if (timestamps.length === 0) {
           setIcon(this as Element, "circle-x", 20);
           setTimeout(() => {
@@ -3702,14 +3630,7 @@ initializeDvrEnablement();
           return;
         }
         const includeGuids = e.ctrlKey;
-        const plainText = timestamps
-          .map((ts) => {
-            const timeString = formatTimeString(ts.start, videoDuration);
-            return includeGuids
-              ? `${timeString} ${ts.comment} <!-- guid:${ts.guid} -->`.trimStart()
-              : `${timeString} ${ts.comment}`;
-          })
-          .join("\n");
+        const plainText = formatTimestampLines(timestamps, includeGuids);
         navigator.clipboard
           .writeText(plainText)
           .then(() => {

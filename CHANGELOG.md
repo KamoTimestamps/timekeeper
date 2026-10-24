@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.2.0](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)
+
+
+### Changed
+
+* displayed times (timestamp list and current time) are padded to the video length instead of the latest timestamp
+* timestamps-per-minute is calculated from the first to last timestamp (minimum 1 minute), independent of playback position; always shown with two decimals
+* text export and clipboard copy pad to the latest timestamp in the exported records
+* simplify time formatting: shared `formatTimeDisplay`/`formatTimestampLines` helpers, CSV time reuses `formatTimeString`
+
 ## [5.1.1](https://github.com/KamoTimestamps/timekeeper/compare/...) (2026-10-24)
 
 

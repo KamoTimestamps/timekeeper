@@ -16,6 +16,8 @@ export function log(message: string, ...args: any[]) {
   methodMap[logLevel](`${prefix} ${message}`, ...consoleArgs);
 }
 
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
 /**
  * Format seconds into a time string (M:SS, MM:SS, H:MM:SS, or HH:MM:SS)
  * @param seconds - The time in seconds to format
@@ -24,15 +26,58 @@ export function log(message: string, ...args: any[]) {
 export function formatTimeString(seconds: number, maxTime: number = seconds): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  const s = String(seconds % 60).padStart(2, "0");
+  const s = pad2(seconds % 60);
 
-  // For times under 1 hour, show M:SS or MM:SS (pad minutes when max >= 10 min)
+  // Under 1 hour: M:SS, or MM:SS once the max reaches 10 minutes
   if (maxTime < 3600) {
-    return `${maxTime >= 600 ? String(m).padStart(2, "0") : m}:${s}`;
+    return `${maxTime >= 600 ? pad2(m) : m}:${s}`;
   }
 
-  // For times with hours, show H:MM:SS or HH:MM:SS
-  return `${maxTime >= 36000 ? String(h).padStart(2, "0") : h}:${String(m).padStart(2, "0")}:${s}`;
+  // With hours: H:MM:SS, or HH:MM:SS once the max reaches 10 hours
+  return `${maxTime >= 36000 ? pad2(h) : h}:${pad2(m)}:${s}`;
+}
+
+/**
+ * Format the current-time display (padded to the video length): "M:SS" plus a " (x/min)"
+ * timestamp rate when applicable. The rate spans the first to last timestamp (at least 1 minute),
+ * independent of playback position.
+ * @param seconds - Current playback time in seconds
+ * @param timestamps - Raw timestamp start times in seconds
+ * @param durationSeconds - Video duration in seconds (determines format width)
+ */
+export function formatTimeDisplay(
+  seconds: number,
+  timestamps: number[],
+  durationSeconds: number,
+): string {
+  const time = formatTimeString(seconds, Math.max(seconds, durationSeconds));
+  if (timestamps.length === 0) return time;
+
+  const spanMinutes = (Math.max(...timestamps) - Math.min(...timestamps)) / 60;
+  const rate = (timestamps.length / Math.max(1, spanMinutes)).toFixed(2);
+  return parseFloat(rate) > 0 ? `${time} (${rate}/min)` : time;
+}
+
+/**
+ * Format timestamps as plain-text lines: "<time> <comment>", optionally with a trailing guid marker.
+ * Time width is padded to fit the latest timestamp in the list.
+ * @param timestamps - Records to format
+ * @param includeGuids - Append `<!-- guid:... -->` to each line
+ */
+export function formatTimestampLines(
+  timestamps: { start: number; comment: string; guid: string }[],
+  includeGuids: boolean,
+): string {
+  const maxTime = Math.max(0, ...timestamps.map((ts) => ts.start));
+  return timestamps
+    .map((ts) => {
+      const timeString = formatTimeString(ts.start, maxTime);
+      const comment = includeGuids
+        ? `${ts.comment} <!-- guid:${ts.guid} -->`.trimStart()
+        : ts.comment;
+      return `${timeString} ${comment}`;
+    })
+    .join("\n");
 }
 
 /**

@@ -10,7 +10,7 @@ import {
   TimestampRowSchema,
   ExportDataSchema,
 } from '../schema';
-import { log, getTimestampSuffix, buildYouTubeUrlWithTimestamp } from '../util';
+import { log, formatTimeString, getTimestampSuffix, buildYouTubeUrlWithTimestamp } from '../util';
 import * as TimestampRepository from './timestampRepository';
 
 // === Export/Import Business Logic ===
@@ -146,20 +146,13 @@ export async function buildExportCsvPayload(): Promise<{
 
   const escapeCsv = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
 
-  // Format timestamps strictly as HH:MM:SS for CSV consistency
-  const toHHMMSS = (s: number) => {
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const ss = String(s % 60).padStart(2, '0');
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${ss}`;
-  };
-
   const videoIds = Array.from(videoGroups.keys()).sort();
   for (const videoId of videoIds) {
     const timestamps = videoGroups.get(videoId)!.sort((a, b) => a.start - b.start);
     for (const ts of timestamps) {
       const tag = ts.comment;
-      const human = toHHMMSS(ts.start);
+      // Strictly HH:MM:SS for CSV consistency (maxTime >= 10h forces full padding)
+      const human = formatTimeString(ts.start, 36000);
       const url = buildYouTubeUrlWithTimestamp(ts.start, `https://www.youtube.com/watch?v=${videoId}`);
       lines.push([escapeCsv(tag), escapeCsv(human), escapeCsv(url)].join(','));
       totalTimestamps++;
