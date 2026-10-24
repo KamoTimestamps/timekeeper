@@ -831,9 +831,62 @@ initializeDvrEnablement();
   // Global cache for latest timestamp value
   let latestTimestampValue: number | null = null;
 
+  /**
+   * Cached snapshot of the timestamp rows and their start times, so the per-second
+   * playback tick doesn't re-query and re-parse the DOM for every row.
+   *  - items:    the row elements, in DOM order
+   *  - starts:   parseInt(data-time) per row, NaN when missing/invalid (used for highlighting)
+   *  - rawTimes: parseFloat(data-time) per row, 0 when missing (used for per-minute stats)
+   * Callers must treat the arrays as read-only.
+   */
+  type TimestampIndex = {
+    items: HTMLLIElement[];
+    starts: number[];
+    rawTimes: number[];
+  };
+  let timestampIndex: TimestampIndex | null = null;
+  let timestampIndexList: HTMLUListElement | null = null;
+  let timestampIndexObserver: MutationObserver | null = null;
+
+  function getTimestampIndex(): TimestampIndex {
+    if (!list) {
+      return { items: [], starts: [], rawTimes: [] };
+    }
+    if (timestampIndexList !== list || !timestampIndexObserver) {
+      timestampIndexObserver?.disconnect();
+      timestampIndexObserver = new MutationObserver(() => {
+        timestampIndex = null;
+      });
+      timestampIndexObserver.observe(list, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["data-time"],
+      });
+      timestampIndexList = list;
+      timestampIndex = null;
+    } else if (timestampIndexObserver.takeRecords().length > 0) {
+      // Observer callbacks are async; draining here keeps same-tick reads fresh.
+      timestampIndex = null;
+    }
+    if (!timestampIndex) {
+      const items = TimestampView.getTimestampItems(list);
+      const starts: number[] = new Array(items.length);
+      const rawTimes: number[] = new Array(items.length);
+      for (let i = 0; i < items.length; i++) {
+        const timeValue = items[i].querySelector<HTMLElement>("[data-time]")
+          ?.dataset.time;
+        starts[i] = timeValue ? Number.parseInt(timeValue, 10) : NaN;
+        rawTimes[i] = timeValue ? parseFloat(timeValue) : 0;
+      }
+      timestampIndex = { items, starts, rawTimes };
+    }
+    return timestampIndex;
+  }
+
   // Using view module for UI operations
   function getTimestampItems(): HTMLLIElement[] {
-    return TimestampView.getTimestampItems(list);
+    return getTimestampIndex().items;
   }
 
   // Utility to extract timestamp records from UI
@@ -977,14 +1030,7 @@ initializeDvrEnablement();
 
           const { isLive } = playerInstance.getVideoData() || { isLive: false };
 
-          const timestamps = list
-            ? getTimestampItems().map((li) => {
-              const timeLink = li.querySelector("[data-time]");
-              return timeLink
-                ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
-                : 0;
-            })
-            : [];
+          const timestamps = list ? getTimestampIndex().rawTimes : [];
 
           let timestampDisplay = "";
           if (timestamps.length > 0) {
@@ -1128,43 +1174,46 @@ initializeDvrEnablement();
       return null;
     }
 
-    const items = getTimestampItems();
-    if (items.length === 0) {
-      return null;
-    }
+    const { items, starts } = getTimestampIndex();
 
-    let nearestLi: HTMLLIElement | null = null;
+    let nearestIndex = -1;
     let largestTimestamp = -Infinity;
 
-    for (const li of items) {
-      const timeLink = li.querySelector<HTMLElement>("[data-time]");
-      const timeValue = timeLink?.dataset.time;
-      if (!timeValue) {
-        continue;
-      }
-      const timestamp = Number.parseInt(timeValue, 10);
-      if (!Number.isFinite(timestamp)) {
-        continue;
-      }
-      // Only consider timestamps at or before the current time
+    for (let i = 0; i < starts.length; i++) {
+      const timestamp = starts[i];
+      // Only consider timestamps at or before the current time (NaN never matches)
       if (timestamp <= currentTime && timestamp > largestTimestamp) {
         largestTimestamp = timestamp;
-        nearestLi = li;
+        nearestIndex = i;
       }
     }
 
-    return nearestLi;
+    return nearestIndex >= 0 ? items[nearestIndex] : null;
   }
 
   // Highlight a timestamp and optionally scroll it into view
   function highlightTimestamp(li: HTMLLIElement | null, shouldScroll = false) {
-    const items = getTimestampItems();
-    // Always clear existing highlights first
-    items.forEach((item) => {
-      if (!item.classList.contains(TIMESTAMP_DELETE_CLASS)) {
-        item.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
+    // Fast path: the DOM already shows exactly this highlight (the common case on every
+    // playback tick), so skip the O(rows) clear. Checked against the DOM rather than a
+    // cached "last highlighted" because several other code paths also toggle the class.
+    const highlighted = list
+      ? list.getElementsByClassName(TIMESTAMP_HIGHLIGHT_CLASS)
+      : null;
+    const alreadyHighlighted =
+      !!highlighted &&
+      (li
+        ? highlighted.length === 1 && highlighted[0] === li
+        : highlighted.length === 0);
+
+    if (!alreadyHighlighted && highlighted) {
+      // Only the rows that carry the class need clearing; the live collection shrinks as
+      // we remove it, so snapshot first.
+      for (const item of Array.from(highlighted)) {
+        if (!item.classList.contains(TIMESTAMP_DELETE_CLASS)) {
+          item.classList.remove(TIMESTAMP_HIGHLIGHT_CLASS);
+        }
       }
-    });
+    }
 
     if (!li) return;
 
@@ -2084,45 +2133,42 @@ initializeDvrEnablement();
 
     removeSeekbarMarkers();
 
-    const timestamps = getTimestampItems()
-      .map((li) => {
-        const startLink = li.querySelector<HTMLElement>("[data-time]");
-        const timeValue = startLink?.dataset.time;
-        if (!startLink || !timeValue) {
-          return null;
-        }
-        const startTime = Number.parseInt(timeValue, 10);
-        if (!Number.isFinite(startTime)) {
-          return null;
-        }
-        const commentInput = li.querySelector<HTMLInputElement>("input");
-        const comment = commentInput?.value ?? "";
-        const guid = li.dataset.guid ?? crypto.randomUUID();
-        if (!li.dataset.guid) {
-          li.dataset.guid = guid;
-        }
-        return { start: startTime, comment, guid };
-      })
-      .filter(isTimestampRecord);
-
-    timestamps.forEach((ts) => {
-      if (!Number.isFinite(ts.start)) {
+    // Static look lives in styles.css (.ytp-progress-bar .ytls-marker); only `left`
+    // varies per marker. Build into a fragment so the progress bar reflows once.
+    const { items, starts } = getTimestampIndex();
+    const duration = video.duration;
+    const fragment = document.createDocumentFragment();
+    items.forEach((li, i) => {
+      const start = starts[i];
+      if (!Number.isFinite(start)) {
         return;
+      }
+      // Every row that gets a marker is guaranteed a guid.
+      if (!li.dataset.guid) {
+        li.dataset.guid = crypto.randomUUID();
       }
       const marker = document.createElement("div");
       marker.className = "ytls-marker";
-      marker.style.position = "absolute";
-      marker.style.height = "100%";
-      marker.style.width = "2px";
-      marker.style.backgroundColor = "#ff0000";
-      marker.style.cursor = "pointer";
-      marker.style.left = (ts.start / video.duration) * 100 + "%";
-      marker.dataset.time = String(ts.start);
-      marker.addEventListener("click", () => {
-        const player = getActivePlayer();
-        if (player) player.seekTo(ts.start);
-      });
-      progressBar.appendChild(marker);
+      marker.style.left = (start / duration) * 100 + "%";
+      marker.dataset.time = String(start);
+      fragment.appendChild(marker);
+    });
+    progressBar.appendChild(fragment);
+    bindSeekbarMarkerClicks(progressBar);
+  }
+
+  // One delegated listener per progress bar instead of one per marker.
+  function bindSeekbarMarkerClicks(progressBar: HTMLElement) {
+    if (progressBar.dataset.ytlsMarkerClicks) return;
+    progressBar.dataset.ytlsMarkerClicks = "1";
+    progressBar.addEventListener("click", (e) => {
+      const marker = (e.target as HTMLElement | null)?.closest?.(
+        ".ytls-marker",
+      ) as HTMLElement | null;
+      if (!marker) return;
+      const time = Number(marker.dataset.time);
+      const player = getActivePlayer();
+      if (player && Number.isFinite(time)) player.seekTo(time);
     });
   }
 
@@ -2712,14 +2758,7 @@ initializeDvrEnablement();
       : { isLive: false };
     const behindLive = player ? isBehindLiveEdge(player) : false;
 
-    const timestamps = list
-      ? getTimestampItems().map((li) => {
-        const timeLink = li.querySelector("[data-time]");
-        return timeLink
-          ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
-          : 0;
-      })
-      : [];
+    const timestamps = list ? getTimestampIndex().rawTimes : [];
 
     let timestampDisplay = "";
     if (timestamps.length > 0) {
@@ -2759,6 +2798,8 @@ initializeDvrEnablement();
     if (!video) return;
 
     // Handler for timeupdate: keep nearest timestamp highlighted during playback
+    let lastTickSecond = NaN;
+    let lastTickIndex: TimestampIndex | null = null;
     const handleTimeUpdate = () => {
       if (!list) return;
 
@@ -2766,15 +2807,26 @@ initializeDvrEnablement();
       const currentTime = player ? Math.floor(player.getCurrentTime()) : 0;
       if (!Number.isFinite(currentTime)) return;
 
+      // timeupdate fires ~4x/s but the display and highlight are second-granular.
+      // Skip unless the second changed or the rows changed (index is rebuilt then).
+      const index = getTimestampIndex();
+      if (currentTime === lastTickSecond && index === lastTickIndex) return;
+
       // Update time display to stay in sync with video
-      if (timeDisplay && !isLoadingTimestamps && !isSeeking) {
+      const canUpdateDisplay = !!timeDisplay && !isLoadingTimestamps && !isSeeking;
+      if (canUpdateDisplay) {
         updateTimeDisplay(currentTime, player);
       }
 
-
-
       // Use centralized helper to perform highlight (respects hover and forces scroll when requested)
       autoHighlightNearest(false, currentTime);
+
+      // Only remember this tick as handled when nothing was deferred, so a seek/load
+      // in progress or a hovered list is retried on the next timeupdate.
+      if (canUpdateDisplay && !isMouseOverTimestamps) {
+        lastTickSecond = currentTime;
+        lastTickIndex = index;
+      }
     };
 
     // Helper function to update URL t parameter
@@ -3460,14 +3512,7 @@ initializeDvrEnablement();
           : { isLive: false };
         const behindLive = player ? isBehindLiveEdge(player) : false;
 
-        const timestamps = list
-          ? getTimestampItems().map((li) => {
-            const timeLink = li.querySelector("[data-time]");
-            return timeLink
-              ? parseFloat(timeLink.getAttribute("data-time") ?? "0")
-              : 0;
-          })
-          : [];
+        const timestamps = list ? getTimestampIndex().rawTimes : [];
 
         let timestampDisplay = "";
         if (timestamps.length > 0) {
