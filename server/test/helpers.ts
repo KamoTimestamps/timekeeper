@@ -18,6 +18,8 @@ export const testConfig: Config = {
   allowedOrigins: ['https://www.youtube.com'],
   accessTokenTtlSeconds: 900,
   refreshTokenTtlSeconds: 3600,
+  refreshFamilyMaxSeconds: 7200,
+  refreshReuseGraceSeconds: 60,
 };
 
 export interface TestHarness {

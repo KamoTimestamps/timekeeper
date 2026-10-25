@@ -50,7 +50,10 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   token_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  expires_at INTEGER NOT NULL
+  expires_at INTEGER NOT NULL,
+  family_id TEXT NOT NULL,
+  family_started_at INTEGER NOT NULL,
+  used_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS refresh_tokens_user ON refresh_tokens(user_id);
 CREATE TABLE IF NOT EXISTS timestamps (
@@ -96,7 +99,21 @@ export class Store {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+    this.migrate();
     this.db.exec(SCHEMA);
+    this.db.exec('CREATE INDEX IF NOT EXISTS refresh_tokens_family ON refresh_tokens(family_id)');
+  }
+
+  /** Brings a database created before refresh-token rotation up to date. */
+  private migrate(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('refresh_tokens')").all() as { name: string }[];
+    if (columns.length === 0 || columns.some((c) => c.name === 'family_id')) return;
+    this.db.exec(`
+      ALTER TABLE refresh_tokens ADD COLUMN family_id TEXT NOT NULL DEFAULT '';
+      ALTER TABLE refresh_tokens ADD COLUMN family_started_at INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE refresh_tokens ADD COLUMN used_at INTEGER;
+      UPDATE refresh_tokens SET family_id = token_hash, family_started_at = ${Date.now()};
+    `);
   }
 
   close(): void {
@@ -136,33 +153,91 @@ export class Store {
   }
 
   /**
-   * Refresh tokens are opaque, stored hashed, and deliberately not rotated: the userscript runs
-   * in several YouTube tabs at once that share one stored token, and rotation would sign out
-   * whichever tab refreshed second.
+   * Refresh tokens are opaque and stored hashed. Each belongs to a family (one sign-in) and is
+   * single-use: refreshing rotates it for a new one in the same family (see rotateRefreshToken).
    */
-  createRefreshToken(userId: string, ttlSeconds: number): string {
-    const now = Date.now();
+  createRefreshToken(userId: string, ttlSeconds: number, now = Date.now()): string {
     this.db.prepare('DELETE FROM refresh_tokens WHERE expires_at < ?').run(now);
+    return this.insertRefreshToken(userId, randomUUID(), now, now + ttlSeconds * 1000);
+  }
+
+  private insertRefreshToken(userId: string, familyId: string, familyStartedAt: number, expiresAt: number): string {
     const token = randomBytes(32).toString('base64url');
     this.db
-      .prepare('INSERT INTO refresh_tokens (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
-      .run(sha256(token), userId, now + ttlSeconds * 1000);
+      .prepare(
+        `INSERT INTO refresh_tokens (token_hash, user_id, expires_at, family_id, family_started_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(sha256(token), userId, expiresAt, familyId, familyStartedAt);
     return token;
   }
 
-  findRefreshTokenUser(token: string): User | null {
-    const row = this.db
-      .prepare(
-        `SELECT u.id, u.email, u.name FROM refresh_tokens t
-         JOIN users u ON u.id = t.user_id
-         WHERE t.token_hash = ? AND t.expires_at > ?`,
-      )
-      .get(sha256(token), Date.now()) as { id: string; email: string; name: string | null } | undefined;
-    return row ?? null;
+  /**
+   * Exchanges a refresh token for a new one in the same family.
+   * - A token that is unknown, expired, or past its family's lifetime cap is rejected.
+   * - Presenting an already-used token after the grace window means two parties hold the same
+   *   token, so the whole family is revoked ('reuse'). Within the grace window it is assumed to be
+   *   a retry after a lost response and just gets another fresh token.
+   */
+  rotateRefreshToken(
+    token: string,
+    opts: { ttlSeconds: number; familyMaxSeconds: number; graceSeconds: number },
+    now = Date.now(),
+  ): { status: 'ok'; user: User; refreshToken: string } | { status: 'invalid' } | { status: 'reuse' } {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT t.user_id, t.expires_at, t.family_id, t.family_started_at, t.used_at, u.email, u.name
+           FROM refresh_tokens t JOIN users u ON u.id = t.user_id
+           WHERE t.token_hash = ?`,
+        )
+        .get(sha256(token)) as
+        | {
+            user_id: string;
+            expires_at: number;
+            family_id: string;
+            family_started_at: number;
+            used_at: number | null;
+            email: string;
+            name: string | null;
+          }
+        | undefined;
+
+      const familyEnd = row ? row.family_started_at + opts.familyMaxSeconds * 1000 : 0;
+      if (!row || row.expires_at <= now || familyEnd <= now) {
+        this.db.exec('COMMIT');
+        return { status: 'invalid' };
+      }
+
+      if (row.used_at !== null && now - row.used_at > opts.graceSeconds * 1000) {
+        this.db.prepare('DELETE FROM refresh_tokens WHERE family_id = ?').run(row.family_id);
+        this.db.exec('COMMIT');
+        return { status: 'reuse' };
+      }
+
+      if (row.used_at === null) {
+        this.db.prepare('UPDATE refresh_tokens SET used_at = ? WHERE token_hash = ?').run(now, sha256(token));
+      }
+      const refreshToken = this.insertRefreshToken(
+        row.user_id,
+        row.family_id,
+        row.family_started_at,
+        Math.min(now + opts.ttlSeconds * 1000, familyEnd),
+      );
+      this.db.exec('COMMIT');
+      return { status: 'ok', user: { id: row.user_id, email: row.email, name: row.name }, refreshToken };
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
   }
 
+  /** Ends the session (token family) the token belongs to. */
   revokeRefreshToken(token: string): void {
-    this.db.prepare('DELETE FROM refresh_tokens WHERE token_hash = ?').run(sha256(token));
+    this.db
+      .prepare('DELETE FROM refresh_tokens WHERE family_id = (SELECT family_id FROM refresh_tokens WHERE token_hash = ?)')
+      .run(sha256(token));
   }
 
   // --- timestamps ---

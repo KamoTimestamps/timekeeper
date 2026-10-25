@@ -147,6 +147,8 @@ let cyclePending = false;
 let refreshInFlight: Promise<string> | null = null;
 let deviceId = '';
 let signInInFlight = false;
+/** An access token the server refused although it looked valid; never reused, forces a refresh. */
+let rejectedAccessToken: string | null = null;
 
 let onRemoteChange: ((videoIds: string[]) => void) | null = null;
 let authStatusDisplay: HTMLElement | null = null;
@@ -241,8 +243,45 @@ function setStatus(next: SyncStatus, message = '') {
 // Persistence
 // ============================================================================
 
-function saveAuthState() {
-  TimestampModel.saveGlobalSettings(SETTINGS_AUTH_KEY, getSyncAuthState());
+// The session (notably the long-lived refresh token) is kept in the userscript manager's own
+// storage, which page scripts on youtube.com cannot read. The page's IndexedDB is readable by
+// any script running on the origin, so it is only a fallback for environments without GM.*.
+interface GMStorage {
+  getValue(key: string): Promise<unknown>;
+  setValue(key: string, value: unknown): Promise<void>;
+}
+declare const GM: GMStorage | undefined;
+
+function gmStorage(): GMStorage | null {
+  return typeof GM !== 'undefined' && GM && typeof GM.getValue === 'function' && typeof GM.setValue === 'function' ? GM : null;
+}
+
+/** The stored session, or undefined when nothing could be read (which is not the same as signed out). */
+async function readStoredAuth(): Promise<unknown> {
+  const gm = gmStorage();
+  if (!gm) return TimestampModel.loadGlobalSettings(SETTINGS_AUTH_KEY);
+
+  const value = await gm.getValue(SETTINGS_AUTH_KEY);
+  if (value !== undefined && value !== null) return value;
+
+  // One-time move of a session saved by earlier builds in page-readable IndexedDB.
+  const legacy = await TimestampModel.loadGlobalSettings(SETTINGS_AUTH_KEY);
+  if (legacy) {
+    await gm.setValue(SETTINGS_AUTH_KEY, legacy);
+    await TimestampModel.saveGlobalSettings(SETTINGS_AUTH_KEY, null);
+  }
+  return legacy ?? undefined;
+}
+
+/** Resolves once the session is durably stored, so a rotated refresh token is never lost to another tab. */
+async function saveAuthState(): Promise<void> {
+  try {
+    const gm = gmStorage();
+    if (gm) await gm.setValue(SETTINGS_AUTH_KEY, getSyncAuthState());
+    else await TimestampModel.saveGlobalSettings(SETTINGS_AUTH_KEY, getSyncAuthState());
+  } catch (err) {
+    log('Failed to save sync auth state:', err, 'error');
+  }
 }
 
 function saveCursors() {
@@ -278,6 +317,7 @@ function postJson(path: string, body: unknown): Promise<Response> {
 }
 
 function storeSession(session: SessionResponse) {
+  rejectedAccessToken = null;
   AppState.setSyncAuthState({
     isSignedIn: true,
     accessToken: session.accessToken,
@@ -289,21 +329,51 @@ function storeSession(session: SessionResponse) {
   });
 }
 
-function refreshAccessToken(): Promise<string> {
-  refreshInFlight ??= (async () => {
-    const { refreshToken } = getSyncAuthState();
-    if (!refreshToken) throw new SyncAuthError('Not signed in');
+const isFresh = (auth: SyncAuthStateParsed) =>
+  Boolean(auth.accessToken) &&
+  auth.accessToken !== rejectedAccessToken &&
+  Boolean(auth.accessTokenExpiresAt) &&
+  auth.accessTokenExpiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS;
 
-    const res = await postJson('/auth/refresh', { refreshToken });
+/**
+ * Refresh tokens are single-use, and every YouTube tab runs this client against one shared stored
+ * session. A Web Lock makes tabs refresh one at a time; each tab then re-reads the stored session
+ * inside the lock, so it either adopts the tokens another tab just obtained or rotates the latest
+ * refresh token, never a stale one.
+ */
+async function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return await navigator.locks.request('timekeeper-sync-refresh', fn);
+  }
+  return fn();
+}
+
+/** Adopts the session another tab stored. Does nothing if storage could not be read. */
+async function adoptStoredAuth() {
+  const stored = await readStoredAuth();
+  if (stored === undefined || stored === null) return;
+  const parsed = SyncAuthStateSchema.safeParse(stored);
+  if (parsed.success) AppState.setSyncAuthState(parsed.data);
+}
+
+function refreshAccessToken(): Promise<string> {
+  refreshInFlight ??= withRefreshLock(async () => {
+    await adoptStoredAuth();
+    const auth = getSyncAuthState();
+    if (!auth.isSignedIn || !auth.refreshToken) throw new SyncAuthError('Not signed in');
+    if (isFresh(auth)) return auth.accessToken; // another tab already refreshed
+
+    const res = await postJson('/auth/refresh', { refreshToken: auth.refreshToken });
     if (res.status === 401) throw new SyncAuthError('Session expired');
     if (!res.ok) throw new Error(`Token refresh failed (HTTP ${res.status})`);
 
     const parsed = SessionResponseSchema.safeParse(await res.json());
     if (!parsed.success) throw new Error('Unexpected token refresh response');
     storeSession(parsed.data);
-    saveAuthState();
+    // Persist before releasing the lock: the next tab must see the rotated refresh token.
+    await saveAuthState();
     return parsed.data.accessToken;
-  })().finally(() => {
+  }).finally(() => {
     refreshInFlight = null;
   });
   return refreshInFlight;
@@ -312,9 +382,7 @@ function refreshAccessToken(): Promise<string> {
 async function getAccessToken(): Promise<string> {
   const auth = getSyncAuthState();
   if (!auth.isSignedIn || !auth.refreshToken) throw new SyncAuthError('Not signed in');
-  if (auth.accessToken && auth.accessTokenExpiresAt && auth.accessTokenExpiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) {
-    return auth.accessToken;
-  }
+  if (isFresh(auth)) return auth.accessToken;
   return refreshAccessToken();
 }
 
@@ -328,7 +396,7 @@ async function apiFetch(path: string, init: { method: string; body?: unknown }, 
   if (res.status === 401) {
     if (!allowRefresh) throw new SyncAuthError('Session expired');
     // The access token was rejected despite looking valid (e.g. the server's signing secret changed).
-    AppState.setSyncAuthState({ ...getSyncAuthState(), accessTokenExpiresAt: 0 });
+    rejectedAccessToken = token;
     return apiFetch(path, init, false);
   }
   return res;
@@ -458,7 +526,7 @@ export async function signInToSync() {
     if (!session.success) throw new Error('Unexpected response from the sync server');
 
     storeSession(session.data);
-    saveAuthState();
+    await saveAuthState();
     // A fresh sign-in always starts from scratch: push everything local, pull everything remote.
     cursors = { pushCounter: 0, pullSeq: 0 };
     saveCursors();
@@ -479,7 +547,7 @@ export async function signOutFromSync() {
   AppState.setSyncAuthState(SIGNED_OUT_SYNC_AUTH_STATE);
   cursors = { pushCounter: 0, pullSeq: 0 };
   serverKnown.clear();
-  saveAuthState();
+  await saveAuthState();
   saveCursors();
   setStatus('signed-out');
 
@@ -496,7 +564,7 @@ export async function signOutFromSync() {
 function handleSessionExpired() {
   stopSync();
   AppState.setSyncAuthState(SIGNED_OUT_SYNC_AUTH_STATE);
-  saveAuthState();
+  void saveAuthState();
   setStatus('error', 'Session expired. Please sign in again.');
 }
 
@@ -685,7 +753,7 @@ async function connect() {
     if (socket === ws) socket = null;
     if (stopped) return;
     // 4401: the server rejected our access token; force a refresh before reconnecting.
-    if (event.code === 4401) AppState.setSyncAuthState({ ...getSyncAuthState(), accessTokenExpiresAt: 0 });
+    if (event.code === 4401) rejectedAccessToken = token;
     setStatus('offline');
     scheduleReconnect();
   };
@@ -735,7 +803,7 @@ export async function loadSyncAuthState() {
     return;
   }
   try {
-    const parsed = SyncAuthStateSchema.safeParse(await TimestampModel.loadGlobalSettings(SETTINGS_AUTH_KEY));
+    const parsed = SyncAuthStateSchema.safeParse(await readStoredAuth());
     if (parsed.success) AppState.setSyncAuthState(parsed.data);
     const auth = getSyncAuthState();
     if (auth.isSignedIn && auth.refreshToken) {

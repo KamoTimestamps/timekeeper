@@ -6,7 +6,12 @@ export interface Config {
   jwtSecret: string;
   allowedOrigins: string[];
   accessTokenTtlSeconds: number;
+  /** Lifetime of one refresh token; each rotation issues a fresh one (sliding expiry). */
   refreshTokenTtlSeconds: number;
+  /** A session (token family) is cut off this long after sign-in, however active. */
+  refreshFamilyMaxSeconds: number;
+  /** A just-rotated token presented again within this window is treated as a lost response, not theft. */
+  refreshReuseGraceSeconds: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -30,6 +35,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .map((origin) => origin.trim())
       .filter(Boolean),
     accessTokenTtlSeconds: 15 * 60,
-    refreshTokenTtlSeconds: 90 * 24 * 60 * 60,
+    refreshTokenTtlSeconds: 30 * 24 * 60 * 60,
+    refreshFamilyMaxSeconds: 90 * 24 * 60 * 60,
+    refreshReuseGraceSeconds: 60,
   };
 }

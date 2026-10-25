@@ -54,9 +54,9 @@ The Sync tab stays disabled until both client constants are set.
 
 | Route | Auth | Purpose |
 |---|---|---|
-| `POST /auth/google` `{idToken}` | – | Verifies a Google ID token; creates the account on first login. Returns an access token (15 min), a refresh token (90 days) and the user. |
-| `POST /auth/refresh` `{refreshToken}` | – | New access token. The refresh token is not rotated, because several YouTube tabs share one stored token. |
-| `POST /auth/logout` `{refreshToken}` | – | Revokes the refresh token. |
+| `POST /auth/google` `{idToken}` | – | Verifies a Google ID token; creates the account on first login. Returns an access token (15 min), a refresh token (30 days) and the user. |
+| `POST /auth/refresh` `{refreshToken}` | – | New access token **and a new refresh token**; the old one is single-use. See "Sessions" below. |
+| `POST /auth/logout` `{refreshToken}` | – | Ends the whole session (every token issued since that sign-in). |
 | `GET /me` | Bearer | Current user. |
 | `POST /sync/push` `{deviceId, records}` | Bearer | Up to 500 records. Returns `rejected` (server copies that won) and the accepted seq range. |
 | `GET /sync/pull?since=&limit=` | Bearer | Records changed after server seq `since`, plus the next cursor. |
@@ -70,10 +70,22 @@ and deletions are soft (`deleted_at`) so they propagate. Every accepted change g
 per-user `seq`, which clients use as a pull cursor. The seqs of one push are contiguous, so a
 client that receives `changes` with `fromSeq` at or below its cursor knows it missed nothing.
 
+## Sessions
+
+Each sign-in starts a token *family*. Refresh tokens are single-use and rotate on every refresh,
+sliding for 30 days but never past 90 days after sign-in. Presenting a token that was already used
+more than 60 s ago means two parties hold it, so the whole family is revoked and the user has to
+sign in again. Within 60 s a repeat is accepted and gets a fresh token, because a refresh response
+can be lost in transit and the client retries with the token it still has. The userscript refreshes
+under a Web Lock and keeps the session in the userscript manager's storage (`GM.setValue`), so
+several YouTube tabs never race each other with a stale token.
+
 ## Known limits
 
 - If two devices edit the same timestamp offline and end up with the *same* `write_counter`, the
   first to reach the server wins and the other device keeps its own copy until the next edit (the
   userscript's merge also keeps the local copy on a tie).
 - No rate limiting or per-user quota yet.
-- A revoked session's open WebSocket stays connected until it reconnects.
+- A revoked session's open WebSocket stays connected until it reconnects (access tokens last at
+  most 15 minutes).
+- No "sign out everywhere" endpoint yet; logout ends only the current session.

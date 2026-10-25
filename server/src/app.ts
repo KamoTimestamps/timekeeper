@@ -100,9 +100,14 @@ export async function buildApp({ config, store, verifyGoogle }: AppDeps): Promis
     const body = RefreshBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid_request' });
 
-    const user = store.findRefreshTokenUser(body.data.refreshToken);
-    if (!user) return reply.code(401).send({ error: 'invalid_refresh_token' });
-    return issueSession(user, body.data.refreshToken);
+    const result = store.rotateRefreshToken(body.data.refreshToken, {
+      ttlSeconds: config.refreshTokenTtlSeconds,
+      familyMaxSeconds: config.refreshFamilyMaxSeconds,
+      graceSeconds: config.refreshReuseGraceSeconds,
+    });
+    if (result.status === 'reuse') req.log.warn('refresh token reuse detected; session revoked');
+    if (result.status !== 'ok') return reply.code(401).send({ error: 'invalid_refresh_token' });
+    return issueSession(result.user, result.refreshToken);
   });
 
   app.post('/auth/logout', async (req, reply) => {
