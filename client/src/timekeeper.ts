@@ -3286,7 +3286,8 @@ if (!isLiveChatFrame()) {
       backupStatusIndicator.style.backgroundColor = "#666"; // Default gray color
       backupStatusIndicator.onclick = (e) => {
         e.stopPropagation();
-        toggleSettingsModal("drive");
+        // The light shows sync status while signed in to sync (see updateBackupStatusIndicator), so open the matching tab.
+        toggleSettingsModal(SyncClient.getSyncIndicator() ? "sync" : "drive");
       };
 
       // Add event listeners to `list` after it is initialized
