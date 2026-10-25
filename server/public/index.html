@@ -94,16 +94,11 @@
       <section class="card">
         <h2>Timestamps</h2>
         <div id="search-bar" class="search-bar">
-          <div class="search-row">
           <form id="search-form" class="search" role="search">
-            <input id="search" type="search" placeholder="Search comments, titles and channels (try title:, channel: or date:)" maxlength="200" autocomplete="off" aria-label="Search timestamps" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-suggestions">
+            <input id="search" type="search" placeholder="Search comments, titles and channels (try title:, channel:, date: or comment:)" maxlength="200" autocomplete="off" aria-label="Search timestamps" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-suggestions">
             <span id="search-count" class="search-count" role="status"></span>
             <ul id="search-suggestions" class="suggestions" role="listbox" aria-label="Search suggestions" hidden></ul>
           </form>
-          <button id="date-button" class="icon-button" type="button" aria-label="Pick a date or range" title="Pick a date or range" aria-haspopup="dialog" aria-expanded="false" aria-controls="date-picker">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
-          </button>
-          </div>
           <div id="date-picker" class="date-picker" role="dialog" aria-label="Choose a date or range" hidden>
             <div class="dp-head">
               <button id="dp-prev" class="ghost" type="button" aria-label="Previous month">&lsaquo;</button>

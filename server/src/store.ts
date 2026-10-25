@@ -741,6 +741,40 @@ export class Store {
       where.push(`v.channel_title LIKE ? ESCAPE '\\'`);
       params.push(likeContains(term));
     }
+    for (const term of search.comment) {
+      where.push(`t.comment LIKE ? ESCAPE '\\'`);
+      params.push(likeContains(term));
+    }
+    for (const term of search.exclude.comment) {
+      where.push(`t.comment NOT LIKE ? ESCAPE '\\'`);
+      params.push(likeContains(term));
+    }
+    // Negated fields. A video with no cached details has no title, channel or date, so it can't match
+    // the excluded text and stays in (hence COALESCE and IS NULL, which SQL's NOT would drop).
+    for (const term of search.exclude.title) {
+      where.push(`COALESCE(v.title, '') NOT LIKE ? ESCAPE '\\'`);
+      params.push(likeContains(term));
+    }
+    for (const term of search.exclude.channel) {
+      where.push(`COALESCE(v.channel_title, '') NOT LIKE ? ESCAPE '\\'`);
+      params.push(likeContains(term));
+    }
+    for (const term of search.exclude.date) {
+      const range = dateRange(term, timeZone);
+      if (!range) continue;
+      const inside: string[] = [];
+      const bounds: string[] = [];
+      if (range.from) {
+        inside.push('v.published_at >= ?');
+        bounds.push(range.from);
+      }
+      if (range.to) {
+        inside.push('v.published_at < ?');
+        bounds.push(range.to);
+      }
+      where.push(`(v.published_at IS NULL OR NOT (${inside.join(' AND ')}))`);
+      params.push(...bounds);
+    }
     // Air date; a term that isn't a valid date or range is ignored, like an empty field. Videos with no
     // cached details have no date and never match one.
     for (const term of search.date) {

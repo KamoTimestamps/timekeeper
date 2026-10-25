@@ -9,10 +9,14 @@ export interface ParsedSearch {
   channel: string[];
   /** Air-date terms, still as typed (a day, month, year or range; see dates.ts). */
   date: string[];
+  /** Must be in the timestamp's own comment (a plain word also matches titles, channels and video IDs). */
+  comment: string[];
+  /** The same fields written with a leading minus (`-title:boss`): must NOT match. */
+  exclude: { title: string[]; channel: string[]; date: string[]; comment: string[] };
 }
 
 /** A value is one word, or a "quoted phrase" (so it can hold spaces): `title:boss`, `channel:"Kanna Yanagi"`. */
-const TOKEN = /(?:(title|channel|date):)?(?:"([^"]*)"?|([^\s"]+))/gi;
+const TOKEN = /(?:(-)?(title|channel|date|comment):)?(?:"([^"]*)"?|([^\s"]+))/gi;
 
 /**
  * Splits a query into what to match where. Every term must match (AND), at most `maxTerms` of them.
@@ -20,14 +24,25 @@ const TOKEN = /(?:(title|channel|date):)?(?:"([^"]*)"?|([^\s"]+))/gi;
  * searched for as text.
  */
 export function parseSearch(query: string, maxTerms = 8): ParsedSearch {
-  const parsed: ParsedSearch = { words: [], title: [], channel: [], date: [] };
+  const parsed: ParsedSearch = {
+    words: [],
+    title: [],
+    channel: [],
+    date: [],
+    comment: [],
+    exclude: { title: [], channel: [], date: [], comment: [] },
+  };
   let count = 0;
   for (const match of query.matchAll(TOKEN)) {
     if (count >= maxTerms) break;
-    const [, field, quoted, bare] = match;
+    const [, minus, field, quoted, bare] = match;
     const value = (quoted ?? bare).trim();
-    if (!value || (!field && /^(?:title|channel|date):$/i.test(value))) continue;
-    (field ? parsed[field.toLowerCase() as 'title' | 'channel' | 'date'] : parsed.words).push(value);
+    if (!value || (!field && /^-?(?:title|channel|date|comment):$/i.test(value))) continue;
+    if (!field) parsed.words.push(value); // a bare -word is just a word
+    else {
+      const name = field.toLowerCase() as 'title' | 'channel' | 'date' | 'comment';
+      (minus ? parsed.exclude[name] : parsed[name]).push(value);
+    }
     count++;
   }
   return parsed;

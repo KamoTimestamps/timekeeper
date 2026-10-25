@@ -45,6 +45,8 @@ describe('date terms', () => {
       title: [],
       channel: [],
       date: ['2026-10-01..2026-10-25', '2026'],
+      comment: [],
+      exclude: { title: [], channel: [], date: [], comment: [] },
     });
     assert.deepEqual(parseSearch('date:').date, []);
   });
@@ -97,6 +99,17 @@ describe('date search (web)', () => {
     assert.deepEqual(await guids(s, 'date:..2026-10-24'), ['early']);
     assert.deepEqual(await guids(s, 'date:2026-10 date:2026-10-25'), ['mid'], 'terms combine');
     assert.deepEqual(await guids(s, 'date:1999'), []);
+  });
+
+  it('-date: leaves out a day, month or range, and keeps videos with no date', async () => {
+    const s = await session();
+    assert.deepEqual(await guids(s, '-date:2026-10-25'), ['early', 'late', 'none']);
+    assert.deepEqual(await guids(s, '-date:2026-10'), ['late', 'none']);
+    assert.deepEqual(await guids(s, '-date:2026-10-25..'), ['early', 'none'], 'open end');
+    assert.deepEqual(await guids(s, '-date:..2026-10-24'), ['late', 'mid', 'none'], 'open start');
+    assert.deepEqual(await guids(s, 'date:2026-10 -date:2026-10-25'), ['early'], 'a month except one day');
+    assert.deepEqual(await guids(s, '-date:2026-10-25', 'Asia/Tokyo'), ['late', 'none'], 'in the viewer’s time zone');
+    assert.deepEqual(await guids(s, '-date:nonsense'), ['early', 'late', 'mid', 'none'], 'a bad term is ignored');
   });
 
   it('keeps a video without details out of any date filter, and ignores a bad term', async () => {
