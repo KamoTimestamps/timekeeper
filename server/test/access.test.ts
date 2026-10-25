@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
+import { createVideoAccessCheck } from '../src/video-access.ts';
 import { createSubscriptionsClient, SubscriptionsAuthError } from '../src/subscriptions.ts';
 import { bearer, createHarness, type TestHarness } from './helpers.ts';
 
@@ -109,5 +110,55 @@ describe('subscriptions client', () => {
     await assert.rejects(status(401), SubscriptionsAuthError);
     await assert.rejects(status(403), SubscriptionsAuthError);
     await assert.rejects(status(500), (err: Error) => !(err instanceof SubscriptionsAuthError));
+  });
+});
+
+describe('server-side members-only check', () => {
+  const page = (player: unknown) => `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(player)};var meta = {};</script></html>`;
+  const watchFetch = (html: string, status = 200) => (async () => new Response(html, { status })) as unknown as typeof fetch;
+  const membersOnlyReply = {
+    playabilityStatus: { status: 'UNPLAYABLE', errorScreen: { playerLegacyDesktopYpcOfferRenderer: { offerId: 'sponsors_only_video' } } },
+    videoDetails: { channelId: 'UCmem', title: 'has } and { and \\" in it' },
+  };
+
+  it('reads members-only, public, and unanswerable videos from the watch page', async () => {
+    assert.deepEqual(await createVideoAccessCheck(watchFetch(page(membersOnlyReply)))('v'), { channelId: 'UCmem', membersOnly: true });
+    assert.deepEqual(
+      await createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'OK' }, videoDetails: { channelId: 'UCpub' } })))('v'),
+      { channelId: 'UCpub', membersOnly: false },
+    );
+    assert.equal(await createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'ERROR', reason: 'This video is unavailable' } })))('v'), null);
+    assert.equal(await createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'LOGIN_REQUIRED' }, videoDetails: { channelId: 'UC1' } })))('v'), null);
+    assert.equal(await createVideoAccessCheck(watchFetch('<html>no player here</html>'))('v'), null);
+    await assert.rejects(createVideoAccessCheck(watchFetch('', 429))('v'), /429/);
+  });
+
+  it('checks each newly pushed video once, and its answer outranks a userscript report', async () => {
+    const asked: string[] = [];
+    const h = await createHarness({}, undefined, undefined, async (videoId) => {
+      asked.push(videoId);
+      return videoId === 'gone' ? null : { channelId: 'UCsrv', membersOnly: videoId === 'secret' };
+    });
+    try {
+      const { accessToken } = await h.login('c1', 'c1@example.com');
+      const push = (records: unknown[]) => h.app.inject({ method: 'POST', url: '/sync/push', headers: bearer(accessToken), payload: { deviceId: 'd', records } });
+      const rec = (guid: string, video_id: string) => ({ guid, video_id, start: 1, comment: 'x', write_counter: 1 });
+
+      await push([rec('1', 'secret'), rec('2', 'open'), rec('3', 'gone')]);
+      await push([rec('4', 'secret'), rec('5', 'gone')]);
+      for (let i = 0; i < 20 && h.store.getVideoAccess('open') === null; i++) await new Promise((r) => setTimeout(r, 25));
+      await new Promise((r) => setTimeout(r, 400));
+
+      assert.deepEqual(asked.sort(), ['gone', 'open', 'secret'], 'every video is asked about once, including unanswerable ones');
+      assert.deepEqual(h.store.getVideoAccess('secret'), { channelId: 'UCsrv', membersOnly: true });
+      assert.equal(h.store.getVideoAccess('gone'), null);
+
+      await h.app.inject({ method: 'POST', url: '/videos/access', headers: bearer(accessToken), payload: { videoId: 'secret', channelId: 'UCfake', membersOnly: false } });
+      assert.deepEqual(h.store.getVideoAccess('secret'), { channelId: 'UCsrv', membersOnly: true }, 'a client report does not replace the server check');
+      h.store.saveVideoAccess('open', 'UCsrv', true, Date.now(), 'server');
+      assert.equal(h.store.getVideoAccess('open')?.membersOnly, true, 'a newer server check does replace an older one');
+    } finally {
+      await h.app.close();
+    }
   });
 });

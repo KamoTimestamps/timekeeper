@@ -78,8 +78,12 @@ client that receives `changes` with `fromSeq` at or below its cursor knows it mi
 ## Members-only access
 
 Whether an account can view or add to a video's timestamps is answered, not yet enforced. The YouTube
-Data API doesn't say if a video is members-only, so the userscript reads the "Members only" badge from
-the watch page and reports it with the channel ID. Subscriptions come from **Settings → Sync → Share
+Data API doesn't say if a video is members-only, so the server looks each video up itself: the first
+time a video appears in a push (and at startup, for videos never checked or checked over 7 days ago) it
+loads the public watch page signed out and reads whether the player is replaced by a join offer
+(`src/video-access.ts`). This scrapes a page, not a documented API, so a YouTube change shows up as
+videos left unchecked. A server check always wins over the userscript's own report of the same video,
+which reads the "Members only" badge from the watch page and sends it with the channel ID. Subscriptions come from **Settings → Sync → Share
 Subscriptions**, which asks for the read-only YouTube scope and sends the one-off token to
 `/subscriptions/sync`. The rule is: a members-only video is open to subscribers of its channel;
 `canAccess` is `null` while the video is unreported or the user hasn't shared their subscriptions.

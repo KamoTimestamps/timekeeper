@@ -10,6 +10,7 @@ import { Store, type User } from './store.ts';
 import { createSubscriptionsClient, SubscriptionsAuthError, type SubscriptionsLookup } from './subscriptions.ts';
 import { signAccessToken, verifyAccessToken } from './tokens.ts';
 import { createVideoPrefetcher, VIDEO_INFO_TTL_MS, type VideoLookup } from './youtube.ts';
+import { createVideoAccessChecker, VIDEO_ACCESS_TTL_MS, type VideoAccessCheck } from './video-access.ts';
 import { registerWeb } from './web.ts';
 
 export interface AppDeps {
@@ -19,6 +20,8 @@ export interface AppDeps {
   youtube?: VideoLookup;
   /** Lists a Google account's subscribed channels; defaults to the real YouTube Data API. */
   subscriptions?: SubscriptionsLookup;
+  /** Anonymous members-only lookup for videos as they are first synced; unset disables server-side checks. */
+  checkVideoAccess?: VideoAccessCheck;
   /** Also look up videos that are already synced but were never cached (once, at startup). */
   backfillVideoInfo?: boolean;
 }
@@ -65,7 +68,7 @@ declare module 'fastify' {
   }
 }
 
-export async function buildApp({ config, store, verifyGoogle, youtube, subscriptions = createSubscriptionsClient(), backfillVideoInfo }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, store, verifyGoogle, youtube, subscriptions = createSubscriptionsClient(), checkVideoAccess, backfillVideoInfo }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: process.env.NODE_ENV !== 'test', bodyLimit: 5 * 1024 * 1024 });
   const hub = new Hub();
 
@@ -84,6 +87,15 @@ export async function buildApp({ config, store, verifyGoogle, youtube, subscript
       // Cached details past their TTL, which includes everything cached before video lengths were stored.
       prefetcher.enqueue(store.staleVideoIds(Date.now() - VIDEO_INFO_TTL_MS), true);
     }
+  }
+
+  const accessChecker = checkVideoAccess && createVideoAccessChecker(store, checkVideoAccess, app.log);
+  if (accessChecker) {
+    app.addHook('onClose', () => {
+      accessChecker.stop();
+      return accessChecker.idle();
+    });
+    if (backfillVideoInfo) accessChecker.enqueue(store.videoIdsNeedingAccessCheck(Date.now() - VIDEO_ACCESS_TTL_MS));
   }
 
   await registerWeb(app, { config, store, verifyGoogle, hub, youtube });
@@ -239,7 +251,9 @@ export async function buildApp({ config, store, verifyGoogle, youtube, subscript
     const result = store.applyPush(req.userId, body.data.deviceId, body.data.records);
     if (result.accepted.length > 0) {
       hub.notifyOverview(req.userId);
-      prefetcher?.enqueue([...new Set(result.accepted.filter((r) => !r.deleted_at).map((r) => r.video_id))]);
+      const addedVideoIds = [...new Set(result.accepted.filter((r) => !r.deleted_at).map((r) => r.video_id))];
+      prefetcher?.enqueue(addedVideoIds);
+      accessChecker?.enqueue(addedVideoIds);
       hub.broadcast(req.userId, body.data.deviceId, {
         type: 'changes',
         fromSeq: result.fromSeq,

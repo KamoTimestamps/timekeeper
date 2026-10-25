@@ -129,7 +129,8 @@ CREATE TABLE IF NOT EXISTS video_access (
   video_id TEXT PRIMARY KEY,
   channel_id TEXT NOT NULL,
   members_only INTEGER NOT NULL,
-  reported_at INTEGER NOT NULL
+  reported_at INTEGER NOT NULL,
+  source TEXT NOT NULL DEFAULT 'client'
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS user_subscriptions (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -201,6 +202,11 @@ export class Store {
       this.db.exec('ALTER TABLE users ADD COLUMN display_name_key TEXT');
     }
     this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_display_name_key ON users(display_name_key)');
+
+    const accessColumns = this.db.prepare("SELECT name FROM pragma_table_info('video_access')").all() as { name: string }[];
+    if (!accessColumns.some((c) => c.name === 'source')) {
+      this.db.exec("ALTER TABLE video_access ADD COLUMN source TEXT NOT NULL DEFAULT 'client'");
+    }
 
     const sessionColumns = this.db.prepare("SELECT name FROM pragma_table_info('sessions')").all() as { name: string }[];
     for (const column of ['created_ip', 'created_country', 'last_ip', 'last_country']) {
@@ -707,15 +713,41 @@ export class Store {
 
   // --- members-only access ---
 
-  /** What a userscript saw on a video's watch page: its channel, and whether it is members-only. */
-  saveVideoAccess(videoId: string, channelId: string, membersOnly: boolean, now: number): void {
+  /**
+   * Whether a video is members-only, from a userscript's watch page ('client') or the server's own
+   * anonymous lookup ('server'). The server's answer is the one to trust, so a client report never
+   * replaces it.
+   */
+  saveVideoAccess(videoId: string, channelId: string, membersOnly: boolean, now: number, source: 'client' | 'server' = 'client'): void {
     this.db
       .prepare(
-        `INSERT INTO video_access (video_id, channel_id, members_only, reported_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(video_id) DO UPDATE SET channel_id = excluded.channel_id,
-           members_only = excluded.members_only, reported_at = excluded.reported_at`,
+        `INSERT INTO video_access (video_id, channel_id, members_only, reported_at, source) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(video_id) DO UPDATE SET channel_id = excluded.channel_id, members_only = excluded.members_only,
+           reported_at = excluded.reported_at, source = excluded.source
+         WHERE excluded.source = 'server' OR video_access.source != 'server'`,
       )
-      .run(videoId, channelId, membersOnly ? 1 : 0, now);
+      .run(videoId, channelId, membersOnly ? 1 : 0, now, source);
+  }
+
+  /** Which of these videos the server has already looked up itself. */
+  serverCheckedVideoIds(videoIds: string[]): Set<string> {
+    if (videoIds.length === 0) return new Set();
+    const rows = this.db
+      .prepare(`SELECT video_id FROM video_access WHERE source = 'server' AND video_id IN (${videoIds.map(() => '?').join(',')})`)
+      .all(...videoIds) as Array<{ video_id: string }>;
+    return new Set(rows.map((r) => r.video_id));
+  }
+
+  /** Video IDs with live timestamps (any user) the server hasn't looked up, or not since `olderThan`. */
+  videoIdsNeedingAccessCheck(olderThan: number): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT t.video_id FROM timestamps t
+         LEFT JOIN video_access a ON a.video_id = t.video_id
+         WHERE t.deleted_at IS NULL AND (a.video_id IS NULL OR a.source != 'server' OR a.reported_at < ?)`,
+      )
+      .all(olderThan) as Array<{ video_id: string }>;
+    return rows.map((r) => r.video_id);
   }
 
   getVideoAccess(videoId: string): { channelId: string; membersOnly: boolean } | null {
