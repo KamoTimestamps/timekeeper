@@ -89,7 +89,7 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
     return token ? store.findWebSession(token, { client: clientInfo(req, config) }) : null;
   };
 
-  const clearSessionCookie = (reply: FastifyReply) => reply.clearCookie(cookieName, { path: '/' });
+  const clearSessionCookie = (reply: FastifyReply) => reply.clearCookie(cookieName, { path: '/', secure });
 
   // State-changing requests only come from this server's own pages.
   const requireSameOrigin = async (req: FastifyRequest, reply: FastifyReply) => {
