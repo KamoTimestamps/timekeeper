@@ -3,7 +3,7 @@
 # Node, Caddy and the systemd service.   Usage: ./deploy.sh        (from server/)
 set -euo pipefail
 
-HOST="${DEPLOY_HOST:-timekeeper-devel}"
+HOST="${DEPLOY_HOST:-root@timekeeper-devel}"
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 ssh "$HOST" 'mkdir -p /opt/timekeeper/server'
