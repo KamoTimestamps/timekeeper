@@ -22,6 +22,7 @@ import loginSvg from '@tabler/icons/outline/login.svg';
 import logoutSvg from '@tabler/icons/outline/logout.svg';
 import refreshSvg from '@tabler/icons/outline/refresh.svg';
 import usersSvg from '@tabler/icons/outline/users.svg';
+import starSvg from '@tabler/icons/outline/star.svg';
 import alertTriangleSvg from '@tabler/icons/outline/alert-triangle.svg';
 import databaseSvg from '@tabler/icons/outline/database.svg';
 import serverSvg from '@tabler/icons/outline/server.svg';
@@ -62,6 +63,7 @@ export type TablerIconName =
   | 'logout'
   | 'refresh'
   | 'users'
+  | 'star'
   | 'alert-triangle'
   | 'database'
   | 'server'
@@ -98,6 +100,7 @@ const ICON_SVGS: Record<TablerIconName, string> = {
   'logout': logoutSvg,
   'refresh': refreshSvg,
   'users': usersSvg,
+  'star': starSvg,
   'alert-triangle': alertTriangleSvg,
   'database': databaseSvg,
   'server': serverSvg,

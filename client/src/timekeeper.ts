@@ -15,7 +15,7 @@ import * as TimestampModel from "./timestamp-model";
 import * as TimestampView from "./timestamp-view";
 import * as AppState from "./services/state";
 import { initializeDvrEnablement } from "./dvr-enablement";
-import { readWatchPageAccess } from "./members-only";
+import { readWatchPageAccess, type WatchPageAccess } from "./members-only";
 
 declare const unsafeWindow: Window | undefined;
 import { initializeChatHandleCleanup, isLiveChatFrame } from "./chat-handles";
@@ -189,6 +189,9 @@ if (!isLiveChatFrame()) {
   let list: HTMLUListElement | null = null;
   let btns: HTMLDivElement | null = null;
   let timeDisplay: HTMLSpanElement | null = null;
+  // Green star left of the playback time while the current video is members-only.
+  let membersBadge: HTMLSpanElement | null = null;
+  let currentWatchPage: WatchPageAccess | null = null;
   let playbackSpeedDisplay: HTMLSpanElement | null = null;
   let lastSavedSpeed: number = (() => {
     try {
@@ -2543,6 +2546,7 @@ if (!isLiveChatFrame()) {
     scrollbarThumb = null;
     recalculateTimestampsAreaFn = null;
     timeDisplay = null;
+    membersBadge = null;
     playbackSpeedDisplay = null;
     versionDisplay = null;
 
@@ -3416,6 +3420,12 @@ if (!isLiveChatFrame()) {
       versionWrapper.style.gap = "6px";
       versionWrapper.appendChild(versionDisplay);
       versionWrapper.appendChild(backupStatusIndicator);
+
+      membersBadge = document.createElement("span");
+      membersBadge.id = "ytls-members-badge";
+      membersBadge.appendChild(createIcon("star", 14));
+      addTooltip(membersBadge, "Members-only stream");
+      updateMembersBadge();
 
       timeDisplay.id = "ytls-current-time";
       timeDisplay.textContent = "—";
@@ -5171,6 +5181,7 @@ if (!isLiveChatFrame()) {
         }),
       );
 
+      header.appendChild(membersBadge);
       header.appendChild(timeDisplay); // Add timeDisplay
       // Add playback speed display with arrow buttons
       const playbackGroup = document.createElement("span");
@@ -5613,6 +5624,8 @@ if (!isLiveChatFrame()) {
     await initializePaneIfNeeded();
 
     currentLoadedVideoId = getVideoId(); // Update global video ID
+    // yt-navigate-finish may not have fired for the page that was loaded directly; its data is in globals.
+    if (currentWatchPage?.videoId !== currentLoadedVideoId) noteWatchPage(null);
     const pageTitle = document.title;
     log("Page Title:", pageTitle);
     log("Video ID:", currentLoadedVideoId);
@@ -5713,7 +5726,21 @@ if (!isLiveChatFrame()) {
       navigation?.response ?? pageWindow.ytInitialData,
       navigation?.playerResponse ?? pageWindow.ytInitialPlayerResponse,
     );
+    currentWatchPage = page;
+    updateMembersBadge();
     if (page) SyncClient.noteWatchPage(page);
+  }
+
+  function updateMembersBadge() {
+    if (!membersBadge) return;
+    let videoId: string | null = null;
+    try {
+      videoId = getVideoId();
+    } catch {
+      // Not a watch page: no badge.
+    }
+    const show = !!currentWatchPage?.membersOnly && currentWatchPage.videoId === videoId;
+    membersBadge.style.display = show ? "inline-flex" : "none";
   }
 
   // Listen for navigation completion and load timestamps when navigation finishes

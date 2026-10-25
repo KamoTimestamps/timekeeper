@@ -394,6 +394,17 @@
   border-radius: 4px;
 }
 
+#ytls-members-badge {
+  display: none;
+  align-items: center;
+  margin-right: 4px;
+  color: #52c41a;
+}
+
+#ytls-members-badge svg {
+  fill: currentColor;
+}
+
 #ytls-current-time {
   color: white;
   font-size: 14px;
