@@ -32,6 +32,18 @@
       <p id="login-error" class="error" role="alert" hidden></p>
     </section>
 
+    <section id="display-name" class="card narrow" hidden>
+      <h2 id="display-name-title">Choose a username</h2>
+      <p class="muted">This is the name shown on your account, and it is unique to you. Use 3 to 30 letters, numbers, and the symbols _ - . · (not at the start or end). You can change it twice every 14 days; the name you replace stays reserved for you for 14 days.</p>
+      <form id="display-name-form" class="name-form">
+        <input id="display-name-input" type="text" maxlength="30" autocomplete="nickname" aria-label="Username" placeholder="Username" required>
+        <button id="display-name-random" class="ghost" type="button">Random</button>
+        <button type="submit">Save</button>
+      </form>
+      <p id="display-name-error" class="error" role="alert" hidden></p>
+      <button id="display-name-cancel" class="ghost" type="button" hidden>Cancel</button>
+    </section>
+
     <section id="dashboard" hidden>
       <div id="tiles" class="tiles"></div>
 

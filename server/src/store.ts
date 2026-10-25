@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import type { ClientInfo } from './client-info.ts';
+import { NAME_CHANGE_LIMIT, NAME_CHANGE_WINDOW_MS } from './username.ts';
 import { dirname } from 'node:path';
 
 export interface User {
@@ -66,6 +67,15 @@ CREATE TABLE IF NOT EXISTS users (
   created_at INTEGER NOT NULL,
   seq INTEGER NOT NULL DEFAULT 0
 );
+-- One row per time a user replaced their username: drives the change limit, and holds old_key for
+-- that user (so only they can take it back) until the window passes.
+CREATE TABLE IF NOT EXISTS name_changes (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  changed_at INTEGER NOT NULL,
+  old_key TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS name_changes_user ON name_changes(user_id, changed_at);
+CREATE INDEX IF NOT EXISTS name_changes_old_key ON name_changes(old_key, changed_at);
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   token_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -163,6 +173,17 @@ export class Store {
       // so they are looked up again (at startup, and whenever a page shows them).
       this.db.exec('UPDATE video_info SET fetched_at = 0');
     }
+
+    // Chosen on the web page; NULL until the user picks one (everyone who signed up before it existed).
+    const userColumns = this.db.prepare("SELECT name FROM pragma_table_info('users')").all() as { name: string }[];
+    if (!userColumns.some((c) => c.name === 'display_name')) {
+      this.db.exec('ALTER TABLE users ADD COLUMN display_name TEXT');
+    }
+    // The case-folded form names are compared by; unique, so two accounts can't share a name.
+    if (!userColumns.some((c) => c.name === 'display_name_key')) {
+      this.db.exec('ALTER TABLE users ADD COLUMN display_name_key TEXT');
+    }
+    this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_display_name_key ON users(display_name_key)');
 
     const sessionColumns = this.db.prepare("SELECT name FROM pragma_table_info('sessions')").all() as { name: string }[];
     for (const column of ['created_ip', 'created_country', 'last_ip', 'last_country']) {
@@ -474,11 +495,55 @@ export class Store {
     return Number(this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId).changes);
   }
 
-  getAccount(userId: string): { email: string; name: string | null; createdAt: number } | null {
-    const row = this.db.prepare('SELECT email, name, created_at FROM users WHERE id = ?').get(userId) as
-      | { email: string; name: string | null; created_at: number }
+  getAccount(userId: string): { email: string; name: string | null; displayName: string | null; createdAt: number } | null {
+    const row = this.db.prepare('SELECT email, name, display_name, created_at FROM users WHERE id = ?').get(userId) as
+      | { email: string; name: string | null; display_name: string | null; created_at: number }
       | undefined;
-    return row ? { email: row.email, name: row.name, createdAt: row.created_at } : null;
+    return row ? { email: row.email, name: row.name, displayName: row.display_name, createdAt: row.created_at } : null;
+  }
+
+  /**
+   * Sets the username the user chose (`name` stays what Google reports); `key` is its case-folded form
+   * from checkUsername. Choosing a first name is free. Replacing one counts against the change limit,
+   * and the replaced name stays reserved for this user for the window, as on YouTube. Only
+   * capitalization changing is not a change. Synchronous, so the checks and the write can't interleave.
+   */
+  changeDisplayName(
+    userId: string,
+    displayName: string,
+    key: string,
+    now = Date.now(),
+  ): { ok: true } | { ok: false; reason: 'taken' } | { ok: false; reason: 'limit'; retryAt: number } {
+    const current = this.db.prepare('SELECT display_name_key FROM users WHERE id = ?').get(userId) as
+      | { display_name_key: string | null }
+      | undefined;
+    if (!current) return { ok: false, reason: 'taken' };
+    const since = now - NAME_CHANGE_WINDOW_MS;
+
+    if (current.display_name_key === key) {
+      this.db.prepare('UPDATE users SET display_name = ? WHERE id = ?').run(displayName, userId);
+      return { ok: true };
+    }
+
+    const inUse = this.db.prepare('SELECT 1 FROM users WHERE display_name_key = ? AND id != ?').get(key, userId);
+    const held = this.db
+      .prepare('SELECT 1 FROM name_changes WHERE old_key = ? AND user_id != ? AND changed_at > ?')
+      .get(key, userId, since);
+    if (inUse || held) return { ok: false, reason: 'taken' };
+
+    if (current.display_name_key !== null) {
+      const recent = this.db
+        .prepare('SELECT changed_at FROM name_changes WHERE user_id = ? AND changed_at > ? ORDER BY changed_at')
+        .all(userId, since) as Array<{ changed_at: number }>;
+      if (recent.length >= NAME_CHANGE_LIMIT) {
+        return { ok: false, reason: 'limit', retryAt: recent[recent.length - NAME_CHANGE_LIMIT].changed_at + NAME_CHANGE_WINDOW_MS };
+      }
+      this.db
+        .prepare('INSERT INTO name_changes (user_id, changed_at, old_key) VALUES (?, ?, ?)')
+        .run(userId, now, current.display_name_key);
+    }
+    this.db.prepare('UPDATE users SET display_name = ?, display_name_key = ? WHERE id = ?').run(displayName, key, userId);
+    return { ok: true };
   }
 
   getStats(userId: string): {

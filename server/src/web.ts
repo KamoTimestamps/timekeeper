@@ -7,6 +7,7 @@ import type { Config } from './config.ts';
 import type { GoogleVerifier } from './google.ts';
 import type { Hub } from './hub.ts';
 import type { Store, TimestampPageKey } from './store.ts';
+import { checkUsername } from './username.ts';
 import { resolveVideoInfo, type VideoLookup } from './youtube.ts';
 
 /**
@@ -27,6 +28,8 @@ export interface WebDeps {
 
 const PUBLIC_DIR = new URL('../public/', import.meta.url);
 const LoginBody = z.object({ idToken: z.string().min(1) });
+// The rules themselves (YouTube's handle policy) live in username.ts; the cap only bounds what gets checked.
+const DisplayNameBody = z.object({ displayName: z.string().max(200) });
 const TIMESTAMPS_PAGE_SIZE = 50; // also the most video IDs one YouTube lookup accepts
 const TimestampsQuery = z.object({
   q: z.string().max(200).default(''),
@@ -165,6 +168,27 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
       stats,
       sessions: store.listSessions(session.userId).map((s) => ({ ...s, current: s.id === session.sessionId })),
     };
+  });
+
+  app.put('/web/display-name', { preHandler: requireSameOrigin }, async (req, reply) => {
+    const session = currentSession(req);
+    if (!session) {
+      clearSessionCookie(reply);
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    const body = DisplayNameBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid_display_name', problem: 'length' });
+    const checked = checkUsername(body.data.displayName);
+    if (!checked.ok) return reply.code(400).send({ error: 'invalid_display_name', problem: checked.problem });
+
+    const result = store.changeDisplayName(session.userId, checked.name, checked.key);
+    if (!result.ok) {
+      return result.reason === 'taken'
+        ? reply.code(409).send({ error: 'name_taken' })
+        : reply.code(429).send({ error: 'name_change_limit', retryAt: result.retryAt });
+    }
+    hub.notifyOverview(session.userId); // the user's other open pages pick up the new name
+    return { displayName: checked.name };
   });
 
   app.get('/web/timestamps', async (req, reply) => {

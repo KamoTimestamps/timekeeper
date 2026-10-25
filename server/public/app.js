@@ -20,9 +20,10 @@ function show(view) {
   if (view !== 'timestamps') closePlayer(); // the player belongs to the timestamps page
   $('loading').hidden = view !== 'loading';
   $('signed-out').hidden = view !== 'signed-out';
+  $('display-name').hidden = view !== 'display-name';
   $('dashboard').hidden = view !== 'dashboard';
   $('timestamps').hidden = view !== 'timestamps';
-  $('account').hidden = view !== 'dashboard' && view !== 'timestamps';
+  $('account').hidden = !['dashboard', 'timestamps', 'display-name'].includes(view);
   $('nav-overview').classList.toggle('active', view === 'dashboard');
   $('nav-timestamps').classList.toggle('active', view === 'timestamps');
 }
@@ -128,10 +129,71 @@ function renderTopVideos(videos) {
 }
 
 function renderAccount(account) {
-  const rows = [['Name', account.name || '—'], ['Email', account.email], ['Member since', dateTime.format(account.createdAt)]];
-  $('account-details').replaceChildren(...rows.flatMap(([term, value]) => [el('dt', {}, term), el('dd', {}, value)]));
-  $('account-email').textContent = account.email;
+  const change = el('button', { className: 'ghost', type: 'button' }, 'Change');
+  change.addEventListener('click', () => openDisplayNameForm({ required: false }));
+  const rows = [
+    ['Username', [account.displayName || '—', change]],
+    ['Google name', account.name || '—'],
+    ['Email', account.email],
+    ['Member since', dateTime.format(account.createdAt)],
+  ];
+  $('account-details').replaceChildren(
+    ...rows.flatMap(([term, value]) => [el('dt', {}, term), el('dd', {}, ...[value].flat())]),
+  );
+  $('account-email').textContent = account.displayName || account.email;
+  $('account-email').title = account.email;
 }
+
+// Everyone must have a display name: until they do, every route lands on the form to choose one.
+let needsDisplayName = false;
+
+const NAME_ADJECTIVES = ['Brave', 'Calm', 'Clever', 'Cosmic', 'Crimson', 'Eager', 'Fuzzy', 'Gentle', 'Golden', 'Happy', 'Jolly', 'Keen', 'Lucky', 'Mellow', 'Nimble', 'Quiet', 'Rapid', 'Silent', 'Sunny', 'Swift', 'Witty', 'Zesty'];
+const NAME_NOUNS = ['Badger', 'Comet', 'Falcon', 'Fox', 'Heron', 'Koala', 'Lynx', 'Marmot', 'Narwhal', 'Otter', 'Panda', 'Quokka', 'Raven', 'Seal', 'Tiger', 'Walrus', 'Wombat', 'Yak'];
+
+// What the server's username check (username.ts, YouTube's handle rules) can reject a name for.
+const NAME_PROBLEMS = {
+  length: 'Use 3 to 30 characters (1 to 10 for Chinese or Korean, 2 to 20 for Japanese or Ethiopic).',
+  characters: 'Use only letters, numbers, and the symbols _ - . · (no spaces).',
+  edges: 'Start and end with a letter or number.',
+  mixed_direction: "Don't mix left-to-right and right-to-left scripts.",
+  looks_like_url: "A username can't look like a web address.",
+  looks_like_phone: "A username can't look like a phone number.",
+};
+
+function randomDisplayName() {
+  const below = (n) => crypto.getRandomValues(new Uint32Array(1))[0] % n;
+  return `${NAME_ADJECTIVES[below(NAME_ADJECTIVES.length)]}${NAME_NOUNS[below(NAME_NOUNS.length)]}${below(100)}`;
+}
+
+function openDisplayNameForm({ required }) {
+  $('display-name-title').textContent = required ? 'Choose a username' : 'Change your username';
+  $('display-name-cancel').hidden = required;
+  $('display-name-error').hidden = true;
+  $('display-name-input').value = required ? '' : (overviewLive.latest?.account.displayName ?? '');
+  show('display-name');
+  $('display-name-input').focus();
+}
+
+$('display-name-random').addEventListener('click', () => {
+  $('display-name-input').value = randomDisplayName();
+  $('display-name-error').hidden = true;
+});
+$('display-name-cancel').addEventListener('click', () => route());
+$('display-name-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const { ok, status, data } = await api('/web/display-name', { method: 'PUT', body: { displayName: $('display-name-input').value } });
+  if (status === 401) return showSignedOut('Your session has ended. Please sign in again.');
+  if (!ok) {
+    $('display-name-error').textContent =
+      status === 400 ? (NAME_PROBLEMS[data?.problem] ?? NAME_PROBLEMS.length)
+      : status === 409 ? 'That username is already taken.'
+      : status === 429 ? `You can change your username twice every 14 days. You can change it again ${dateTime.format(data.retryAt)}.`
+      : 'Could not save the username. Please try again.';
+    $('display-name-error').hidden = false;
+    return;
+  }
+  await loadOverview(); // re-reads the account, clears the requirement, and routes to the page asked for
+});
 
 function renderSessions(sessions) {
   $('sessions').replaceChildren(
@@ -155,6 +217,7 @@ async function loadOverview() {
   if (!ok) return showSignedOut();
   features = data.features ?? {};
   renderAccount(data.account);
+  needsDisplayName = !data.account.displayName;
   renderTiles(data.stats);
   renderTopVideos(data.stats.topVideos);
   renderSessions(data.sessions);
@@ -171,6 +234,7 @@ const overviewLive = { source: null, retry: null, busy: false, again: false, sta
 
 function applyOverview(data) {
   overviewLive.latest = data;
+  renderAccount(data.account); // the name may have been changed from another tab
   renderTiles(data.stats);
   renderSessions(data.sessions);
   // Re-rendering would reload every thumbnail, so only touch the list when it changed.
@@ -499,6 +563,7 @@ $('load-more').addEventListener('click', () => loadStamps({ append: true }));
 // "#/timestamps?video=ID" and "#/timestamps?channel=NAME" are the timestamps view filtered to one
 // video or channel; anything else is the overview.
 function route() {
+  if (needsDisplayName) return openDisplayNameForm({ required: true });
   const [path, queryString = ''] = location.hash.slice(1).split('?');
   if (path !== '/timestamps') {
     show('dashboard');
