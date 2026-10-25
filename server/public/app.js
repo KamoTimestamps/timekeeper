@@ -5,18 +5,24 @@
 const $ = (id) => document.getElementById(id);
 
 // Theme: theme.js (in <head>) applied the saved mode. The toggle is one button that cycles
-// auto -> light -> dark; its icon shows what the page looks like now (sun or moon) and its small
+// auto -> (the opposite of what auto resolves to) -> (what auto resolves to) -> auto, so the first
+// click always visibly changes the page; its icon shows what the page looks like now (sun or moon) and its small
 // label the mode. data-theme-mode is the choice, data-theme what it resolves to. "auto" is stored
 // as no value, and keeps following the OS.
-const THEME_MODES = ['auto', 'light', 'dark'];
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+function nextThemeMode(mode) {
+  const osMode = darkQuery.matches ? 'dark' : 'light';
+  const opposite = darkQuery.matches ? 'light' : 'dark';
+  if (mode === 'auto') return opposite;
+  return mode === opposite ? osMode : 'auto';
+}
 
 function applyTheme(mode) {
   const root = document.documentElement;
   root.dataset.themeMode = mode;
   root.dataset.theme = mode === 'auto' ? (darkQuery.matches ? 'dark' : 'light') : mode;
-  const next = THEME_MODES[(THEME_MODES.indexOf(mode) + 1) % THEME_MODES.length];
-  $('theme').setAttribute('aria-label', `Theme: ${mode}. Switch to ${next}.`);
+  $('theme').setAttribute('aria-label', `Theme: ${mode}. Switch to ${nextThemeMode(mode)}.`);
 }
 
 function setTheme(mode) {
@@ -30,7 +36,7 @@ function setTheme(mode) {
 }
 $('theme').addEventListener('click', () => {
   const mode = document.documentElement.dataset.themeMode ?? 'auto';
-  setTheme(THEME_MODES[(THEME_MODES.indexOf(mode) + 1) % THEME_MODES.length]);
+  setTheme(nextThemeMode(mode));
 });
 darkQuery.addEventListener('change', () => {
   if ((document.documentElement.dataset.themeMode ?? 'auto') === 'auto') applyTheme('auto');
