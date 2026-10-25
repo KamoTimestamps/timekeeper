@@ -12,7 +12,7 @@ install:
 
 server: install
 	@npm run build:userscript
-	@pnpm dlx http-server -a 127.0.0.1 -p0 -c-1 . &
+	@pnpm dlx http-server -a 127.0.0.1 -p0 -c-1 .. &
 	@sleep 1 && open "http://127.0.0.1:8080/timekeeper.user.js" 2>/dev/null || true
 	@wait
 

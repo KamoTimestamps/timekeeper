@@ -8,8 +8,9 @@ const repoRoot = path.join(__dirname, '..');
 const headerTemplateFile = path.join(repoRoot, 'src', 'userscript-header.txt');
 const packageJsonFile = path.join(repoRoot, 'package.json');
 const distDir = path.join(repoRoot, 'dist');
-const userscriptFile = path.join(repoRoot, 'timekeeper.user.js');
-const legacyUserscriptFile = path.join(repoRoot, 'ts.user.js');
+const publishRoot = path.join(repoRoot, '..');
+const userscriptFile = path.join(publishRoot, 'timekeeper.user.js');
+const legacyUserscriptFile = path.join(publishRoot, 'ts.user.js');
 
 function readHeaderTemplate() {
   if (!fs.existsSync(headerTemplateFile)) {

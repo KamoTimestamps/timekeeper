@@ -12,6 +12,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: client
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -39,7 +42,7 @@ jobs:
           files: timekeeper.user.js
           generate_release_notes: true
           body: |
-            See [CHANGELOG.md](https://github.com/KamoTimestamps/timekeeper/blob/main/CHANGELOG.md) for details.
+            See [CHANGELOG.md](https://github.com/KamoTimestamps/timekeeper/blob/main/client/CHANGELOG.md) for details.
           make_latest: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

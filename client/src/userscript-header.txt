@@ -6,7 +6,7 @@
 // @author       Silent Shout
 // @match        https://www.youtube.com/*
 // @run-at       document-start
-// @icon         https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/assets/Kamo_64px_Indexed.png
+// @icon         https://raw.githubusercontent.com/KamoTimestamps/timekeeper/refs/heads/main/client/assets/Kamo_64px_Indexed.png
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        GM.setClipboard

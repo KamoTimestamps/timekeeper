@@ -5,7 +5,7 @@ const repoRoot = path.join(__dirname, '..');
 const headerTemplateFile = path.join(repoRoot, 'src', 'userscript-header.txt');
 const packageJsonFile = path.join(repoRoot, 'package.json');
 const distFile = path.join(repoRoot, 'dist', 'timekeeper.js');
-const userscriptFile = path.join(repoRoot, 'ts.user.js');
+const userscriptFile = path.join(repoRoot, '..', 'ts.user.js');
 const stylesFile = path.join(repoRoot, 'dist', 'styles.js');
 
 function readHeaderTemplate() {
