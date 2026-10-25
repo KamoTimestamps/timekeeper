@@ -9,6 +9,7 @@ import { zipSync, unzipSync } from 'fflate';
 import { BackupSettingsSchema, GoogleAuthStateSchema, object, string, number, optional } from './schema';
 import { setIconLabel } from './icons';
 import * as AppState from './services/state';
+import { getSyncIndicator } from './sync-client';
 
 // ============================================================================
 // State Management - Using Centralized AppState
@@ -1201,11 +1202,14 @@ function applyIndicatorColor(el: HTMLElement, color: string) {
 export function updateBackupStatusIndicator() {
   if (!backupStatusIndicator) return;
 
-  const color = getBackupStatusColor();
+  // While signed in to Timekeeper sync, the light shows sync status instead of backup status.
+  const color = getSyncIndicator()?.color ?? getBackupStatusColor();
 
   applyIndicatorColor(backupStatusIndicator, color);
   addTooltip(backupStatusIndicator, () => {
     // Recalculate tooltip text dynamically
+    const sync = getSyncIndicator();
+    if (sync) return sync.tooltip;
     const auth = AppState.getState().auth;
     let tooltipText = '';
     if (!auth.autoBackupEnabled) {

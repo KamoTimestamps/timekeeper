@@ -1,4 +1,4 @@
-.PHONY: build build-devel server watch bump install release release-push
+.PHONY: build build-devel server server-devel watch bump install release release-push
 
 build:
 	@pnpm install --frozen-lockfile
@@ -19,6 +19,13 @@ server: install
 	@pnpm run build:userscript
 	@pnpm dlx http-server -a 127.0.0.1 -p0 -c-1 .. &
 	@sleep 1 && open "http://127.0.0.1:8080/timekeeper.user.js" 2>/dev/null || true
+	@wait
+
+# Like 'server', but builds and serves the devel-channel userscript (../timekeeper.devel.user.js).
+server-devel: install
+	@pnpm run build:userscript:devel
+	@pnpm dlx http-server -a 127.0.0.1 -p0 -c-1 .. &
+	@sleep 1 && open "http://127.0.0.1:8080/timekeeper.devel.user.js" 2>/dev/null || true
 	@wait
 
 watch: install

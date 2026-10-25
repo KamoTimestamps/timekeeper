@@ -5414,6 +5414,7 @@ if (!isLiveChatFrame()) {
     GoogleDrive.setLoadGlobalSettings(loadGlobalSettings);
     GoogleDrive.setReloadCurrentVideoTimestamps(loadTimestamps);
     GoogleDrive.setBackupStatusIndicator(backupStatusIndicator);
+    SyncClient.setOnSyncStatusChange(() => GoogleDrive.updateBackupStatusIndicator());
 
     // Load Google auth state
     await GoogleDrive.loadGoogleAuthState();

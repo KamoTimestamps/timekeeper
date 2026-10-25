@@ -233,31 +233,47 @@ export function updateSyncStatusDisplay() {
   }
 
   if (syncStatusDisplay) {
-    let text = '';
-    let color = '#aaa';
-    if (status === 'error') {
-      text = statusMessage || 'Sync error';
-      color = RED;
-    } else if (status === 'connecting') {
-      text = statusMessage || 'Connecting…';
-      color = ORANGE;
-    } else if (auth.isSignedIn && status === 'offline') {
-      text = statusMessage || 'Offline. Retrying…';
-      color = ORANGE;
-    } else if (auth.isSignedIn && status === 'online') {
-      text = syncing ? 'Syncing…' : 'Live sync on';
-      if (!syncing && lastSyncedAt) text += ` · last synced ${new Date(lastSyncedAt).toLocaleTimeString()}`;
-      color = syncing ? ORANGE : GREEN;
-      if (!syncing && skippedGuids.size > 0) {
-        text += ` · ${skippedGuids.size} timestamp${skippedGuids.size === 1 ? '' : 's'} could not be synced`;
-        color = ORANGE;
-      }
-    }
+    const { text, color } = describeSyncStatus(auth);
     syncStatusDisplay.textContent = text;
     syncStatusDisplay.style.color = color;
   }
 
   uiRefresher?.();
+  onStatusChange?.();
+}
+
+/** What the sync status says and what color it shows; `busy` while connecting or exchanging changes. */
+function describeSyncStatus(auth = getSyncAuthState()): { text: string; color: string; busy: boolean } {
+  if (status === 'error') return { text: statusMessage || 'Sync error', color: RED, busy: false };
+  if (status === 'connecting') return { text: statusMessage || 'Connecting…', color: ORANGE, busy: true };
+  if (auth.isSignedIn && status === 'offline') return { text: statusMessage || 'Offline. Retrying…', color: ORANGE, busy: false };
+  if (auth.isSignedIn && status === 'online') {
+    let text = syncing ? 'Syncing…' : 'Live sync on';
+    if (!syncing && lastSyncedAt) text += ` · last synced ${new Date(lastSyncedAt).toLocaleTimeString()}`;
+    if (!syncing && skippedGuids.size > 0) {
+      text += ` · ${skippedGuids.size} timestamp${skippedGuids.size === 1 ? '' : 's'} could not be synced`;
+      return { text, color: ORANGE, busy: false };
+    }
+    return { text, color: syncing ? ORANGE : GREEN, busy: syncing };
+  }
+  return { text: '', color: '#aaa', busy: false };
+}
+
+const BUSY_BLUE = '#4285f4'; // the header light pulses for this color (see google-drive.ts)
+
+/** The header light's state while signed in to sync; null otherwise, when the light shows backup status. */
+export function getSyncIndicator(): { color: string; tooltip: string } | null {
+  if (!isSyncConfigured() || !getSyncAuthState().isSignedIn) return null;
+  const { text, color, busy } = describeSyncStatus();
+  if (!text) return { color: ORANGE, tooltip: 'Sync: starting…' };
+  return { color: busy ? BUSY_BLUE : color, tooltip: `Sync: ${text}` };
+}
+
+let onStatusChange: (() => void) | null = null;
+
+/** Called whenever sign-in state or sync status changes, so the header light can follow. */
+export function setOnSyncStatusChange(fn: (() => void) | null) {
+  onStatusChange = fn;
 }
 
 function setStatus(next: SyncStatus, message = '') {
