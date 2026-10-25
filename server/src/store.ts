@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
+import type { ClientInfo } from './client-info.ts';
 import { dirname } from 'node:path';
 
 export interface User {
@@ -63,6 +64,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL,
   last_used_at INTEGER NOT NULL,
   user_agent TEXT,
+  created_ip TEXT,
+  created_country TEXT,
+  last_ip TEXT,
+  last_country TEXT,
   web_token_hash TEXT UNIQUE,
   expires_at INTEGER
 );
@@ -122,6 +127,13 @@ export class Store {
     const columns = this.db.prepare("SELECT name FROM pragma_table_info('timestamps')").all() as { name: string }[];
     if (!columns.some((c) => c.name === 'updated_at')) {
       this.db.exec('ALTER TABLE timestamps ADD COLUMN updated_at INTEGER');
+    }
+
+    const sessionColumns = this.db.prepare("SELECT name FROM pragma_table_info('sessions')").all() as { name: string }[];
+    for (const column of ['created_ip', 'created_country', 'last_ip', 'last_country']) {
+      if (!sessionColumns.some((c) => c.name === column)) {
+        this.db.exec(`ALTER TABLE sessions ADD COLUMN ${column} TEXT`);
+      }
     }
   }
 
@@ -189,7 +201,7 @@ export class Store {
   createRefreshToken(
     userId: string,
     ttlSeconds: number,
-    opts: { userAgent?: string | null; now?: number } = {},
+    opts: { userAgent?: string | null; client?: ClientInfo; now?: number } = {},
   ): { token: string; sessionId: string } {
     const now = opts.now ?? Date.now();
     this.db.prepare('DELETE FROM refresh_tokens WHERE expires_at < ?').run(now);
@@ -204,10 +216,21 @@ export class Store {
     const sessionId = randomUUID();
     this.db
       .prepare(
-        `INSERT INTO sessions (id, user_id, kind, created_at, last_used_at, user_agent)
-         VALUES (?, ?, 'userscript', ?, ?, ?)`,
+        `INSERT INTO sessions (id, user_id, kind, created_at, last_used_at, user_agent,
+                               created_ip, created_country, last_ip, last_country)
+         VALUES (?, ?, 'userscript', ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(sessionId, userId, now, now, opts.userAgent ?? null);
+      .run(
+        sessionId,
+        userId,
+        now,
+        now,
+        opts.userAgent ?? null,
+        opts.client?.ip ?? null,
+        opts.client?.country ?? null,
+        opts.client?.ip ?? null,
+        opts.client?.country ?? null,
+      );
     return { token: this.insertRefreshToken(userId, sessionId, now, now + ttlSeconds * 1000), sessionId };
   }
 
@@ -231,7 +254,7 @@ export class Store {
    */
   rotateRefreshToken(
     token: string,
-    opts: { ttlSeconds: number; familyMaxSeconds: number; graceSeconds: number },
+    opts: { ttlSeconds: number; familyMaxSeconds: number; graceSeconds: number; client?: ClientInfo },
     now = Date.now(),
   ):
     | { status: 'ok'; user: User; refreshToken: string; sessionId: string }
@@ -279,7 +302,7 @@ export class Store {
         row.family_started_at,
         Math.min(now + opts.ttlSeconds * 1000, familyEnd),
       );
-      this.db.prepare('UPDATE sessions SET last_used_at = ? WHERE id = ?').run(now, row.family_id);
+      this.touchSession(row.family_id, now, opts.client);
       this.db.exec('COMMIT');
       return {
         status: 'ok',
@@ -311,24 +334,56 @@ export class Store {
     return this.db.prepare('SELECT 1 FROM sessions WHERE id = ? AND user_id = ?').get(sessionId, userId) !== undefined;
   }
 
-  createWebSession(userId: string, ttlSeconds: number, userAgent: string | null, now = Date.now()): string {
+  /** Bumps last activity, and where it came from when the origin is known. */
+  private touchSession(sessionId: string, now: number, client?: ClientInfo): void {
+    this.db
+      .prepare(
+        `UPDATE sessions SET last_used_at = ?, last_ip = COALESCE(?, last_ip), last_country = COALESCE(?, last_country)
+         WHERE id = ?`,
+      )
+      .run(now, client?.ip ?? null, client?.country ?? null, sessionId);
+  }
+
+  createWebSession(
+    userId: string,
+    ttlSeconds: number,
+    opts: { userAgent?: string | null; client?: ClientInfo; now?: number } = {},
+  ): string {
+    const now = opts.now ?? Date.now();
     this.db.prepare("DELETE FROM sessions WHERE kind = 'web' AND expires_at < ?").run(now);
     const token = randomBytes(32).toString('base64url');
     this.db
       .prepare(
-        `INSERT INTO sessions (id, user_id, kind, created_at, last_used_at, user_agent, web_token_hash, expires_at)
-         VALUES (?, ?, 'web', ?, ?, ?, ?, ?)`,
+        `INSERT INTO sessions (id, user_id, kind, created_at, last_used_at, user_agent,
+                               created_ip, created_country, last_ip, last_country, web_token_hash, expires_at)
+         VALUES (?, ?, 'web', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(randomUUID(), userId, now, now, userAgent, sha256(token), now + ttlSeconds * 1000);
+      .run(
+        randomUUID(),
+        userId,
+        now,
+        now,
+        opts.userAgent ?? null,
+        opts.client?.ip ?? null,
+        opts.client?.country ?? null,
+        opts.client?.ip ?? null,
+        opts.client?.country ?? null,
+        sha256(token),
+        now + ttlSeconds * 1000,
+      );
     return token;
   }
 
-  findWebSession(token: string, now = Date.now()): { sessionId: string; userId: string } | null {
+  findWebSession(
+    token: string,
+    opts: { client?: ClientInfo; now?: number } = {},
+  ): { sessionId: string; userId: string } | null {
+    const now = opts.now ?? Date.now();
     const row = this.db
       .prepare('SELECT id, user_id FROM sessions WHERE web_token_hash = ? AND expires_at > ?')
       .get(sha256(token), now) as { id: string; user_id: string } | undefined;
     if (!row) return null;
-    this.db.prepare('UPDATE sessions SET last_used_at = ? WHERE id = ?').run(now, row.id);
+    this.touchSession(row.id, now, opts.client);
     return { sessionId: row.id, userId: row.user_id };
   }
 
@@ -338,19 +393,37 @@ export class Store {
     createdAt: number;
     lastUsedAt: number;
     userAgent: string | null;
+    ip: string | null;
+    country: string | null;
+    createdIp: string | null;
+    createdCountry: string | null;
   }> {
     const rows = this.db
       .prepare(
-        `SELECT id, kind, created_at, last_used_at, user_agent FROM sessions
-         WHERE user_id = ? ORDER BY last_used_at DESC`,
+        `SELECT id, kind, created_at, last_used_at, user_agent, last_ip, last_country, created_ip, created_country
+         FROM sessions WHERE user_id = ? ORDER BY last_used_at DESC`,
       )
-      .all(userId) as Array<{ id: string; kind: string; created_at: number; last_used_at: number; user_agent: string | null }>;
+      .all(userId) as Array<{
+      id: string;
+      kind: string;
+      created_at: number;
+      last_used_at: number;
+      user_agent: string | null;
+      last_ip: string | null;
+      last_country: string | null;
+      created_ip: string | null;
+      created_country: string | null;
+    }>;
     return rows.map((r) => ({
       id: r.id,
       kind: r.kind,
       createdAt: r.created_at,
       lastUsedAt: r.last_used_at,
       userAgent: r.user_agent,
+      ip: r.last_ip,
+      country: r.last_country,
+      createdIp: r.created_ip,
+      createdCountry: r.created_country,
     }));
   }
 

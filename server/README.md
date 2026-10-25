@@ -85,6 +85,18 @@ and devices you have synced, review your sessions, and **log out all sessions**.
 - **Log out all sessions** ends every userscript and browser session of the account. Access tokens
   carry their session id and are checked against it on each request, so they stop working
   immediately instead of after up to 15 minutes, and open WebSockets are closed.
+- **Session location:** each session shows the IP and a country flag of where it signed in and where
+  it was last active (userscripts update this on each token refresh, the page on each request).
+  A stolen token used from somewhere else shows up as a different last-active location. Flags are
+  emoji, which Windows browsers don't draw (they show the country letters), so the country name is
+  also in the tooltip. IPs are kept only as long as the session exists.
+- **Where the IP comes from:** with `TRUST_PROXY_HEADERS=true` the app reads `X-Client-IP` and
+  `X-Client-Country`, which only the reverse proxy may set; the app must listen on loopback and be
+  reachable only through it. Without it the IP is the socket address and there is no country. The
+  dev setup's Caddy takes them from Cloudflare (`CF-Connecting-IP`, `CF-IPCountry`) and only
+  believes those headers when the connection comes from Cloudflare's published IP ranges, which
+  `deploy/remote-update.sh` refreshes into `/etc/caddy/cloudflare-*.caddy` on every deploy.
+  Other deployments need an equivalent proxy rule.
 - **Routes:** `GET /web/config`, `POST /web/login`, `GET /web/overview`, `POST /web/logout`,
   `POST /web/logout-all`, plus the static files under `/` and `/assets/`.
 

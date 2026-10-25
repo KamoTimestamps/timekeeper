@@ -22,6 +22,7 @@ export const testConfig: Config = {
   refreshReuseGraceSeconds: 60,
   publicOrigin: 'https://sync.test',
   webSessionTtlSeconds: 3600,
+  trustProxyHeaders: true,
 };
 
 export interface TestHarness {
@@ -29,16 +30,16 @@ export interface TestHarness {
   store: Store;
   /** Signs a Google-style ID token with the key the app's verifier trusts. */
   idToken(claims?: { sub?: string; email?: string; name?: string; email_verified?: boolean; aud?: string; iss?: string; expiresIn?: string }): Promise<string>;
-  login(sub?: string, email?: string): Promise<{ accessToken: string; refreshToken: string; userId: string }>;
+  login(sub?: string, email?: string, headers?: Record<string, string>): Promise<{ accessToken: string; refreshToken: string; userId: string }>;
 }
 
-export async function createHarness(): Promise<TestHarness> {
+export async function createHarness(overrides: Partial<Config> = {}): Promise<TestHarness> {
   const { publicKey, privateKey } = await generateKeyPair('RS256');
   const jwk: JWK = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
   const verifyGoogle = createGoogleVerifier(CLIENT_ID, createLocalJWKSet({ keys: [jwk] }));
 
   const store = new Store(':memory:');
-  const app = await buildApp({ config: testConfig, store, verifyGoogle });
+  const app = await buildApp({ config: { ...testConfig, ...overrides }, store, verifyGoogle });
 
   const idToken: TestHarness['idToken'] = async (claims = {}) =>
     new SignJWT({
@@ -54,10 +55,11 @@ export async function createHarness(): Promise<TestHarness> {
       .setExpirationTime(claims.expiresIn ?? '5m')
       .sign(privateKey);
 
-  const login: TestHarness['login'] = async (sub = 'google-sub-1', email = 'ada@example.com') => {
+  const login: TestHarness['login'] = async (sub = 'google-sub-1', email = 'ada@example.com', headers = {}) => {
     const res = await app.inject({
       method: 'POST',
       url: '/auth/google',
+      headers,
       payload: { idToken: await idToken({ sub, email }) },
     });
     const body = res.json();

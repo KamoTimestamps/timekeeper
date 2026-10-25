@@ -16,6 +16,12 @@ export interface Config {
   publicOrigin: string;
   /** Lifetime of a landing-page (cookie) session. */
   webSessionTtlSeconds: number;
+  /**
+   * Read the client's IP and country from X-Client-IP / X-Client-Country. Only enable behind a
+   * reverse proxy that sets (and strips client-supplied copies of) those headers, with the app
+   * reachable only through it.
+   */
+  trustProxyHeaders: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -44,5 +50,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     refreshReuseGraceSeconds: 60,
     publicOrigin: (env.PUBLIC_ORIGIN ?? `http://localhost:${port}`).replace(/\/+$/, ''),
     webSessionTtlSeconds: 7 * 24 * 60 * 60,
+    trustProxyHeaders: env.TRUST_PROXY_HEADERS === 'true',
   };
 }

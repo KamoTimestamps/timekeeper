@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import cookie from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { clientInfo } from './client-info.ts';
 import type { Config } from './config.ts';
 import type { GoogleVerifier } from './google.ts';
 import type { Hub } from './hub.ts';
@@ -68,7 +69,7 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
 
   const currentSession = (req: FastifyRequest) => {
     const token = req.cookies[cookieName];
-    return token ? store.findWebSession(token) : null;
+    return token ? store.findWebSession(token, { client: clientInfo(req, config) }) : null;
   };
 
   const clearSessionCookie = (reply: FastifyReply) => reply.clearCookie(cookieName, { path: '/' });
@@ -96,11 +97,10 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
     }
 
     const { user } = store.upsertGoogleUser(identity);
-    const token = store.createWebSession(
-      user.id,
-      config.webSessionTtlSeconds,
-      req.headers['user-agent']?.slice(0, 300) ?? null,
-    );
+    const token = store.createWebSession(user.id, config.webSessionTtlSeconds, {
+      userAgent: req.headers['user-agent']?.slice(0, 300) ?? null,
+      client: clientInfo(req, config),
+    });
     reply.setCookie(cookieName, token, {
       httpOnly: true,
       secure,

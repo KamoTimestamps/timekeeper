@@ -53,6 +53,35 @@ function describeAgent(ua) {
   return browser && os ? `${browser} on ${os}` : browser || os || 'Unknown';
 }
 
+const regionNames = typeof Intl.DisplayNames === 'function' ? new Intl.DisplayNames(undefined, { type: 'region' }) : null;
+
+// Two regional-indicator letters make a flag emoji. Windows browsers don't draw those (they show
+// the letters), which is why the country name is also in the tooltip.
+function flag(country) {
+  return /^[A-Z]{2}$/.test(country || '')
+    ? String.fromCodePoint(...[...country].map((letter) => 0x1f1e6 + letter.charCodeAt(0) - 65))
+    : '';
+}
+
+const place = (country, ip) => [flag(country), ip].filter(Boolean).join(' ') || 'Unknown';
+
+function countryName(code) {
+  try {
+    return regionNames?.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+function renderLocation(session) {
+  const notes = [];
+  if (session.country) notes.push(countryName(session.country));
+  if (session.createdIp && (session.createdIp !== session.ip || session.createdCountry !== session.country)) {
+    notes.push(`Signed in from ${place(session.createdCountry, session.createdIp)}`);
+  }
+  return el('td', { title: notes.join(' · ') }, session.ip || session.country ? place(session.country, session.ip) : '—');
+}
+
 function renderTiles(stats) {
   const tiles = [
     [number(stats.active), 'Timestamps'],
@@ -98,6 +127,7 @@ function renderSessions(sessions) {
       return el('tr', {},
         el('td', {}, type),
         el('td', {}, device),
+        renderLocation(session),
         el('td', {}, dateTime.format(session.createdAt)),
         el('td', {}, ago(session.lastUsedAt)),
         el('td', {}, status));

@@ -52,6 +52,8 @@ fi
 chmod 600 "$ENV_FILE"
 # The landing page only accepts requests from this origin (must match the Caddyfile's site address).
 grep -q '^PUBLIC_ORIGIN=' "$ENV_FILE" || echo 'PUBLIC_ORIGIN=https://devel.kamotimestamps.com' >> "$ENV_FILE"
+# Caddy (below) sets X-Client-IP / X-Client-Country and the app only listens on loopback.
+grep -q '^TRUST_PROXY_HEADERS=' "$ENV_FILE" || echo 'TRUST_PROXY_HEADERS=true' >> "$ENV_FILE"
 
 log "Installing dependencies"
 chown -R root:root /opt/timekeeper
@@ -63,10 +65,45 @@ if ! cmp -s "$SRC/timekeeper-server.service" /etc/systemd/system/timekeeper-serv
 fi
 systemctl enable timekeeper-server >/dev/null 2>&1
 
+# Cloudflare proxies this site, so the connecting address is always a Cloudflare edge. Caddy may only
+# believe CF-Connecting-IP / CF-IPCountry when the peer really is in Cloudflare's published ranges,
+# otherwise anyone who reaches the origin directly could forge a location.
+caddy_changed=0
+mkdir -p "$tmp/caddy-backup"
+cp -a /etc/caddy/. "$tmp/caddy-backup/"
+
+write_if_changed() { # file content
+  if [[ ! -f $1 ]] || [[ "$(cat "$1")" != "$2" ]]; then
+    printf '%s\n' "$2" > "$1"
+    caddy_changed=1
+  fi
+}
+
+cf_ranges=""
+if cf_all="$(curl -fsSL https://www.cloudflare.com/ips-v4 && echo && curl -fsSL https://www.cloudflare.com/ips-v6)"; then
+  cf_ranges="$(printf '%s\n' "$cf_all" | grep -E '^[0-9a-fA-F:.]+/[0-9]+$' | tr '\n' ' ' | sed 's/ $//')"
+fi
+if (( $(wc -w <<<"$cf_ranges") >= 10 )); then
+  write_if_changed /etc/caddy/cloudflare-trusted-proxies.caddy "trusted_proxies static $cf_ranges"
+  write_if_changed /etc/caddy/cloudflare-peer.caddy "$(printf '@notViaCloudflare {\n\tnot remote_ip %s\n}' "$cf_ranges")"
+elif [[ -f /etc/caddy/cloudflare-peer.caddy && -f /etc/caddy/cloudflare-trusted-proxies.caddy ]]; then
+  log "Could not refresh Cloudflare IP ranges; keeping the previous list"
+else
+  echo "Could not fetch Cloudflare IP ranges" >&2
+  exit 1
+fi
+
 if ! cmp -s "$SRC/Caddyfile" /etc/caddy/Caddyfile; then
-  log "Updating Caddyfile"
   install -m 644 "$SRC/Caddyfile" /etc/caddy/Caddyfile
-  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+  caddy_changed=1
+fi
+if (( caddy_changed )); then
+  log "Updating Caddy config"
+  if ! caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; then
+    cp -a "$tmp/caddy-backup/." /etc/caddy/
+    echo "New Caddy config is invalid; restored the previous one" >&2
+    exit 1
+  fi
   systemctl reload caddy || systemctl restart caddy
 fi
 

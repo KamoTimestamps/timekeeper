@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
 import { z } from 'zod';
+import { clientInfo } from './client-info.ts';
 import type { Config } from './config.ts';
 import type { GoogleVerifier } from './google.ts';
 import { Hub } from './hub.ts';
@@ -102,6 +103,7 @@ export async function buildApp({ config, store, verifyGoogle }: AppDeps): Promis
     const { user, isNewUser } = store.upsertGoogleUser(identity);
     const { token, sessionId } = store.createRefreshToken(user.id, config.refreshTokenTtlSeconds, {
       userAgent: req.headers['user-agent']?.slice(0, 300),
+      client: clientInfo(req, config),
     });
     return { ...(await issueSession(user, token, sessionId)), isNewUser };
   });
@@ -114,6 +116,7 @@ export async function buildApp({ config, store, verifyGoogle }: AppDeps): Promis
       ttlSeconds: config.refreshTokenTtlSeconds,
       familyMaxSeconds: config.refreshFamilyMaxSeconds,
       graceSeconds: config.refreshReuseGraceSeconds,
+      client: clientInfo(req, config),
     });
     if (result.status === 'reuse') {
       req.log.warn('refresh token reuse detected; session revoked');
