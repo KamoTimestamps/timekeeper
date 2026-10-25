@@ -100,6 +100,15 @@ and devices you have synced, review your sessions, and **log out all sessions**.
 - **Routes:** `GET /web/config`, `POST /web/login`, `GET /web/overview`, `POST /web/logout`,
   `POST /web/logout-all`, plus the static files under `/` and `/assets/`.
 
+## Video details
+
+With `YOUTUBE_API_KEY` set, the landing page's "Most-annotated videos" shows each video's thumbnail,
+title and channel (from the YouTube Data API's `videos.list`) instead of the bare ID. Create the key
+in Google Cloud Console, enable **YouTube Data API v3** and restrict the key to that API. Results are
+cached in the `video_info` table for 24 hours, including "not found" for private or deleted videos,
+so a dashboard load costs at most one quota unit. If YouTube can't be reached the page falls back to
+the cached copy, or to the bare ID. Without a key nothing calls YouTube.
+
 ## Sessions
 
 Each sign-in starts a token *family*. Refresh tokens are single-use and rotate on every refresh,

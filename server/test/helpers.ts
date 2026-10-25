@@ -4,6 +4,7 @@ import { buildApp } from '../src/app.ts';
 import type { Config } from '../src/config.ts';
 import { createGoogleVerifier } from '../src/google.ts';
 import { Store, type TimestampRecord } from '../src/store.ts';
+import type { VideoLookup } from '../src/youtube.ts';
 
 process.env.NODE_ENV = 'test';
 
@@ -23,6 +24,7 @@ export const testConfig: Config = {
   publicOrigin: 'https://sync.test',
   webSessionTtlSeconds: 3600,
   trustProxyHeaders: true,
+  youtubeApiKey: null,
 };
 
 export interface TestHarness {
@@ -33,13 +35,13 @@ export interface TestHarness {
   login(sub?: string, email?: string, headers?: Record<string, string>): Promise<{ accessToken: string; refreshToken: string; userId: string }>;
 }
 
-export async function createHarness(overrides: Partial<Config> = {}): Promise<TestHarness> {
+export async function createHarness(overrides: Partial<Config> = {}, youtube?: VideoLookup): Promise<TestHarness> {
   const { publicKey, privateKey } = await generateKeyPair('RS256');
   const jwk: JWK = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
   const verifyGoogle = createGoogleVerifier(CLIENT_ID, createLocalJWKSet({ keys: [jwk] }));
 
   const store = new Store(':memory:');
-  const app = await buildApp({ config: { ...testConfig, ...overrides }, store, verifyGoogle });
+  const app = await buildApp({ config: { ...testConfig, ...overrides }, store, verifyGoogle, youtube });
 
   const idToken: TestHarness['idToken'] = async (claims = {}) =>
     new SignJWT({

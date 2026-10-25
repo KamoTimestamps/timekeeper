@@ -7,6 +7,7 @@ import type { Config } from './config.ts';
 import type { GoogleVerifier } from './google.ts';
 import type { Hub } from './hub.ts';
 import type { Store } from './store.ts';
+import { resolveVideoInfo, type VideoLookup } from './youtube.ts';
 
 /**
  * The landing page: sign in with Google, see stats and sessions, log out everywhere.
@@ -20,6 +21,8 @@ export interface WebDeps {
   store: Store;
   verifyGoogle: GoogleVerifier;
   hub: Hub;
+  /** Absent when no YouTube API key is configured; the page then shows bare video IDs. */
+  youtube?: VideoLookup;
 }
 
 const PUBLIC_DIR = new URL('../public/', import.meta.url);
@@ -35,7 +38,8 @@ const CSP = [
   "style-src-attr 'unsafe-inline'",
   "frame-src https://accounts.google.com/gsi/",
   "connect-src 'self' https://accounts.google.com/gsi/",
-  "img-src 'self' data:",
+  // Video thumbnails come from YouTube's image host.
+  "img-src 'self' data: https://i.ytimg.com",
   "base-uri 'none'",
   "form-action 'none'",
   "frame-ancestors 'none'",
@@ -47,7 +51,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/assets/style.css': { file: 'style.css', type: 'text/css; charset=utf-8' },
 };
 
-export async function registerWeb(app: FastifyInstance, { config, store, verifyGoogle, hub }: WebDeps) {
+export async function registerWeb(app: FastifyInstance, { config, store, verifyGoogle, hub, youtube }: WebDeps) {
   await app.register(cookie);
 
   const secure = config.publicOrigin.startsWith('https://');
@@ -120,9 +124,15 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
       return reply.code(401).send({ error: 'unauthorized' });
     }
 
+    const stats = store.getStats(session.userId);
+    if (youtube && stats.topVideos.length > 0) {
+      const info = await resolveVideoInfo(store, youtube, stats.topVideos.map((v) => v.videoId), req.log);
+      stats.topVideos = stats.topVideos.map((v) => (info.has(v.videoId) ? { ...v, info: info.get(v.videoId) } : v));
+    }
+
     return {
       account,
-      stats: store.getStats(session.userId),
+      stats,
       sessions: store.listSessions(session.userId).map((s) => ({ ...s, current: s.id === session.sessionId })),
     };
   });

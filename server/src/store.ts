@@ -20,6 +20,14 @@ export interface TimestampRecord {
   deleted_at?: number;
 }
 
+/** What the YouTube Data API says about a video. */
+export interface VideoInfo {
+  title: string;
+  channelTitle: string;
+  thumbnailUrl: string | null;
+  publishedAt: string | null;
+}
+
 export type StoredRecord = TimestampRecord & { seq: number };
 
 export interface PushResult {
@@ -86,6 +94,14 @@ CREATE TABLE IF NOT EXISTS timestamps (
   PRIMARY KEY (user_id, guid)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS timestamps_user_seq ON timestamps(user_id, seq);
+CREATE TABLE IF NOT EXISTS video_info (
+  video_id TEXT PRIMARY KEY,
+  title TEXT,
+  channel_title TEXT,
+  thumbnail_url TEXT,
+  published_at TEXT,
+  fetched_at INTEGER NOT NULL
+) WITHOUT ROWID;
 `;
 
 interface TimestampRow {
@@ -480,6 +496,58 @@ export class Store {
       lastSyncAt: totals.last_sync_at,
       topVideos: top.map((t) => ({ videoId: t.video_id, count: t.n })),
     };
+  }
+
+  // --- video info cache ---
+
+  /** Cached YouTube lookups; `info` is null for a video YouTube didn't return (private, deleted). */
+  getCachedVideoInfo(videoIds: string[]): Array<{ videoId: string; fetchedAt: number; info: VideoInfo | null }> {
+    if (videoIds.length === 0) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT video_id, title, channel_title, thumbnail_url, published_at, fetched_at
+         FROM video_info WHERE video_id IN (${videoIds.map(() => '?').join(',')})`,
+      )
+      .all(...videoIds) as Array<{
+      video_id: string;
+      title: string | null;
+      channel_title: string | null;
+      thumbnail_url: string | null;
+      published_at: string | null;
+      fetched_at: number;
+    }>;
+    return rows.map((row) => ({
+      videoId: row.video_id,
+      fetchedAt: row.fetched_at,
+      info:
+        row.title === null
+          ? null
+          : {
+              title: row.title,
+              channelTitle: row.channel_title ?? '',
+              thumbnailUrl: row.thumbnail_url,
+              publishedAt: row.published_at,
+            },
+    }));
+  }
+
+  saveVideoInfo(entries: Array<{ videoId: string; info: VideoInfo | null }>, now: number): void {
+    const upsert = this.db.prepare(
+      `INSERT INTO video_info (video_id, title, channel_title, thumbnail_url, published_at, fetched_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(video_id) DO UPDATE SET title = excluded.title, channel_title = excluded.channel_title,
+         thumbnail_url = excluded.thumbnail_url, published_at = excluded.published_at, fetched_at = excluded.fetched_at`,
+    );
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const { videoId, info } of entries) {
+        upsert.run(videoId, info?.title ?? null, info?.channelTitle ?? null, info?.thumbnailUrl ?? null, info?.publishedAt ?? null, now);
+      }
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
   }
 
   // --- timestamps ---

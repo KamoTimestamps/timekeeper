@@ -181,3 +181,38 @@ describe('log out all sessions closes live connections', () => {
     assert.equal(await closed, 4401);
   });
 });
+
+describe('landing page video details', () => {
+  const lookups: string[][] = [];
+  let h: TestHarness;
+  before(async () => {
+    h = await createHarness({}, async (ids) => {
+      lookups.push(ids);
+      return new Map(ids.filter((id) => id === 'vidA').map((id) => [id, { title: 'A title', channelTitle: 'A channel', thumbnailUrl: 'https://i.ytimg.com/vi/vidA/mqdefault.jpg', publishedAt: null }]));
+    });
+  });
+  after(async () => {
+    await h.app.close();
+  });
+
+  it('adds title, channel and thumbnail to top videos YouTube knows, and allows its image host', async () => {
+    const script = await h.login('v1', 'v1@example.com');
+    await h.app.inject({
+      method: 'POST',
+      url: '/sync/push',
+      headers: bearer(script.accessToken),
+      payload: { deviceId: 'd', records: [record('a', 1, { video_id: 'vidA' }), record('b', 2, { video_id: 'vidB' })] },
+    });
+    const login = await h.app.inject({ method: 'POST', url: '/web/login', headers: { origin: ORIGIN }, payload: { idToken: await h.idToken({ sub: 'v1', email: 'v1@example.com' }) } });
+    const cookie = login.cookies.find((c) => c.name === COOKIE)!;
+
+    const overview = await h.app.inject({ method: 'GET', url: '/web/overview', headers: { cookie: `${COOKIE}=${cookie.value}` } });
+    const top = overview.json().stats.topVideos;
+    assert.equal(top.find((v: { videoId: string }) => v.videoId === 'vidA').info.title, 'A title');
+    assert.equal(top.find((v: { videoId: string }) => v.videoId === 'vidB').info, undefined, 'unknown videos stay plain');
+    assert.deepEqual(lookups[0].sort(), ['vidA', 'vidB']);
+
+    const page = await h.app.inject({ method: 'GET', url: '/' });
+    assert.match(page.headers['content-security-policy'] as string, /img-src [^;]*https:\/\/i\.ytimg\.com/);
+  });
+});

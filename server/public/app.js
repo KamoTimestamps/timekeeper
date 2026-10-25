@@ -106,8 +106,18 @@ function renderTopVideos(videos) {
     ...videos.map((video) => {
       const url = new URL('https://www.youtube.com/watch');
       url.searchParams.set('v', video.videoId);
-      const link = el('a', { href: url.toString(), target: '_blank', rel: 'noopener noreferrer' }, video.videoId);
-      return el('li', {}, link, el('span', { className: 'count' }, `${number(video.count)} timestamp${video.count === 1 ? '' : 's'}`));
+      const href = { href: url.toString(), target: '_blank', rel: 'noopener noreferrer' };
+      const count = el('span', { className: 'count' }, `${number(video.count)} timestamp${video.count === 1 ? '' : 's'}`);
+      // `info` is only present when the server has a YouTube API key and the video is public.
+      if (!video.info) return el('li', {}, el('a', href, video.videoId), count);
+
+      const thumb = video.info.thumbnailUrl
+        ? el('img', { className: 'thumb', src: video.info.thumbnailUrl, alt: '', loading: 'lazy', width: '80', height: '45' })
+        : el('span', { className: 'thumb' });
+      const text = el('div', { className: 'video-text' },
+        el('a', { ...href, className: 'video-title', title: video.info.title }, video.info.title),
+        el('div', { className: 'muted', title: video.info.channelTitle }, video.info.channelTitle));
+      return el('li', { className: 'rich' }, thumb, text, count);
     }),
   );
 }

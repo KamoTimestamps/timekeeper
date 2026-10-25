@@ -8,12 +8,14 @@ import type { GoogleVerifier } from './google.ts';
 import { Hub } from './hub.ts';
 import { Store, type User } from './store.ts';
 import { signAccessToken, verifyAccessToken } from './tokens.ts';
+import type { VideoLookup } from './youtube.ts';
 import { registerWeb } from './web.ts';
 
 export interface AppDeps {
   config: Config;
   store: Store;
   verifyGoogle: GoogleVerifier;
+  youtube?: VideoLookup;
 }
 
 const MAX_RECORDS_PER_PUSH = 500;
@@ -51,7 +53,7 @@ declare module 'fastify' {
   }
 }
 
-export async function buildApp({ config, store, verifyGoogle }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, store, verifyGoogle, youtube }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: process.env.NODE_ENV !== 'test', bodyLimit: 5 * 1024 * 1024 });
   const hub = new Hub();
 
@@ -60,7 +62,7 @@ export async function buildApp({ config, store, verifyGoogle }: AppDeps): Promis
   app.decorateRequest('userId', '');
   app.addHook('onClose', async () => hub.close());
 
-  await registerWeb(app, { config, store, verifyGoogle, hub });
+  await registerWeb(app, { config, store, verifyGoogle, hub, youtube });
 
   // A valid signature isn't enough: the session the token was issued for must still exist, so
   // signing out (or "log out all sessions") takes effect immediately instead of after 15 minutes.

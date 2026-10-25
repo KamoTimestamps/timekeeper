@@ -22,6 +22,8 @@ export interface Config {
    * reachable only through it.
    */
   trustProxyHeaders: boolean;
+  /** YouTube Data API key used to show video titles and thumbnails on the landing page; null disables that. */
+  youtubeApiKey: string | null;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -51,5 +53,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicOrigin: (env.PUBLIC_ORIGIN ?? `http://localhost:${port}`).replace(/\/+$/, ''),
     webSessionTtlSeconds: 7 * 24 * 60 * 60,
     trustProxyHeaders: env.TRUST_PROXY_HEADERS === 'true',
+    youtubeApiKey: env.YOUTUBE_API_KEY?.trim() || null,
   };
 }

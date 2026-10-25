@@ -2,10 +2,16 @@ import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
 import { createGoogleVerifier } from './google.ts';
 import { Store } from './store.ts';
+import { createYouTubeClient } from './youtube.ts';
 
 const config = loadConfig();
 const store = new Store(config.databasePath);
-const app = await buildApp({ config, store, verifyGoogle: createGoogleVerifier(config.googleClientId) });
+const app = await buildApp({
+  config,
+  store,
+  verifyGoogle: createGoogleVerifier(config.googleClientId),
+  youtube: config.youtubeApiKey ? createYouTubeClient(config.youtubeApiKey) : undefined,
+});
 
 const shutdown = async () => {
   await app.close();

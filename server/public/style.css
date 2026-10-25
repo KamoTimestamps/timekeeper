@@ -101,7 +101,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .tile .value.small { font-size: 18px; padding-top: 7px; }
 .tile .label { color: var(--muted); font-size: 13px; }
 
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 0 16px; }
 @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
 
 .videos { list-style: none; margin: 0; padding: 0; }
@@ -116,6 +116,12 @@ button:disabled { opacity: 0.6; cursor: default; }
 .videos a { color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-decoration: none; }
 .videos a:hover { text-decoration: underline; }
 .videos .count { color: var(--muted); white-space: nowrap; }
+.videos li.rich { align-items: center; justify-content: flex-start; }
+.videos li.rich .count { margin-left: auto; }
+.videos .thumb { flex: none; width: 80px; height: 45px; border-radius: 4px; background: var(--border); object-fit: cover; }
+.videos .video-text { min-width: 0; }
+.videos a.video-title { font-family: inherit; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.videos .video-text .muted { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
 dt { color: var(--muted); }
