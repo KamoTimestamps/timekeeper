@@ -620,13 +620,8 @@ async function updateSuggestions() {
   const minus = field ? field[1] : text.startsWith('-') ? '-' : ''; // a leading minus negates a field
   const bare = text.slice(minus.length).toLowerCase();
 
-  // Dates are not looked up on the server: offer quick ranges and the calendar.
-  if (field?.[2].toLowerCase() === 'date') {
-    suggestions.items = dateSuggestions(text.slice(field[0].length), minus);
-    suggestions.active = -1;
-    renderSuggestions();
-    return;
-  }
+  // Date choices (quick ranges, the calendar) are in the calendar button's panel, not in this list.
+  if (field?.[2].toLowerCase() === 'date') return closeSuggestions();
 
   // Comments are free text: there is nothing sensible to suggest after "comment:".
   if (field?.[2].toLowerCase() === 'comment') return closeSuggestions();
@@ -651,10 +646,6 @@ async function updateSuggestions() {
 function applySuggestion(index) {
   const item = suggestions.items[index];
   if (!item) return;
-  if (item.kind === 'calendar') {
-    closeSuggestions();
-    return openDatePicker();
-  }
   const input = $('search');
   input.value = input.value.slice(0, currentSearchToken(input.value).start) + item.insert;
   input.focus();
@@ -695,9 +686,8 @@ const localDay = (date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-$
 const dayAt = (iso) => new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)));
 const DATE_TERM = /(^|\s)(-?)date:\S*/i; // a leading minus (excluding those dates) is kept when the calendar replaces it
 
-function dateSuggestions(partial, minus = '') {
-  const items = [{ kind: 'calendar', label: 'Pick on a calendar…' }];
-  if (partial !== '') return items;
+// The quick choices at the top of the date panel, as [label, term]; days are the viewer's own.
+function datePresets() {
   const now = new Date();
   const ago = (days) => localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days));
   const month = (offset) => new Date(now.getFullYear(), now.getMonth() + offset, 1);
@@ -711,7 +701,7 @@ function dateSuggestions(partial, minus = '') {
     ['Last month', monthTerm(month(-1))],
     ['This year', String(now.getFullYear())],
   ];
-  return [...presets.map(([label, term]) => ({ kind: 'date', label, insert: `${minus}date:${term} ` })), ...items];
+  return presets;
 }
 
 const picker = { year: 0, month: 0, start: null, end: null }; // month is 0-11; start/end are 'YYYY-MM-DD'
@@ -780,28 +770,46 @@ function shiftMonth(by) {
 
 function closeDatePicker() {
   $('date-picker').hidden = true;
+  $('date-button').setAttribute('aria-expanded', 'false');
 }
 
 function openDatePicker() {
   // Start from the day or range already in the box, when it is spelled out in full days.
-  const existing = /(?:^|\s)-?date:(\d{4}-\d{2}-\d{2})?(?:\.\.(\d{4}-\d{2}-\d{2})?)?(?:\s|$)/i.exec($('search').value);
-  picker.start = existing?.[1] ?? null;
-  picker.end = existing?.[2] ?? null;
+  const existing = /(?:^|\s)(-?)date:(\d{4}-\d{2}-\d{2})?(?:\.\.(\d{4}-\d{2}-\d{2})?)?(?:\s|$)/i.exec($('search').value);
+  picker.start = existing?.[2] ?? null;
+  picker.end = existing?.[3] ?? null;
   if (!picker.start && picker.end) [picker.start, picker.end] = [picker.end, null];
+  $('dp-exclude').checked = existing?.[1] === '-';
   const shown = picker.start ? dayAt(picker.start) : new Date();
   [picker.year, picker.month] = [shown.getFullYear(), shown.getMonth()];
+  $('dp-presets').replaceChildren(
+    ...datePresets().map(([label, term]) => {
+      const choice = el('button', { type: 'button', className: 'ghost' }, label);
+      choice.addEventListener('click', () => applyDateTerm(`date:${term}`));
+      return choice;
+    }),
+  );
   renderDatePicker();
   closeSuggestions();
   $('date-picker').hidden = false;
-  $('dp-month').focus();
+  $('date-button').setAttribute('aria-expanded', 'true');
+  $('dp-presets').firstElementChild.focus();
 }
 
-function setDateTerm(term) {
+// Puts the term in the search box (as "-date:..." when "Exclude" is ticked) and closes the panel.
+function applyDateTerm(term) {
+  setDateTerm(term, $('dp-exclude').checked);
+  closeDatePicker();
+  $('search').focus();
+}
+
+function setDateTerm(term, exclude = false) {
   const input = $('search');
+  const minus = exclude ? '-' : '';
   if (DATE_TERM.test(input.value)) {
-    input.value = term ? input.value.replace(DATE_TERM, (_, lead, minus) => `${lead}${minus}${term}`) : input.value.replace(DATE_TERM, '').replace(/\s{2,}/g, ' ').trim();
+    input.value = term ? input.value.replace(DATE_TERM, (_, lead) => `${lead}${minus}${term}`) : input.value.replace(DATE_TERM, '').replace(/\s{2,}/g, ' ').trim();
   } else if (term) {
-    input.value = `${input.value}${input.value && !input.value.endsWith(' ') ? ' ' : ''}${term}`;
+    input.value = `${input.value}${input.value && !input.value.endsWith(' ') ? ' ' : ''}${minus}${term}`;
   }
   scheduleSearch();
 }
@@ -820,9 +828,7 @@ $('dp-month').addEventListener('change', () => ((picker.month = Number($('dp-mon
 $('dp-year').addEventListener('change', () => ((picker.year = Number($('dp-year').value)), renderDatePicker()));
 $('dp-apply').addEventListener('click', () => {
   const { start, end } = picker;
-  setDateTerm(!end || end === start ? `date:${start}` : `date:${start}..${end}`);
-  closeDatePicker();
-  $('search').focus();
+  applyDateTerm(!end || end === start ? `date:${start}` : `date:${start}..${end}`);
 });
 $('dp-clear').addEventListener('click', () => {
   setDateTerm('');
@@ -831,15 +837,16 @@ $('dp-clear').addEventListener('click', () => {
 });
 $('dp-cancel').addEventListener('click', () => {
   closeDatePicker();
-  $('search').focus();
+  $('date-button').focus();
 });
+$('date-button').addEventListener('click', () => ($('date-picker').hidden ? openDatePicker() : closeDatePicker()));
 document.addEventListener('mousedown', (event) => {
-  if (!$('date-picker').hidden && !$('date-picker').contains(event.target)) closeDatePicker();
+  if (!$('date-picker').hidden && !$('date-picker').contains(event.target) && !$('date-button').contains(event.target)) closeDatePicker();
 });
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !$('date-picker').hidden) {
     closeDatePicker();
-    $('search').focus();
+    $('date-button').focus();
   }
 });
 

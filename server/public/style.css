@@ -223,9 +223,15 @@ th { color: var(--muted); font-weight: 500; border-top: 0; }
 #display-name-cancel { margin-top: 12px; }
 dd .ghost { margin-left: 8px; }
 
-.search { position: relative; }
+.search-row { display: flex; gap: 8px; align-items: stretch; }
+.search { position: relative; flex: 1; min-width: 0; }
+.icon-button { flex: none; display: grid; place-items: center; width: 42px; padding: 0; color: var(--muted); }
+.icon-button svg { width: 20px; height: 20px; }
+.icon-button:hover, .icon-button[aria-expanded="true"] { color: var(--text); }
 
-/* The calendar for "date:" terms, opened from the date suggestions under the search box. */
+/* The date panel (quick ranges and a calendar for "date:" terms), opened from the button beside the search box. */
+.dp-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.dp-exclude { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 13px; color: var(--muted); }
 .date-picker {
   position: absolute;
   top: 100%;
