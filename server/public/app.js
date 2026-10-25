@@ -191,11 +191,13 @@ async function loadStamps({ append }) {
   const params = new URLSearchParams({ q: stampList.query, offset: String(stampList.offset) });
   if (stampList.video) params.set('video', stampList.video);
   $('load-more').disabled = true;
+  $('load-more').textContent = 'Loading…';
   const { ok, status, data } = await api(`/web/timestamps?${params}`);
   if (token !== stampList.token) return;
   if (status === 401) return showSignedOut('Your session has ended. Please sign in again.');
   if (!ok) {
     $('results-summary').textContent = 'Could not load timestamps. Please try again.';
+    $('load-more').textContent = 'Try again';
     $('load-more').disabled = false;
     return;
   }
@@ -206,8 +208,23 @@ async function loadStamps({ append }) {
   $('results-summary').textContent =
     data.total === 0 ? 'No timestamps found.' : `Showing ${number(stampList.offset)} of ${number(data.total)} timestamp${data.total === 1 ? '' : 's'}`;
   $('load-more').hidden = stampList.offset >= data.total;
+  $('load-more').textContent = 'Load more';
   $('load-more').disabled = false;
+  // An observer only fires when visibility changes, so if the button is still in view (a tall
+  // window, a short page) re-observing is what makes it ask for the next page. Not done after a
+  // failure, which would retry in a loop; the "Try again" button covers that.
+  loadMoreObserver.unobserve($('load-more'));
+  loadMoreObserver.observe($('load-more'));
 }
+
+// Infinite scroll: fetch the next page when the button comes within a screen of view.
+const loadMoreObserver = new IntersectionObserver(
+  (entries) => {
+    const button = $('load-more');
+    if (entries.some((entry) => entry.isIntersecting) && !button.hidden && !button.disabled) loadStamps({ append: true });
+  },
+  { rootMargin: '0px 0px 600px 0px' },
+);
 
 let searchTimer = null;
 
