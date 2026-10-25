@@ -6,6 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <title>Timekeeper Sync</title>
   <link rel="icon" type="image/png" href="/assets/favicon.png">
+  <script src="/assets/theme.js"></script>
   <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
@@ -19,6 +20,11 @@
       </nav>
       <span id="account-email"></span>
       <button id="signout" class="ghost" type="button">Sign out</button>
+    </div>
+    <div id="theme" class="theme" role="group" aria-label="Color theme">
+      <button type="button" data-theme-choice="auto" aria-pressed="true">Auto</button>
+      <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+      <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
     </div>
   </header>
 

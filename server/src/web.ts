@@ -77,6 +77,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/assets/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
   '/assets/style.css': { file: 'style.css', type: 'text/css; charset=utf-8' },
+  '/assets/theme.js': { file: 'theme.js', type: 'text/javascript; charset=utf-8' },
   '/assets/TwemojiCountryFlags.woff2': { file: 'TwemojiCountryFlags.woff2', type: 'font/woff2' },
   '/assets/favicon.png':{ file: 'favicon.png', type: 'image/png' }, // the client's Kamo header icon
 };

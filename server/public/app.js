@@ -4,6 +4,26 @@
 
 const $ = (id) => document.getElementById(id);
 
+// Theme: theme.js (in <head>) applied the saved choice; this is the toggle. "auto" removes the
+// attribute so the stylesheet follows the OS, and is stored as no value at all.
+function setTheme(theme) {
+  if (theme === 'auto') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  try {
+    if (theme === 'auto') localStorage.removeItem('tk-theme');
+    else localStorage.setItem('tk-theme', theme);
+  } catch {
+    // Storage blocked: the choice still applies until the page is reloaded.
+  }
+  for (const button of document.querySelectorAll('[data-theme-choice]')) {
+    button.setAttribute('aria-pressed', String(button.dataset.themeChoice === theme));
+  }
+}
+for (const button of document.querySelectorAll('[data-theme-choice]')) {
+  button.addEventListener('click', () => setTheme(button.dataset.themeChoice));
+}
+setTheme(document.documentElement.dataset.theme ?? 'auto');
+
 async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch(path, {
     method,
