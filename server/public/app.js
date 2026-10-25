@@ -486,19 +486,25 @@ function addStamps(items, append) {
   const touched = new Set();
   for (const item of items) {
     if (stampList.group?.videoId !== item.videoId) {
+      // The header pins within .group-top; the video's last row sits below it, outside, so when the
+      // header lets go it leaves together with that row instead of the row sliding under it.
       const hits = el('ol', { className: 'stamps' });
-      list.append(el('li', { className: 'group' }, renderVideoHead(item), hits));
+      const tail = el('ol', { className: 'stamps' });
+      const element = el('li', { className: 'group' }, el('div', { className: 'group-top' }, renderVideoHead(item), hits), tail);
+      list.append(element);
       // The video's real length when known, so times pad to it even if no hit is near the end.
-      stampList.group = { videoId: item.videoId, hits, longest: item.info?.durationSeconds ?? 0 };
+      stampList.group = { videoId: item.videoId, element, hits, tail, longest: item.info?.durationSeconds ?? 0 };
     }
     const group = stampList.group;
     group.longest = Math.max(group.longest, item.start);
-    group.hits.append(renderHit(item));
+    // A new row is the last one now; the one that was last joins the part the header is pinned over.
+    if (group.tail.firstElementChild) group.hits.append(group.tail.firstElementChild);
+    group.tail.append(renderHit(item));
     touched.add(group);
   }
   // A later page can bring a longer timestamp for a video already on screen, which widens them all.
   for (const group of touched) {
-    for (const time of group.hits.querySelectorAll('.stamp-time')) time.textContent = clock(Number(time.dataset.start), group.longest);
+    for (const time of group.element.querySelectorAll('.stamp-time')) time.textContent = clock(Number(time.dataset.start), group.longest);
   }
 }
 

@@ -365,7 +365,8 @@ dd .ghost { margin-left: 8px; }
 .groups { list-style: none; margin: 0 0 12px; padding: 0; }
 .group { margin-top: 18px; }
 .group:first-child { margin-top: 0; }
-/* Sticks within its own group, so scrolling into the next video's hits replaces it with that video's row. */
+/* Sticks within .group-top, which holds the header and every row but the last (that one follows it,
+   outside), so the header scrolls away with the last row instead of covering it. */
 .group-head { position: sticky; top: var(--search-bar-height, 0px); z-index: 1; display: flex; align-items: center; gap: 12px; padding: 8px 0; background: var(--card); }
 .group-head .thumb { flex: none; width: 80px; height: 45px; border-radius: 4px; background: var(--border); object-fit: cover; display: block; }
 .group-head .video-text { min-width: 0; }
