@@ -284,36 +284,75 @@ let features = {};
 
 // YouTube's plain iframe embed: a new iframe per click, starting at the timestamp. It needs a
 // referrer to accept the embed, which this page's no-referrer policy would otherwise withhold.
+const PLAYER_ORIGIN = 'https://www.youtube-nocookie.com';
+const player = { videoId: '', second: -1 };
+
+// The "YouTube" link always points at where the player is now, so a normal, middle or right-click
+// all open the same moment.
+function setOpenLink(videoId, seconds) {
+  const watch = new URL('https://www.youtube.com/watch');
+  watch.searchParams.set('v', videoId);
+  watch.searchParams.set('t', `${Math.floor(seconds)}s`);
+  $('player-open').href = watch.toString();
+}
+
 function playAt(item) {
   const title = item.info ? item.info.title : item.videoId;
-  const embed = new URL(`https://www.youtube-nocookie.com/embed/${encodeURIComponent(item.videoId)}`);
+  const embed = new URL(`${PLAYER_ORIGIN}/embed/${encodeURIComponent(item.videoId)}`);
   embed.searchParams.set('start', String(Math.floor(item.start)));
   embed.searchParams.set('autoplay', '1');
   embed.searchParams.set('rel', '0');
-  const watch = new URL('https://www.youtube.com/watch');
-  watch.searchParams.set('v', item.videoId);
-  watch.searchParams.set('t', `${Math.floor(item.start)}s`);
+  embed.searchParams.set('enablejsapi', '1'); // lets us send it commands and receive its state
+  embed.searchParams.set('origin', location.origin);
 
-  $('player-frame').replaceChildren(
-    el('iframe', {
-      src: embed.toString(),
-      title,
-      allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen',
-      allowfullscreen: '',
-      referrerpolicy: 'strict-origin-when-cross-origin',
-    }),
-  );
+  const frame = el('iframe', {
+    src: embed.toString(),
+    title,
+    allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen',
+    allowfullscreen: '',
+    referrerpolicy: 'strict-origin-when-cross-origin',
+  });
+  // Until the embed is told someone is listening it sends nothing; after this it reports its state
+  // (including currentTime) a couple of times a second.
+  frame.addEventListener('load', () => frame.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), PLAYER_ORIGIN));
+  $('player-frame').replaceChildren(frame);
+
+  player.videoId = item.videoId;
+  player.second = Math.floor(item.start);
+  setOpenLink(item.videoId, item.start);
   $('player-title').textContent = `${clock(item.start)} · ${title}`;
-  $('player-open').href = watch.toString();
   $('mini-player').hidden = false;
 }
+
+window.addEventListener('message', (event) => {
+  const frame = $('player-frame').querySelector('iframe');
+  if (event.origin !== PLAYER_ORIGIN || !frame || event.source !== frame.contentWindow) return;
+  let message;
+  try {
+    message = JSON.parse(event.data);
+  } catch {
+    return;
+  }
+  const time = message?.info?.currentTime;
+  if (typeof time !== 'number' || Math.floor(time) === player.second) return;
+  player.second = Math.floor(time);
+  setOpenLink(player.videoId, time);
+});
 
 function closePlayer() {
   $('player-frame').replaceChildren(); // removing the iframe is what stops playback
   $('mini-player').hidden = true;
 }
 
+// Pauses without closing, so the video is still there to resume. Used when the user goes to YouTube
+// instead, so the two don't play over each other. Ignored if the embed hasn't finished loading.
+function pausePlayer() {
+  const frame = $('player-frame').querySelector('iframe');
+  frame?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), PLAYER_ORIGIN);
+}
+
 $('player-close').addEventListener('click', closePlayer);
+$('player-open').addEventListener('click', pausePlayer);
 
 function renderHit(item) {
   const watch = new URL('https://www.youtube.com/watch');
@@ -321,10 +360,15 @@ function renderHit(item) {
   watch.searchParams.set('t', `${Math.floor(item.start)}s`);
   const time = el('a', { className: 'stamp-time', href: watch.toString(), target: '_blank', rel: 'noopener noreferrer', title: features.miniPlayer ? 'Play here (Ctrl/⌘-click for YouTube)' : 'Open on YouTube at this time', 'data-start': String(item.start) }, clock(item.start));
   time.addEventListener('click', (event) => {
-    if (!features.miniPlayer || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; // let the browser open YouTube
+    if (!features.miniPlayer) return;
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      pausePlayer(); // the browser opens YouTube in a new tab
+      return;
+    }
     event.preventDefault();
     playAt(item);
   });
+  time.addEventListener('auxclick', () => features.miniPlayer && pausePlayer()); // middle-click opens YouTube too
   return el('li', {}, time, el('div', { className: 'stamp-body' }, el('div', { className: 'stamp-comment' }, item.comment || '(no comment)')));
 }
 
