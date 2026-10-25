@@ -216,11 +216,31 @@ describe('timestamp browser', () => {
     assert.equal((await h.app.inject({ method: 'GET', url: '/web/timestamps' })).statusCode, 401);
   });
 
-  it('lists only the user\'s live timestamps, newest change first', async () => {
+  it('lists only the user\'s live timestamps, grouped by video with hits in playback order', async () => {
     const body = (await get('/web/timestamps')).json();
     assert.equal(body.total, 3);
-    assert.deepEqual(body.items.map((i: { guid: string }) => i.guid), ['c', 'b', 'a']);
+    const rows = body.items as Array<{ guid: string; videoId: string; start: number }>;
+    assert.deepEqual(rows.filter((r) => r.videoId === 'vidA').map((r) => r.start), [30, 90]);
+    const finished = new Set<string>();
+    rows.forEach((r, i) => {
+      assert.ok(!finished.has(r.videoId), `${r.videoId} reappears after another video`);
+      if (rows[i + 1]?.videoId !== r.videoId) finished.add(r.videoId);
+    });
+    assert.equal(finished.size, 2);
     assert.equal((await get('/web/timestamps', other)).json().total, 1);
+  });
+
+  it('puts the video with the most recent change first', async () => {
+    const script = await h.login('t3', 't3@example.com');
+    const send = (records: unknown[]) =>
+      h.app.inject({ method: 'POST', url: '/sync/push', headers: bearer(script.accessToken), payload: { deviceId: 'd', records } });
+    await send([record('o1', 1, { video_id: 'older', start: 50 })]);
+    await new Promise((r) => setTimeout(r, 5));
+    await send([record('n1', 1, { video_id: 'newer', start: 80 }), record('n2', 2, { video_id: 'newer', start: 10 })]);
+    const login = await h.app.inject({ method: 'POST', url: '/web/login', headers: { origin: ORIGIN }, payload: { idToken: await h.idToken({ sub: 't3', email: 't3@example.com' }) } });
+    const cookie = { cookie: `${COOKIE}=${login.cookies.find((c) => c.name === COOKIE)!.value}` };
+    const items = (await get('/web/timestamps', cookie)).json().items as Array<{ guid: string }>;
+    assert.deepEqual(items.map((i) => i.guid), ['n2', 'n1', 'o1']);
   });
 
   it('searches case-insensitively, requires every word, and treats % and _ literally', async () => {
@@ -239,7 +259,7 @@ describe('timestamp browser', () => {
     assert.deepEqual(one.items.map((i: { start: number }) => i.start), [30, 90]);
     const second = (await get('/web/timestamps?offset=2')).json();
     assert.equal(second.total, 3);
-    assert.deepEqual(second.items.map((i: { guid: string }) => i.guid), ['a']);
+    assert.equal(second.items.length, 1);
     assert.equal((await get('/web/timestamps?offset=-1')).statusCode, 400);
   });
 });

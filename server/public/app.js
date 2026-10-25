@@ -239,7 +239,7 @@ setInterval(() => {
 
 // --- timestamps browser ---
 
-const stampList = { query: '', video: '', channel: '', offset: 0, token: 0 };
+const stampList = { query: '', video: '', channel: '', offset: 0, token: 0, group: null };
 
 function clock(seconds) {
   const s = Math.floor(seconds);
@@ -249,25 +249,51 @@ function clock(seconds) {
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-function renderStamp(item) {
+// The row above a video's hits: thumbnail, title, channel and air date. `info` is only present
+// when the server has a YouTube API key and the video is public; otherwise it is the bare ID.
+function renderVideoHead(item) {
+  const filter = `#/timestamps?video=${encodeURIComponent(item.videoId)}`;
+  const label = item.info ? item.info.title : item.videoId;
+  const thumb = item.info?.thumbnailUrl
+    ? el('img', { className: 'thumb', src: item.info.thumbnailUrl, alt: '', loading: 'lazy', width: '80', height: '45' })
+    : el('span', { className: 'thumb' });
+  const sub = el('div', { className: 'muted video-sub' });
+  const channelName = item.info?.channelTitle;
+  const aired = item.info?.publishedAt ? dateOnly.format(new Date(item.info.publishedAt)) : '';
+  if (channelName) sub.append(el('a', { href: `#/timestamps?channel=${encodeURIComponent(channelName)}`, title: `Only ${channelName}` }, channelName));
+  if (channelName && aired) sub.append(' · ');
+  if (aired) sub.append(aired);
+  return el('div', { className: 'group-head' },
+    el('a', { href: filter, tabindex: '-1', 'aria-hidden': 'true' }, thumb),
+    el('div', { className: 'video-text' },
+      el('a', { className: 'video-title', href: filter, title: label }, label),
+      sub));
+}
+
+function renderHit(item) {
   const watch = new URL('https://www.youtube.com/watch');
   watch.searchParams.set('v', item.videoId);
   watch.searchParams.set('t', `${Math.floor(item.start)}s`);
-  const label = item.info ? item.info.title : item.videoId;
-  const videoLink = el('a', { className: 'stamp-video', href: `#/timestamps?video=${encodeURIComponent(item.videoId)}`, title: label }, label);
   const time = el('a', { className: 'stamp-time', href: watch.toString(), target: '_blank', rel: 'noopener noreferrer', title: 'Open on YouTube at this time' }, clock(item.start));
-  const channelName = item.info?.channelTitle;
-  const channelLink = channelName
-    ? el('a', { className: 'stamp-channel', href: `#/timestamps?channel=${encodeURIComponent(channelName)}`, title: `Only ${channelName}` }, channelName)
-    : '';
-  const aired = item.info?.publishedAt ? dateOnly.format(new Date(item.info.publishedAt)) : '';
-  const meta = el('div', { className: 'stamp-meta muted' }, videoLink);
-  for (const part of [channelLink, aired]) if (part) meta.append(' · ', part);
-  return el('li', {},
-    time,
-    el('div', { className: 'stamp-body' },
-      el('div', { className: 'stamp-comment' }, item.comment || '(no comment)'),
-      meta));
+  return el('li', {}, time, el('div', { className: 'stamp-body' }, el('div', { className: 'stamp-comment' }, item.comment || '(no comment)')));
+}
+
+// The server returns rows grouped by video, so a new video row starts whenever the video changes.
+// A page can end mid-video; the next one then continues that video's list.
+function addStamps(items, append) {
+  const list = $('timestamp-list');
+  if (!append) {
+    list.replaceChildren();
+    stampList.group = null;
+  }
+  for (const item of items) {
+    if (stampList.group?.videoId !== item.videoId) {
+      const hits = el('ol', { className: 'stamps' });
+      list.append(el('li', { className: 'group' }, renderVideoHead(item), hits));
+      stampList.group = { videoId: item.videoId, hits };
+    }
+    stampList.group.hits.append(renderHit(item));
+  }
 }
 
 async function loadStamps({ append }) {
@@ -287,9 +313,7 @@ async function loadStamps({ append }) {
     $('load-more').disabled = false;
     return;
   }
-  const nodes = data.items.map(renderStamp);
-  if (append) $('timestamp-list').append(...nodes);
-  else $('timestamp-list').replaceChildren(...nodes);
+  addStamps(data.items, append);
   stampList.offset += data.items.length;
   $('results-summary').textContent =
     data.total === 0 ? 'No timestamps found.' : `Showing ${number(stampList.offset)} of ${number(data.total)} timestamp${data.total === 1 ? '' : 's'}`;
