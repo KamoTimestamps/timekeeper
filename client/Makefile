@@ -1,10 +1,14 @@
-.PHONY: build server watch bump install release release-push
+.PHONY: build build-devel server watch bump install release release-push
 
 build:
 	@npm install
 	@npm run build
 	@npm run build:firefox
 	@npm run build:userscript
+
+# Devel-channel userscript only (../timekeeper.devel.user.js); commit it on the devel branch only.
+build-devel:
+	@npm run build:userscript:devel
 
 install:
 	@pnpm install

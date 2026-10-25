@@ -19,7 +19,8 @@ Paths in the rest of this file are relative to `client/` unless noted.
 ## Building
 
 ```
-make build          # Install deps, build for chromium + firefox + userscript
+make build          # Install deps, build for chromium + firefox + userscript (main channel)
+make build-devel    # Build only the devel-channel userscript (../timekeeper.devel.user.js)
 npm run build:userscript  # Build userscript output only (writes ../timekeeper.user.js)
 npm run clean       # Remove dist/
 ```
