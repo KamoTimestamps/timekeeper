@@ -399,6 +399,24 @@ function addStamps(items, append) {
   }
 }
 
+// The thin bar under the search box: how much of the matching list is loaded. Its text form
+// ("Showing 100 of 38,072") lives in the aria-label.
+function showProgress(loaded, total) {
+  const bar = $('list-progress');
+  bar.hidden = total === 0;
+  $('results-summary').textContent = total === 0 ? 'No timestamps found.' : '';
+  const percent = total === 0 ? 0 : Math.min(100, (loaded / total) * 100);
+  bar.firstElementChild.style.width = `${percent}%`;
+  bar.setAttribute('aria-valuenow', String(Math.round(percent)));
+  bar.setAttribute('aria-label', `Showing ${number(loaded)} of ${number(total)} timestamp${total === 1 ? '' : 's'}`);
+  bar.title = bar.getAttribute('aria-label');
+}
+
+// The pinned video header sits just under the pinned search bar, whatever height that has.
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty('--search-bar-height', `${$('search-bar').offsetHeight}px`);
+}).observe($('search-bar'));
+
 async function loadStamps({ append }) {
   const token = ++stampList.token; // a slower, older response must not overwrite a newer search
   if (!append) stampList.offset = 0;
@@ -411,6 +429,7 @@ async function loadStamps({ append }) {
   if (token !== stampList.token) return;
   if (status === 401) return showSignedOut('Your session has ended. Please sign in again.');
   if (!ok) {
+    $('list-progress').hidden = true;
     $('results-summary').textContent = 'Could not load timestamps. Please try again.';
     $('load-more').textContent = 'Try again';
     $('load-more').disabled = false;
@@ -418,8 +437,7 @@ async function loadStamps({ append }) {
   }
   addStamps(data.items, append);
   stampList.offset += data.items.length;
-  $('results-summary').textContent =
-    data.total === 0 ? 'No timestamps found.' : `Showing ${number(stampList.offset)} of ${number(data.total)} timestamp${data.total === 1 ? '' : 's'}`;
+  showProgress(stampList.offset, data.total);
   $('load-more').hidden = stampList.offset >= data.total;
   $('load-more').textContent = 'Load more';
   $('load-more').disabled = false;

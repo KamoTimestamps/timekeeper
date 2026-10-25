@@ -67,9 +67,12 @@
     <section id="timestamps" hidden>
       <section class="card">
         <h2>Timestamps</h2>
-        <form id="search-form" class="search" role="search">
-          <input id="search" type="search" placeholder="Search comments, video titles and channels" maxlength="200" autocomplete="off" aria-label="Search timestamps">
-        </form>
+        <div id="search-bar" class="search-bar">
+          <form id="search-form" class="search" role="search">
+            <input id="search" type="search" placeholder="Search comments, video titles and channels" maxlength="200" autocomplete="off" aria-label="Search timestamps">
+          </form>
+          <div id="list-progress" class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" hidden><div class="progress-fill"></div></div>
+        </div>
         <p id="video-filter" class="muted" hidden>
           Showing one video, in playback order. <a href="#/timestamps" id="clear-video">Show all videos</a>
         </p>
