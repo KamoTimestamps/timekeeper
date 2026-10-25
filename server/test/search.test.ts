@@ -5,9 +5,16 @@ import { likeContains, parseSearch } from '../src/search.ts';
 
 const ORIGIN = testConfig.publicOrigin;
 const COOKIE = '__Host-tk_web';
-const NONE = { title: [], channel: [], date: [], comment: [] }; // no negated terms
+const NONE = { title: [], channel: [], date: [], comment: [], is: [] }; // no negated terms
 
 describe('search query parsing', () => {
+  it('reads is: properties, lowercased, as filters and negations', () => {
+    const parsed = parseSearch('boss is:Members -is:other is:');
+    assert.deepEqual(parsed.words, ['boss']);
+    assert.deepEqual(parsed.is, ['members']);
+    assert.deepEqual(parsed.exclude.is, ['other']);
+  });
+
   it('splits plain words, field terms and quoted phrases', () => {
     assert.deepEqual(parseSearch('boss title:cult channel:"Kanna Yanagi" fight'), {
       words: ['boss', 'fight'],
@@ -15,21 +22,22 @@ describe('search query parsing', () => {
       channel: ['Kanna Yanagi'],
       date: [],
       comment: [],
+      is: [],
       exclude: NONE,
     });
-    assert.deepEqual(parseSearch('TITLE:Lamb Channel:x'), { words: [], title: ['Lamb'], channel: ['x'], date: [], comment: [], exclude: NONE }, 'field names ignore case');
-    assert.deepEqual(parseSearch('title:"Cult of the Lamb"'), { words: [], title: ['Cult of the Lamb'], channel: [], date: [], comment: [], exclude: NONE });
+    assert.deepEqual(parseSearch('TITLE:Lamb Channel:x'), { words: [], title: ['Lamb'], channel: ['x'], date: [], comment: [], is: [], exclude: NONE }, 'field names ignore case');
+    assert.deepEqual(parseSearch('title:"Cult of the Lamb"'), { words: [], title: ['Cult of the Lamb'], channel: [], date: [], comment: [], is: [], exclude: NONE });
   });
 
   it('ignores a field with nothing after it, and unterminated quotes still count', () => {
-    assert.deepEqual(parseSearch('title:'), { words: [], title: [], channel: [], date: [], comment: [], exclude: NONE });
-    assert.deepEqual(parseSearch('boss channel: '), { words: ['boss'], title: [], channel: [], date: [], comment: [], exclude: NONE });
-    assert.deepEqual(parseSearch('title:""'), { words: [], title: [], channel: [], date: [], comment: [], exclude: NONE });
-    assert.deepEqual(parseSearch('title:"half open'), { words: [], title: ['half open'], channel: [], date: [], comment: [], exclude: NONE });
+    assert.deepEqual(parseSearch('title:'), { words: [], title: [], channel: [], date: [], comment: [], is: [], exclude: NONE });
+    assert.deepEqual(parseSearch('boss channel: '), { words: ['boss'], title: [], channel: [], date: [], comment: [], is: [], exclude: NONE });
+    assert.deepEqual(parseSearch('title:""'), { words: [], title: [], channel: [], date: [], comment: [], is: [], exclude: NONE });
+    assert.deepEqual(parseSearch('title:"half open'), { words: [], title: ['half open'], channel: [], date: [], comment: [], is: [], exclude: NONE });
   });
 
   it('only treats the exact field names as fields, and caps the number of terms', () => {
-    assert.deepEqual(parseSearch('video:x mytitle:y'), { words: ['video:x', 'mytitle:y'], title: [], channel: [], date: [], comment: [], exclude: NONE });
+    assert.deepEqual(parseSearch('video:x mytitle:y'), { words: ['video:x', 'mytitle:y'], title: [], channel: [], date: [], comment: [], is: [], exclude: NONE });
     const many = parseSearch(Array.from({ length: 12 }, (_, i) => `w${i}`).join(' '));
     assert.equal(many.words.length, 8);
   });
@@ -41,9 +49,10 @@ describe('search query parsing', () => {
       channel: [],
       date: [],
       comment: [],
-      exclude: { title: ['cult'], channel: ['Kanna Yanagi'], date: ['2026-10'], comment: [] },
+      is: [],
+      exclude: { title: ['cult'], channel: ['Kanna Yanagi'], date: ['2026-10'], comment: [], is: [] },
     });
-    assert.deepEqual(parseSearch('-title: -channel:"" -date:'), { words: [], title: [], channel: [], date: [], comment: [], exclude: NONE }, 'empty negations are ignored');
+    assert.deepEqual(parseSearch('-title: -channel:"" -date:'), { words: [], title: [], channel: [], date: [], comment: [], is: [], exclude: NONE }, 'empty negations are ignored');
     assert.deepEqual(parseSearch('-TITLE:Lamb').exclude.title, ['Lamb'], 'ignores case');
     assert.deepEqual(parseSearch('-video:x').words, ['-video:x'], 'only the real fields');
   });

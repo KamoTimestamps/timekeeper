@@ -736,6 +736,11 @@ export class Store {
     return new Map(rows.map((r) => [r.video_id, r.members_only === 1]));
   }
 
+  /** Whether the user has at least one live (not deleted) timestamp on the video. */
+  hasTimestamps(userId: string, videoId: string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM timestamps WHERE user_id = ? AND video_id = ? AND deleted_at IS NULL LIMIT 1').get(userId, videoId);
+  }
+
   getVideoAccess(videoId: string): { channelId: string; membersOnly: boolean } | null {
     const row = this.db.prepare('SELECT channel_id, members_only FROM video_access WHERE video_id = ?').get(videoId) as
       | { channel_id: string; members_only: number }
@@ -827,6 +832,10 @@ export class Store {
       where.push(`t.comment LIKE ? ESCAPE '\\'`);
       params.push(likeContains(term));
     }
+    // is:members. Only videos a userscript has reported as members-only match; an unreported video isn't known to be.
+    const membersOnly = `EXISTS (SELECT 1 FROM video_access a WHERE a.video_id = t.video_id AND a.members_only = 1)`;
+    if (search.is.includes('members')) where.push(membersOnly);
+    if (search.exclude.is.includes('members')) where.push(`NOT ${membersOnly}`);
     for (const term of search.exclude.comment) {
       where.push(`t.comment NOT LIKE ? ESCAPE '\\'`);
       params.push(likeContains(term));

@@ -65,6 +65,7 @@ The Sync tab stays disabled until both client constants are set.
 | `GET /sync/ws` | first message | WebSocket. Send `{type:"auth", token, deviceId}` within 10 s; the server answers `{type:"ready"}` and then streams `{type:"changes", fromSeq, seq, records}` for pushes from the user's other devices. |
 | `POST /subscriptions/sync` `{accessToken}` | Bearer | Takes a Google OAuth access token with the read-only YouTube scope, lists the account's subscribed channels, replaces the stored list and discards the token. |
 | `GET /videos/:videoId/access` | Bearer | `{known, membersOnly, channelId, subscribed, subscriptionsSyncedAt, canAccess}`. |
+| `POST /videos/access` | Bearer | `{videos: [{videoId, channelId, membersOnly}]}` (up to 50): reports what watch pages showed, for videos the user has timestamps on. |
 
 ## Sync model
 

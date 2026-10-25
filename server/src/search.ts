@@ -1,4 +1,4 @@
-/** The search box's query language: plain words, plus `title:` and `channel:` to look in one field. */
+/** The search box's query language: plain words, plus `title:` and `channel:` to look in one field, and `is:members` to keep only members-only videos. */
 
 export interface ParsedSearch {
   /** Match the comment, the video ID, or the title or channel. */
@@ -11,12 +11,14 @@ export interface ParsedSearch {
   date: string[];
   /** Must be in the timestamp's own comment (a plain word also matches titles, channels and video IDs). */
   comment: string[];
+  /** Video properties (`is:members`), lowercased; a value that isn't a known property is ignored. */
+  is: string[];
   /** The same fields written with a leading minus (`-title:boss`): must NOT match. */
-  exclude: { title: string[]; channel: string[]; date: string[]; comment: string[] };
+  exclude: { title: string[]; channel: string[]; date: string[]; comment: string[]; is: string[] };
 }
 
 /** A value is one word, or a "quoted phrase" (so it can hold spaces): `title:boss`, `channel:"Kanna Yanagi"`. */
-const TOKEN = /(?:(-)?(title|channel|date|comment):)?(?:"([^"]*)"?|([^\s"]+))/gi;
+const TOKEN = /(?:(-)?(title|channel|date|comment|is):)?(?:"([^"]*)"?|([^\s"]+))/gi;
 
 /**
  * Splits a query into what to match where. Every term must match (AND), at most `maxTerms` of them.
@@ -30,18 +32,19 @@ export function parseSearch(query: string, maxTerms = 8): ParsedSearch {
     channel: [],
     date: [],
     comment: [],
-    exclude: { title: [], channel: [], date: [], comment: [] },
+    is: [],
+    exclude: { title: [], channel: [], date: [], comment: [], is: [] },
   };
   let count = 0;
   for (const match of query.matchAll(TOKEN)) {
     if (count >= maxTerms) break;
     const [, minus, field, quoted, bare] = match;
     const value = (quoted ?? bare).trim();
-    if (!value || (!field && /^-?(?:title|channel|date|comment):$/i.test(value))) continue;
+    if (!value || (!field && /^-?(?:title|channel|date|comment|is):$/i.test(value))) continue;
     if (!field) parsed.words.push(value); // a bare -word is just a word
     else {
-      const name = field.toLowerCase() as 'title' | 'channel' | 'date' | 'comment';
-      (minus ? parsed.exclude[name] : parsed[name]).push(value);
+      const name = field.toLowerCase() as 'title' | 'channel' | 'date' | 'comment' | 'is';
+      (minus ? parsed.exclude[name] : parsed[name]).push(name === 'is' ? value.toLowerCase() : value);
     }
     count++;
   }

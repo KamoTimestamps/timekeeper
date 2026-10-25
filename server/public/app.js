@@ -632,7 +632,7 @@ function scheduleSearch() {
 
 // Autocomplete. "title:" and "channel:" search one field (the server parses them); suggestions are
 // those two operators plus titles and channel names from the videos you have timestamps on.
-const SEARCH_OPERATORS = ['title:', 'channel:', 'date:', 'comment:'];
+const SEARCH_OPERATORS = ['title:', 'channel:', 'date:', 'comment:', 'is:members'];
 const suggestions = { items: [], active: -1, request: 0, timer: null };
 
 // The word being typed: everything after the last space that is not inside quotes.

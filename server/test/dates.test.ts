@@ -46,7 +46,8 @@ describe('date terms', () => {
       channel: [],
       date: ['2026-10-01..2026-10-25', '2026'],
       comment: [],
-      exclude: { title: [], channel: [], date: [], comment: [] },
+      is: [],
+      exclude: { title: [], channel: [], date: [], comment: [], is: [] },
     });
     assert.deepEqual(parseSearch('date:').date, []);
   });

@@ -89,6 +89,12 @@ const PullResponseSchema = object<{ records: TimestampRow[]; seq: number; hasMor
   hasMore: boolean(),
 });
 
+const VideoAccessAnswerSchema = object<{ known: boolean; membersOnly: boolean | null; channelId: string | null }>({
+  known: boolean(),
+  membersOnly: nullable(boolean()),
+  channelId: nullable(string()),
+});
+
 const PushResponseSchema = object<{ rejected: TimestampRow[]; fromSeq: number; seq: number }>({
   rejected: TimestampRowSchema.array(),
   fromSeq: number({ int: true, nonnegative: true }),
@@ -676,6 +682,27 @@ const watchPageKey = (page: WatchPageAccess) => `${page.channelId}:${page.member
 /** Remembers what a watch page showed, to be reported with the next push of timestamps for that video. */
 export function noteWatchPage(page: WatchPageAccess) {
   watchPages.set(page.videoId, page);
+  if (!stopped) void reportWatchPage(page);
+}
+
+/**
+ * Reports a watch page's status (members-only true or false; a page that couldn't be read is never
+ * passed in) when the video has timestamps and the server has no status for it or a different one.
+ */
+async function reportWatchPage(page: WatchPageAccess) {
+  const key = watchPageKey(page);
+  if (reportedWatchPages.get(page.videoId) === key) return;
+  try {
+    const stamps = await TimestampModel.loadFromIndexedDB(page.videoId);
+    if (!stamps?.some((t) => !t.deleted_at)) return; // the push of its first timestamp carries the status
+    const known = await apiJson(`/videos/${encodeURIComponent(page.videoId)}/access`, { method: 'GET' }, VideoAccessAnswerSchema);
+    if (!known.known || known.membersOnly !== page.membersOnly || known.channelId !== page.channelId) {
+      await apiJson('/videos/access', { method: 'POST', body: { videos: [page] } }, object<{ ok: boolean }>({ ok: boolean() }));
+    }
+    reportedWatchPages.set(page.videoId, key);
+  } catch (err) {
+    log('Reporting the members-only status failed:', err, 'warn');
+  }
 }
 
 export async function signOutFromSync() {

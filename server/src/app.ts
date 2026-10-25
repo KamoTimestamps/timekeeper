@@ -43,6 +43,7 @@ const VideoAccessReport = z.object({
   channelId: z.string().regex(/^[\w-]{1,64}$/),
   membersOnly: z.boolean(),
 });
+const VideoAccessBody = z.object({ videos: z.array(z.unknown()).max(50) });
 const GoogleLoginBody = z.object({ idToken: z.string().min(1) });
 const RefreshBody = z.object({ refreshToken: z.string().min(1) });
 const PushBody = z.object({
@@ -234,6 +235,27 @@ export async function buildApp({ config, store, verifyGoogle, youtube, subscript
     return videoAccess(req.userId, videoId.data);
   });
 
+  // Saves the reports for videos this user has timestamps on (the latest report wins) and tells the
+  // pages showing a video whose status changed. Entries that don't parse are skipped.
+  const saveVideoReports = (userId: string, entries: unknown[]) => {
+    const changedVideoIds: string[] = [];
+    for (const entry of entries) {
+      const video = VideoAccessReport.safeParse(entry);
+      if (!video.success || !store.hasTimestamps(userId, video.data.videoId)) continue;
+      const before = store.getVideoAccess(video.data.videoId);
+      store.saveVideoAccess(video.data.videoId, video.data.channelId, video.data.membersOnly, Date.now());
+      if (before?.membersOnly !== video.data.membersOnly || before?.channelId !== video.data.channelId) changedVideoIds.push(video.data.videoId);
+    }
+    if (changedVideoIds.length > 0) notifyVideoViewers(changedVideoIds);
+  };
+
+  app.post('/videos/access', { preHandler: authenticate }, async (req, reply) => {
+    const body = VideoAccessBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid_request' });
+    saveVideoReports(req.userId, body.data.videos);
+    return { ok: true };
+  });
+
   // --- sync ---
 
   app.post('/sync/push', { preHandler: authenticate }, async (req, reply) => {
@@ -241,16 +263,7 @@ export async function buildApp({ config, store, verifyGoogle, youtube, subscript
     if (!body.success) return reply.code(400).send({ error: 'invalid_request', detail: z.prettifyError(body.error) });
 
     const result = store.applyPush(req.userId, body.data.deviceId, body.data.records);
-    const pushedVideoIds = new Set(body.data.records.map((r) => r.video_id));
-    const changedVideoIds: string[] = [];
-    for (const entry of body.data.videos ?? []) {
-      const video = VideoAccessReport.safeParse(entry);
-      if (!video.success || !pushedVideoIds.has(video.data.videoId)) continue;
-      const before = store.getVideoAccess(video.data.videoId);
-      store.saveVideoAccess(video.data.videoId, video.data.channelId, video.data.membersOnly, Date.now());
-      if (before?.membersOnly !== video.data.membersOnly || before?.channelId !== video.data.channelId) changedVideoIds.push(video.data.videoId);
-    }
-    if (changedVideoIds.length > 0) notifyVideoViewers(changedVideoIds);
+    saveVideoReports(req.userId, body.data.videos ?? []);
     if (result.accepted.length > 0) {
       hub.notifyOverview(req.userId);
       prefetcher?.enqueue([...new Set(result.accepted.filter((r) => !r.deleted_at).map((r) => r.video_id))]);
