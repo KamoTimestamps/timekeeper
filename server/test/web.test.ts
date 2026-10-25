@@ -284,3 +284,66 @@ describe('landing page video details', () => {
     assert.match(page.headers['content-security-policy'] as string, /img-src [^;]*https:\/\/i\.ytimg\.com/);
   });
 });
+
+describe('overview event stream', () => {
+  let h: TestHarness;
+  let base: string;
+  before(async () => {
+    h = await createHarness();
+    base = await h.app.listen({ host: '127.0.0.1', port: 0 });
+  });
+  after(async () => {
+    await h.app.close();
+  });
+
+  const cookieFor = async (sub: string, email: string) => {
+    const res = await h.app.inject({ method: 'POST', url: '/web/login', headers: { origin: ORIGIN }, payload: { idToken: await h.idToken({ sub, email }) } });
+    return `${COOKIE}=${res.cookies.find((c) => c.name === COOKIE)!.value}`;
+  };
+
+  /** Reads the stream until `text` shows up, or fails after `ms`. */
+  const readUntil = async (reader: ReadableStreamDefaultReader<Uint8Array>, text: string, ms = 3000) => {
+    const decoder = new TextDecoder();
+    let seen = '';
+    const deadline = Date.now() + ms;
+    while (!seen.includes(text)) {
+      const left = deadline - Date.now();
+      if (left <= 0) assert.fail(`no "${text}" in stream; got ${JSON.stringify(seen)}`);
+      const chunk = await Promise.race([reader.read(), new Promise<null>((r) => setTimeout(() => r(null), left))]);
+      if (chunk === null) continue;
+      if (chunk.done) assert.fail(`stream ended before "${text}"; got ${JSON.stringify(seen)}`);
+      seen += decoder.decode(chunk.value);
+    }
+  };
+
+  it('rejects a request without a session', async () => {
+    assert.equal((await fetch(`${base}/web/events`)).status, 401);
+  });
+
+  it('signals when a device pushes, and ends when the page signs out', async () => {
+    const cookie = await cookieFor('ev1', 'ev1@example.com');
+    const res = await fetch(`${base}/web/events`, { headers: { cookie } });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type')!, /text\/event-stream/);
+    const reader = res.body!.getReader();
+    await readUntil(reader, 'retry: 3000');
+
+    const script = await h.login('ev1', 'ev1@example.com');
+    await h.app.inject({ method: 'POST', url: '/sync/push', headers: bearer(script.accessToken), payload: { deviceId: 'd', records: [record('a', 1)] } });
+    await readUntil(reader, 'event: overview');
+
+    await h.app.inject({ method: 'POST', url: '/web/logout', headers: { origin: ORIGIN, cookie } });
+    assert.equal((await reader.read()).done, true);
+  });
+
+  it('only signals the account that changed', async () => {
+    const cookie = await cookieFor('ev2', 'ev2@example.com');
+    const reader = (await fetch(`${base}/web/events`, { headers: { cookie } })).body!.getReader();
+    await readUntil(reader, 'retry: 3000');
+
+    const other = await h.login('ev3', 'ev3@example.com');
+    await h.app.inject({ method: 'POST', url: '/sync/push', headers: bearer(other.accessToken), payload: { deviceId: 'd', records: [record('b', 1)] } });
+    await assert.rejects(readUntil(reader, 'event: overview', 1000), /no "event: overview"/);
+    await reader.cancel();
+  });
+});

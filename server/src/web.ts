@@ -112,6 +112,7 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
       userAgent: req.headers['user-agent']?.slice(0, 300) ?? null,
       client: clientInfo(req, config),
     });
+    hub.notifyOverview(user.id);
     reply.setCookie(cookieName, token, {
       httpOnly: true,
       secure,
@@ -167,9 +168,44 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
     return { total, items: items.map((i) => (info.has(i.videoId) ? { ...i, info: info.get(i.videoId) } : i)) };
   });
 
+  // Server-sent events: a bare "overview" signal whenever this user's counts or sessions change.
+  // It carries no data; the page re-fetches /web/overview, which checks the cookie again.
+  app.get('/web/events', async (req, reply) => {
+    const session = currentSession(req);
+    if (!session) {
+      clearSessionCookie(reply);
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+
+    reply.hijack();
+    const res = reply.raw;
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.write('retry: 3000\n\n');
+
+    const unwatch = hub.watchOverview(session.userId, {
+      sessionId: session.sessionId,
+      signal: () => res.write('event: overview\ndata: {}\n\n'),
+      end: () => res.end(),
+    });
+    // A comment line every so often keeps proxies (Cloudflare drops idle connections after ~100s) from closing it.
+    const keepAlive = setInterval(() => res.write(': ping\n\n'), 25_000);
+    res.on('close', () => {
+      clearInterval(keepAlive);
+      unwatch();
+    });
+  });
+
   app.post('/web/logout', { preHandler: requireSameOrigin }, async (req, reply) => {
     const session = currentSession(req);
-    if (session) store.revokeSession(session.userId, session.sessionId);
+    if (session) {
+      store.revokeSession(session.userId, session.sessionId);
+      hub.closeSessions(session.userId, session.sessionId); // this page's own event stream
+      hub.notifyOverview(session.userId);
+    }
     clearSessionCookie(reply);
     return reply.code(204).send();
   });

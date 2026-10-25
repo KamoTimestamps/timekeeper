@@ -115,6 +115,7 @@ export async function buildApp({ config, store, verifyGoogle, youtube, backfillV
       userAgent: req.headers['user-agent']?.slice(0, 300),
       client: clientInfo(req, config),
     });
+    hub.notifyOverview(user.id);
     return { ...(await issueSession(user, token, sessionId)), isNewUser };
   });
 
@@ -133,6 +134,7 @@ export async function buildApp({ config, store, verifyGoogle, youtube, backfillV
       hub.closeSessions(result.userId, result.sessionId);
     }
     if (result.status !== 'ok') return reply.code(401).send({ error: 'invalid_refresh_token' });
+    hub.notifyOverview(result.user.id);
     return issueSession(result.user, result.refreshToken, result.sessionId);
   });
 
@@ -140,7 +142,10 @@ export async function buildApp({ config, store, verifyGoogle, youtube, backfillV
     const body = RefreshBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid_request' });
     const ended = store.revokeRefreshToken(body.data.refreshToken);
-    if (ended) hub.closeSessions(ended.userId, ended.sessionId);
+    if (ended) {
+      hub.closeSessions(ended.userId, ended.sessionId);
+      hub.notifyOverview(ended.userId);
+    }
     return reply.code(204).send();
   });
 
@@ -157,6 +162,7 @@ export async function buildApp({ config, store, verifyGoogle, youtube, backfillV
 
     const result = store.applyPush(req.userId, body.data.deviceId, body.data.records);
     if (result.accepted.length > 0) {
+      hub.notifyOverview(req.userId);
       prefetcher?.enqueue([...new Set(result.accepted.filter((r) => !r.deleted_at).map((r) => r.video_id))]);
       hub.broadcast(req.userId, body.data.deviceId, {
         type: 'changes',

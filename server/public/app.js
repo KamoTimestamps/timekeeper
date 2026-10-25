@@ -156,8 +156,86 @@ async function loadOverview() {
   renderTiles(data.stats);
   renderTopVideos(data.stats.topVideos);
   renderSessions(data.sessions);
+  overviewLive.latest = data;
+  overviewLive.topVideos = JSON.stringify(data.stats.topVideos);
   route();
+  watchOverview();
 }
+
+// Live updates: the server keeps an event stream open and sends a bare "overview" signal when this
+// account's counts or sessions change. The data itself is re-fetched, so the stream carries nothing
+// private. A failed fetch keeps what is shown; only a 401 signs out.
+const overviewLive = { source: null, retry: null, busy: false, again: false, stale: false, latest: null, topVideos: '' };
+
+function applyOverview(data) {
+  overviewLive.latest = data;
+  renderTiles(data.stats);
+  renderSessions(data.sessions);
+  // Re-rendering would reload every thumbnail, so only touch the list when it changed.
+  const topVideos = JSON.stringify(data.stats.topVideos);
+  if (topVideos !== overviewLive.topVideos) {
+    overviewLive.topVideos = topVideos;
+    renderTopVideos(data.stats.topVideos);
+  }
+}
+
+async function refreshOverview() {
+  // Not on screen: remember to catch up when it is.
+  if ($('dashboard').hidden || document.hidden) {
+    overviewLive.stale = true;
+    return;
+  }
+  if (overviewLive.busy) {
+    overviewLive.again = true; // a signal arrived mid-fetch, so that response may already be out of date
+    return;
+  }
+  overviewLive.busy = true;
+  overviewLive.stale = false;
+  try {
+    do {
+      overviewLive.again = false;
+      const { ok, status, data } = await api('/web/overview');
+      if (status === 401) return showSignedOut('Your session has ended. Please sign in again.');
+      if (ok && !$('dashboard').hidden) applyOverview(data);
+    } while (overviewLive.again);
+  } catch {
+    // Offline or the server restarting: the stream's reconnect fetches again.
+  } finally {
+    overviewLive.busy = false;
+  }
+}
+
+function watchOverview() {
+  if (overviewLive.source) return;
+  const source = new EventSource('/web/events');
+  overviewLive.source = source;
+  source.addEventListener('overview', refreshOverview);
+  // Also on the first open, and on every automatic reconnect: signals sent while it was down are gone.
+  source.addEventListener('open', refreshOverview);
+  source.addEventListener('error', () => {
+    if (source.readyState !== EventSource.CLOSED) return; // still reconnecting by itself
+    overviewLive.source = null; // refused (e.g. 401 or a proxy error), which the browser won't retry
+    overviewLive.retry = setTimeout(watchOverview, 5000);
+    refreshOverview(); // a 401 here signs the page out
+  });
+}
+
+function stopWatchingOverview() {
+  clearTimeout(overviewLive.retry);
+  overviewLive.source?.close();
+  overviewLive.source = null;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (overviewLive.stale) refreshOverview();
+});
+// Relative times ("5 minutes ago") keep moving between signals.
+setInterval(() => {
+  if (overviewLive.latest && !$('dashboard').hidden && !document.hidden) {
+    renderTiles(overviewLive.latest.stats);
+    renderSessions(overviewLive.latest.sessions);
+  }
+}, 30_000);
 
 // --- timestamps browser ---
 
@@ -251,7 +329,11 @@ $('load-more').addEventListener('click', () => loadStamps({ append: true }));
 // video or channel; anything else is the overview.
 function route() {
   const [path, queryString = ''] = location.hash.slice(1).split('?');
-  if (path !== '/timestamps') return show('dashboard');
+  if (path !== '/timestamps') {
+    show('dashboard');
+    if (overviewLive.stale) refreshOverview(); // signals arrived while another view was open
+    return;
+  }
   const hashParams = new URLSearchParams(queryString);
   stampList.video = hashParams.get('video') || '';
   stampList.channel = hashParams.get('channel') || '';
@@ -292,6 +374,7 @@ async function onCredential({ credential }) {
 }
 
 async function showSignedOut(notice) {
+  stopWatchingOverview();
   show('signed-out');
   $('notice').textContent = notice || '';
   $('notice').hidden = !notice;
