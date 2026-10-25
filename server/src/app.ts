@@ -7,6 +7,7 @@ import type { Config } from './config.ts';
 import type { GoogleVerifier } from './google.ts';
 import { Hub } from './hub.ts';
 import { Store, type User } from './store.ts';
+import { createSubscriptionsClient, SubscriptionsAuthError, type SubscriptionsLookup } from './subscriptions.ts';
 import { signAccessToken, verifyAccessToken } from './tokens.ts';
 import { createVideoPrefetcher, VIDEO_INFO_TTL_MS, type VideoLookup } from './youtube.ts';
 import { registerWeb } from './web.ts';
@@ -16,6 +17,8 @@ export interface AppDeps {
   store: Store;
   verifyGoogle: GoogleVerifier;
   youtube?: VideoLookup;
+  /** Lists a Google account's subscribed channels; defaults to the real YouTube Data API. */
+  subscriptions?: SubscriptionsLookup;
   /** Also look up videos that are already synced but were never cached (once, at startup). */
   backfillVideoInfo?: boolean;
 }
@@ -43,6 +46,13 @@ const PullQuery = z.object({
   since: z.coerce.number().int().nonnegative().default(0),
   limit: z.coerce.number().int().positive().max(MAX_PULL_LIMIT).default(MAX_PULL_LIMIT),
 });
+const SubscriptionsSyncBody = z.object({ accessToken: z.string().min(1).max(4096) });
+const VideoIdParam = z.string().regex(/^[\w-]{1,64}$/);
+const VideoAccessReport = z.object({
+  videoId: VideoIdParam,
+  channelId: z.string().regex(/^[\w-]{1,64}$/),
+  membersOnly: z.boolean(),
+});
 const WsAuthMessage = z.object({
   type: z.literal('auth'),
   token: z.string().min(1),
@@ -55,7 +65,7 @@ declare module 'fastify' {
   }
 }
 
-export async function buildApp({ config, store, verifyGoogle, youtube, backfillVideoInfo }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, store, verifyGoogle, youtube, subscriptions = createSubscriptionsClient(), backfillVideoInfo }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: process.env.NODE_ENV !== 'test', bodyLimit: 5 * 1024 * 1024 });
   const hub = new Hub();
 
@@ -158,6 +168,66 @@ export async function buildApp({ config, store, verifyGoogle, youtube, backfillV
   app.get('/me', { preHandler: authenticate }, async (req, reply) => {
     const user = store.getUser(req.userId);
     return user ?? reply.code(401).send({ error: 'unauthorized' });
+  });
+
+  // --- members-only access ---
+
+  /**
+   * Whether this user can see a video, by the rule "a members-only video is open to subscribers of
+   * its channel". `canAccess` is null while either half is unknown: no userscript has reported the
+   * video yet, or the user hasn't shared their subscriptions. Subscribing is not paying for a
+   * membership, so this is a stand-in until a real membership signal exists.
+   */
+  const videoAccess = (userId: string, videoId: string) => {
+    const video = store.getVideoAccess(videoId);
+    if (!video) {
+      return { videoId, known: false, membersOnly: null, channelId: null, subscribed: null, subscriptionsSyncedAt: null, canAccess: null };
+    }
+    const { syncedAt, subscribed } = store.getSubscriptionState(userId, video.channelId);
+    const subscribedKnown = syncedAt !== null;
+    return {
+      videoId,
+      known: true,
+      membersOnly: video.membersOnly,
+      channelId: video.channelId,
+      subscribed: subscribedKnown ? subscribed : null,
+      subscriptionsSyncedAt: syncedAt,
+      canAccess: !video.membersOnly ? true : subscribedKnown ? subscribed : null,
+    };
+  };
+
+  // The userscript runs the OAuth flow for the read-only YouTube scope and hands over the resulting
+  // access token once. It is used for this one listing and never stored.
+  app.post('/subscriptions/sync', { preHandler: authenticate }, async (req, reply) => {
+    const body = SubscriptionsSyncBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid_request' });
+
+    let channelIds: string[];
+    try {
+      channelIds = await subscriptions(body.data.accessToken);
+    } catch (err) {
+      if (err instanceof SubscriptionsAuthError) return reply.code(400).send({ error: 'invalid_youtube_token' });
+      req.log.warn({ err: (err as Error).message }, 'subscriptions lookup failed');
+      return reply.code(502).send({ error: 'youtube_unavailable' });
+    }
+    const syncedAt = Date.now();
+    store.replaceSubscriptions(req.userId, channelIds, syncedAt);
+    return { count: channelIds.length, syncedAt };
+  });
+
+  // Members-only status isn't in the YouTube Data API, so the userscript reports what the watch page
+  // shows. Any signed-in user can report, and the latest report wins; nothing is enforced on it yet.
+  app.post('/videos/access', { preHandler: authenticate }, async (req, reply) => {
+    const body = VideoAccessReport.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid_request' });
+    store.saveVideoAccess(body.data.videoId, body.data.channelId, body.data.membersOnly, Date.now());
+    return videoAccess(req.userId, body.data.videoId);
+  });
+
+  app.get('/videos/:videoId/access', { preHandler: authenticate }, async (req, reply) => {
+    const videoId = VideoIdParam.safeParse((req.params as { videoId: string }).videoId);
+    if (!videoId.success) return reply.code(400).send({ error: 'invalid_request' });
+    return videoAccess(req.userId, videoId.data);
   });
 
   // --- sync ---

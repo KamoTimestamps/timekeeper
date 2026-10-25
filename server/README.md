@@ -63,6 +63,9 @@ The Sync tab stays disabled until both client constants are set.
 | `POST /sync/push` `{deviceId, records}` | Bearer | Up to 500 records. Returns `rejected` (server copies that won) and the accepted seq range. |
 | `GET /sync/pull?since=&limit=` | Bearer | Records changed after server seq `since`, plus the next cursor. |
 | `GET /sync/ws` | first message | WebSocket. Send `{type:"auth", token, deviceId}` within 10 s; the server answers `{type:"ready"}` and then streams `{type:"changes", fromSeq, seq, records}` for pushes from the user's other devices. |
+| `POST /subscriptions/sync` `{accessToken}` | Bearer | Takes a Google OAuth access token with the read-only YouTube scope, lists the account's subscribed channels, replaces the stored list and discards the token. |
+| `POST /videos/access` `{videoId, channelId, membersOnly}` | Bearer | The userscript reports what the watch page shows; answers like the route below. |
+| `GET /videos/:videoId/access` | Bearer | `{known, membersOnly, channelId, subscribed, subscriptionsSyncedAt, canAccess}`. |
 
 ## Sync model
 
@@ -71,6 +74,20 @@ Records use the userscript's own shape (`guid`, `video_id`, `start`, `comment`, 
 and deletions are soft (`deleted_at`) so they propagate. Every accepted change gets the next
 per-user `seq`, which clients use as a pull cursor. The seqs of one push are contiguous, so a
 client that receives `changes` with `fromSeq` at or below its cursor knows it missed nothing.
+
+## Members-only access
+
+Whether an account can view or add to a video's timestamps is answered, not yet enforced. The YouTube
+Data API doesn't say if a video is members-only, so the userscript reads the "Members only" badge from
+the watch page and reports it with the channel ID. Subscriptions come from **Settings → Sync → Share
+Subscriptions**, which asks for the read-only YouTube scope and sends the one-off token to
+`/subscriptions/sync`. The rule is: a members-only video is open to subscribers of its channel;
+`canAccess` is `null` while the video is unreported or the user hasn't shared their subscriptions.
+Subscribing isn't paying for a membership, and any signed-in user can report a video's status (the
+latest report wins), so treat the answer as a stand-in before enforcing anything on it.
+
+The OAuth client needs the `youtube.readonly` scope on its consent screen, and the **YouTube Data API
+v3** enabled in the same project.
 
 ## Landing page
 
