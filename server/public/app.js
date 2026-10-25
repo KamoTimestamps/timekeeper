@@ -400,18 +400,37 @@ function addStamps(items, append) {
   }
 }
 
-// The thin bar under the search box: how much of the matching list is loaded. Its text form
-// ("Showing 100 of 38,072") lives in the aria-label.
+// The thin bar under the search box: where the bottom of the window is in the whole matching list.
+// Only part of the list is loaded, so the rest is estimated from the average height of what is, which
+// makes a new page refine the estimate instead of moving the bar. Its text form ("Showing 100 of
+// 38,072") lives in the aria-label.
 function showProgress(loaded, total) {
   const bar = $('list-progress');
   bar.hidden = total === 0;
   $('results-summary').textContent = total === 0 ? 'No timestamps found.' : '';
-  const percent = total === 0 ? 0 : Math.min(100, (loaded / total) * 100);
-  bar.firstElementChild.style.width = `${percent}%`;
-  bar.setAttribute('aria-valuenow', String(Math.round(percent)));
   bar.setAttribute('aria-label', `Showing ${number(loaded)} of ${number(total)} timestamp${total === 1 ? '' : 's'}`);
   bar.title = bar.getAttribute('aria-label');
+  paintProgress();
 }
+
+function paintProgress() {
+  const bar = $('list-progress');
+  if (bar.hidden) return;
+  const { loaded, total } = stampList;
+  const list = $('timestamp-list').getBoundingClientRect();
+  const seen = Math.min(Math.max(window.innerHeight - list.top, 0), list.height);
+  const estimated = loaded > 0 ? list.height * (Math.max(total, loaded) / loaded) : 0;
+  const percent = estimated > 0 ? Math.min(100, (seen / estimated) * 100) : 0;
+  bar.firstElementChild.style.width = `${percent}%`;
+  bar.setAttribute('aria-valuenow', String(Math.round(percent)));
+}
+
+let progressFrame = 0;
+const schedulePaint = () => {
+  if (!progressFrame) progressFrame = requestAnimationFrame(() => ((progressFrame = 0), paintProgress()));
+};
+window.addEventListener('scroll', schedulePaint, { passive: true });
+window.addEventListener('resize', schedulePaint);
 
 // The pinned video header sits just under the pinned search bar, whatever height that has.
 new ResizeObserver(() => {
