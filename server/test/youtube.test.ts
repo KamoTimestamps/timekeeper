@@ -19,7 +19,7 @@ describe('YouTube client', () => {
         items: [
           { id: 'a', snippet: { title: 'Hello', channelTitle: 'Chan', publishedAt: '2026-01-01T00:00:00Z', thumbnails: { default: { url: 'd' }, medium: { url: 'm' } } }, contentDetails: { duration: 'PT4H10M11S' } },
           { id: 'b', snippet: { title: 'No thumbs' } },
-          { id: 'live', snippet: { title: 'Live now' }, contentDetails: { duration: 'P0D' } },
+          { id: 'live', snippet: { title: 'Live now', publishedAt: '2026-10-24T21:56:35Z' }, contentDetails: { duration: 'P0D' }, liveStreamingDetails: { actualStartTime: '2026-10-25T17:46:02Z' } },
         ],
       });
     }) as unknown as typeof fetch;
@@ -27,12 +27,13 @@ describe('YouTube client', () => {
     const found = await createYouTubeClient('secret', fakeFetch)(['a', 'b', 'gone']);
 
     assert.equal(seen?.url.searchParams.get('id'), 'a,b,gone');
-    assert.equal(seen?.url.searchParams.get('part'), 'snippet,contentDetails');
+    assert.equal(seen?.url.searchParams.get('part'), 'snippet,contentDetails,liveStreamingDetails');
     assert.equal(seen?.headers['x-goog-api-key'], 'secret');
     assert.ok(!seen?.url.href.includes('secret'), 'key must not be in the URL');
     assert.deepEqual(found.get('a'), { title: 'Hello', channelTitle: 'Chan', thumbnailUrl: 'm', publishedAt: '2026-01-01T00:00:00Z', durationSeconds: 15011 });
     assert.deepEqual(found.get('b'), { title: 'No thumbs', channelTitle: '', thumbnailUrl: null, publishedAt: null, durationSeconds: null });
     assert.equal(found.get('live')?.durationSeconds, null, 'a live video has no length yet');
+    assert.equal(found.get('live')?.publishedAt, '2026-10-25T17:46:02Z', 'a stream is dated by when it went live, not when it was created');
     assert.equal(found.has('gone'), false);
   });
 

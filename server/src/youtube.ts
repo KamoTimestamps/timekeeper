@@ -21,6 +21,8 @@ interface VideosResponse {
       thumbnails?: Record<string, { url?: string } | undefined>;
     };
     contentDetails?: { duration?: string };
+    /** Present for streams and premieres, live or past. */
+    liveStreamingDetails?: { actualStartTime?: string };
   }>;
 }
 
@@ -37,9 +39,12 @@ export function parseIsoDuration(value: string | undefined): number | null {
 export function createYouTubeClient(apiKey: string, fetchFn: typeof fetch = fetch): VideoLookup {
   return async (videoIds) => {
     const url = new URL(VIDEOS_URL);
-    url.searchParams.set('part', 'snippet,contentDetails');
+    url.searchParams.set('part', 'snippet,contentDetails,liveStreamingDetails');
     url.searchParams.set('id', videoIds.join(','));
-    url.searchParams.set('fields', 'items(id,snippet(title,channelTitle,publishedAt,thumbnails),contentDetails(duration))');
+    url.searchParams.set(
+      'fields',
+      'items(id,snippet(title,channelTitle,publishedAt,thumbnails),contentDetails(duration),liveStreamingDetails(actualStartTime))',
+    );
 
     const res = await fetchFn(url, { headers: { 'x-goog-api-key': apiKey }, signal: AbortSignal.timeout(5000) });
     if (!res.ok) throw new Error(`YouTube API responded ${res.status}`);
@@ -52,7 +57,8 @@ export function createYouTubeClient(apiKey: string, fetchFn: typeof fetch = fetc
         title: item.snippet.title,
         channelTitle: item.snippet.channelTitle ?? '',
         thumbnailUrl: item.snippet.thumbnails?.medium?.url ?? item.snippet.thumbnails?.default?.url ?? null,
-        publishedAt: item.snippet.publishedAt ?? null,
+        // A stream's publishedAt is when the broadcast was created, often days before it aired.
+        publishedAt: item.liveStreamingDetails?.actualStartTime ?? item.snippet.publishedAt ?? null,
         durationSeconds: parseIsoDuration(item.contentDetails?.duration),
       });
     }
