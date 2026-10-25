@@ -25,6 +25,7 @@ import {
 import { setIconLabel } from './icons';
 import * as AppState from './services/state';
 import * as TimestampModel from './timestamp-model';
+import type { WatchPageAccess } from './members-only';
 
 // ============================================================================
 // Configuration
@@ -40,6 +41,8 @@ const SYNC_GOOGLE_CLIENT_ID = typeof __SYNC_GOOGLE_CLIENT_ID__ === 'string' ? __
 const GOOGLE_REDIRECT_URI = 'https://www.youtube.com/';
 const OAUTH_STATE = 'timekeeper_sync_auth';
 const OAUTH_CHANNEL = 'timekeeper_sync_oauth';
+const SUBSCRIPTIONS_STATE_PREFIX = 'timekeeper_sync_subs:';
+const YOUTUBE_READONLY_SCOPE = 'https://www.googleapis.com/auth/youtube.readonly';
 
 const SETTINGS_AUTH_KEY = 'syncAuthState';
 const SETTINGS_CURSORS_KEY = 'syncCursors';
@@ -104,9 +107,17 @@ const ServerMessageSchema = object<{
   records: optional(TimestampRowSchema.array()),
 });
 
-const OAuthMessageSchema = object<{ type: string; idToken: string | undefined; error: string | undefined }>({
+const OAuthMessageSchema = object<{
+  type: string;
+  idToken: string | undefined;
+  accessToken: string | undefined;
+  state: string | undefined;
+  error: string | undefined;
+}>({
   type: string(),
   idToken: optional(string()),
+  accessToken: optional(string()),
+  state: optional(string()),
   error: optional(string()),
 });
 
@@ -142,6 +153,8 @@ let syncing = false;
 let lastSyncedAt: number | null = null;
 /** Local rows the server refuses outright (e.g. oversized); skipped so they can't block the rest. */
 const skippedGuids = new Set<string>();
+let subscriptionsInFlight = false;
+let currentVideoAccess: { videoId: string; access: VideoAccess } | null = null;
 
 let stopped = true;
 let socket: WebSocket | null = null;
@@ -500,6 +513,34 @@ function waitForIdToken(channel: BroadcastChannel, popup: Window, nonce: string)
   });
 }
 
+/** Resolves with the Google access token whose state matches ours; ignores anything else on the channel. */
+function waitForAccessToken(channel: BroadcastChannel, popup: Window, state: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const finish = () => {
+      clearTimeout(timeout);
+      channel.close();
+      try { popup.close(); } catch { /* popup already gone */ }
+    };
+    const timeout = setTimeout(() => {
+      finish();
+      reject(new Error('Google sign-in timed out'));
+    }, SIGN_IN_TIMEOUT_MS);
+
+    channel.onmessage = (event) => {
+      const parsed = OAuthMessageSchema.safeParse(event.data);
+      if (!parsed.success || parsed.data.state !== state) return;
+
+      if (parsed.data.type === 'timekeeper_sync_oauth_error') {
+        finish();
+        reject(new Error(parsed.data.error || 'Google authorization failed'));
+      } else if (parsed.data.type === 'timekeeper_sync_oauth_access' && parsed.data.accessToken) {
+        finish();
+        resolve(parsed.data.accessToken);
+      }
+    };
+  });
+}
+
 /**
  * Runs in the OAuth popup after Google redirects back to youtube.com with the ID token in the
  * URL fragment. Hands the token to the opener tab over a BroadcastChannel and closes the popup.
@@ -510,18 +551,23 @@ export function handleSyncOAuthRedirect(): boolean {
   const hash = window.location.hash;
   if (!hash || hash.length <= 1) return false;
   const params = new URLSearchParams(hash.substring(1));
-  if (params.get('state') !== OAUTH_STATE) return false;
+  const state = params.get('state') ?? '';
+  const isSubscriptionsFlow = state.startsWith(SUBSCRIPTIONS_STATE_PREFIX);
+  if (state !== OAUTH_STATE && !isSubscriptionsFlow) return false;
 
   const idToken = params.get('id_token');
+  const accessToken = params.get('access_token');
   const error = params.get('error_description') || params.get('error');
-  if (!idToken && !error) return false;
+  if (!idToken && !accessToken && !error) return false;
 
   try {
     const channel = new BroadcastChannel(OAUTH_CHANNEL);
     channel.postMessage(
-      idToken
-        ? { type: 'timekeeper_sync_oauth_token', idToken }
-        : { type: 'timekeeper_sync_oauth_error', error },
+      error
+        ? { type: 'timekeeper_sync_oauth_error', error, state }
+        : isSubscriptionsFlow
+          ? { type: 'timekeeper_sync_oauth_access', accessToken, state }
+          : { type: 'timekeeper_sync_oauth_token', idToken },
     );
     channel.close();
   } catch (err) {
@@ -582,6 +628,76 @@ export async function signInToSync() {
   } finally {
     signInInFlight = false;
   }
+}
+
+/**
+ * Asks Google for read-only access to the user's YouTube subscriptions and hands the one-off access
+ * token to the sync server, which lists them and discards it. They decide which members-only
+ * videos the account counts as having access to.
+ */
+export async function shareSubscriptions(): Promise<void> {
+  const auth = getSyncAuthState();
+  if (!auth.isSignedIn || subscriptionsInFlight) return;
+  subscriptionsInFlight = true;
+
+  const state = SUBSCRIPTIONS_STATE_PREFIX + crypto.randomUUID();
+  const channel = new BroadcastChannel(OAUTH_CHANNEL);
+  try {
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.set('client_id', SYNC_GOOGLE_CLIENT_ID);
+    authUrl.searchParams.set('redirect_uri', GOOGLE_REDIRECT_URI);
+    authUrl.searchParams.set('response_type', 'token');
+    authUrl.searchParams.set('scope', YOUTUBE_READONLY_SCOPE);
+    authUrl.searchParams.set('state', state);
+    if (auth.email) authUrl.searchParams.set('login_hint', auth.email);
+
+    const popup = window.open(authUrl.toString(), 'TimekeeperSyncAuth', 'width=500,height=600,menubar=no,toolbar=no,location=no');
+    if (!popup) throw new Error('Popup blocked. Please enable popups for YouTube.');
+
+    const accessToken = await waitForAccessToken(channel, popup, state);
+    const res = await apiFetch('/subscriptions/sync', { method: 'POST', body: { accessToken } });
+    if (!res.ok) throw new HttpError(res.status, `Sharing subscriptions failed (HTTP ${res.status})`);
+    const { count } = (await res.json()) as { count: number };
+    log(`Shared ${count} YouTube subscriptions with Timekeeper Sync`);
+    currentVideoAccess = null; // stale until the next page report is evaluated with the new subscriptions
+  } catch (err) {
+    channel.close();
+    log('Sharing YouTube subscriptions failed:', err, 'error');
+    throw err;
+  } finally {
+    subscriptionsInFlight = false;
+  }
+}
+
+export interface VideoAccess {
+  membersOnly: boolean | null;
+  /** True/false once subscriptions are shared; null while unknown. */
+  subscribed: boolean | null;
+  /** Whether this account can see the video's timestamps; null while unknown. */
+  canAccess: boolean | null;
+}
+
+/**
+ * Tells the server what the watch page shows (channel, members-only) and returns whether the signed-in
+ * user can access the video. Null when signed out or the server can't be reached.
+ */
+export async function reportWatchPageAccess(page: WatchPageAccess): Promise<VideoAccess | null> {
+  if (!getSyncAuthState().isSignedIn) return null;
+  try {
+    const res = await apiFetch('/videos/access', { method: 'POST', body: page });
+    if (!res.ok) return null;
+    const body = (await res.json()) as VideoAccess;
+    currentVideoAccess = { videoId: page.videoId, access: body };
+    return body;
+  } catch (err) {
+    log('Reporting video access failed:', err, 'warn');
+    return null;
+  }
+}
+
+/** The most recent answer from reportWatchPageAccess, for the video it was about. */
+export function getVideoAccess(videoId: string): VideoAccess | null {
+  return currentVideoAccess?.videoId === videoId ? currentVideoAccess.access : null;
 }
 
 export async function signOutFromSync() {

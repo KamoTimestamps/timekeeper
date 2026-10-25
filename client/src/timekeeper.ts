@@ -15,6 +15,9 @@ import * as TimestampModel from "./timestamp-model";
 import * as TimestampView from "./timestamp-view";
 import * as AppState from "./services/state";
 import { initializeDvrEnablement } from "./dvr-enablement";
+import { readWatchPageAccess } from "./members-only";
+
+declare const unsafeWindow: Window | undefined;
 import { initializeChatHandleCleanup, isLiveChatFrame } from "./chat-handles";
 
 function getExtensionStorageValue<T = unknown>(
@@ -4291,6 +4294,18 @@ if (!isLiveChatFrame()) {
           () => SyncClient.syncNow(),
           "refresh",
         );
+        const shareSubscriptionsButton = createButton(
+          "Share Subscriptions",
+          "Let Timekeeper Sync read which channels you subscribe to (read-only), to work out which members-only videos you can access",
+          async () => {
+            try {
+              await SyncClient.shareSubscriptions();
+            } catch {
+              // Already logged; the popup being closed or denied is not worth an alert.
+            }
+          },
+          "users",
+        );
         const refreshSyncButtons = () => {
           const signedIn = SyncClient.getSyncAuthState().isSignedIn;
           setIconLabel(
@@ -4306,11 +4321,13 @@ if (!isLiveChatFrame()) {
           );
           syncSignButton.disabled = !signedIn && !SyncClient.isSyncConfigured();
           syncNowButton.disabled = !signedIn;
+          shareSubscriptionsButton.disabled = !signedIn;
         };
         SyncClient.setSyncUiRefresher(refreshSyncButtons);
 
         syncSection.appendChild(syncSignButton);
         syncSection.appendChild(syncNowButton);
+        syncSection.appendChild(shareSubscriptionsButton);
 
         const syncInfoContainer = document.createElement("div");
         syncInfoContainer.style.marginTop = "15px";
@@ -5689,9 +5706,23 @@ if (!isLiveChatFrame()) {
     }
   });
 
+  // Tell the sync server whether this video is members-only; it answers whether the account can access it.
+  function reportWatchPageAccess(navigation: any) {
+    const pageWindow: any = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+    const page = readWatchPageAccess(
+      navigation?.response ?? pageWindow.ytInitialData,
+      navigation?.playerResponse ?? pageWindow.ytInitialPlayerResponse,
+    );
+    if (!page) return;
+    void SyncClient.reportWatchPageAccess(page).then((access) => {
+      if (access) log(`Video ${page.videoId}: members-only=${access.membersOnly}, can access=${access.canAccess}`);
+    });
+  }
+
   // Listen for navigation completion and load timestamps when navigation finishes
-  window.addEventListener("yt-navigate-finish", () => {
+  window.addEventListener("yt-navigate-finish", (event) => {
     log("Navigation finished (yt-navigate-finish event fired)");
+    reportWatchPageAccess((event as CustomEvent).detail?.response);
     // Only handle if the URL changed since last handled
     if (window.location.href !== lastHandledUrl) {
       handleUrlChange();
