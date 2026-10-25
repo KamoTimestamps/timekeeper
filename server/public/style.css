@@ -133,8 +133,6 @@ button:disabled { opacity: 0.6; cursor: default; }
 .tile .value.small { font-size: 18px; padding-top: 7px; }
 .tile .label { color: var(--muted); font-size: 13px; }
 
-.grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 0 16px; }
-@media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
 
 .videos { list-style: none; margin: 0; padding: 0; }
 .videos li {

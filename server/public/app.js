@@ -23,9 +23,11 @@ function show(view) {
   $('display-name').hidden = view !== 'display-name';
   $('dashboard').hidden = view !== 'dashboard';
   $('timestamps').hidden = view !== 'timestamps';
-  $('account').hidden = !['dashboard', 'timestamps', 'display-name'].includes(view);
+  $('account-page').hidden = view !== 'account';
+  $('account').hidden = !['dashboard', 'timestamps', 'account', 'display-name'].includes(view);
   $('nav-overview').classList.toggle('active', view === 'dashboard');
   $('nav-timestamps').classList.toggle('active', view === 'timestamps');
+  $('nav-account').classList.toggle('active', view === 'account');
 }
 
 function el(tag, props = {}, ...children) {
@@ -245,9 +247,12 @@ function applyOverview(data) {
   }
 }
 
+// The overview data (counts, account, sessions) feeds two pages; it only needs refreshing while one is on screen.
+const overviewShowing = () => !$('dashboard').hidden || !$('account-page').hidden;
+
 async function refreshOverview() {
   // Not on screen: remember to catch up when it is.
-  if ($('dashboard').hidden || document.hidden) {
+  if (!overviewShowing() || document.hidden) {
     overviewLive.stale = true;
     return;
   }
@@ -262,7 +267,7 @@ async function refreshOverview() {
       overviewLive.again = false;
       const { ok, status, data } = await api('/web/overview');
       if (status === 401) return showSignedOut('Your session has ended. Please sign in again.');
-      if (ok && !$('dashboard').hidden) applyOverview(data);
+      if (ok && overviewShowing()) applyOverview(data);
     } while (overviewLive.again);
   } catch {
     // Offline or the server restarting: the stream's reconnect fetches again.
@@ -297,7 +302,7 @@ document.addEventListener('visibilitychange', () => {
 });
 // Relative times ("5 minutes ago") keep moving between signals.
 setInterval(() => {
-  if (overviewLive.latest && !$('dashboard').hidden && !document.hidden) {
+  if (overviewLive.latest && overviewShowing() && !document.hidden) {
     renderTiles(overviewLive.latest.stats);
     renderSessions(overviewLive.latest.sessions);
   }
@@ -565,6 +570,11 @@ $('load-more').addEventListener('click', () => loadStamps({ append: true }));
 function route() {
   if (needsDisplayName) return openDisplayNameForm({ required: true });
   const [path, queryString = ''] = location.hash.slice(1).split('?');
+  if (path === '/account') {
+    show('account');
+    if (overviewLive.stale) refreshOverview(); // signals arrived while another view was open
+    return;
+  }
   if (path !== '/timestamps') {
     show('dashboard');
     if (overviewLive.stale) refreshOverview(); // signals arrived while another view was open

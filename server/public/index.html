@@ -15,6 +15,7 @@
       <nav class="nav">
         <a id="nav-overview" href="#/">Overview</a>
         <a id="nav-timestamps" href="#/timestamps">Timestamps</a>
+        <a id="nav-account" href="#/account">Account</a>
       </nav>
       <span id="account-email"></span>
       <button id="signout" class="ghost" type="button">Sign out</button>
@@ -47,17 +48,18 @@
     <section id="dashboard" hidden>
       <div id="tiles" class="tiles"></div>
 
-      <div class="grid">
-        <section class="card">
-          <h2>Most-annotated videos</h2>
-          <ol id="top-videos" class="videos"></ol>
-          <p id="no-videos" class="muted" hidden>No timestamps synced yet.</p>
-        </section>
-        <section class="card">
-          <h2>Account</h2>
-          <dl id="account-details"></dl>
-        </section>
-      </div>
+      <section class="card">
+        <h2>Most-annotated videos</h2>
+        <ol id="top-videos" class="videos"></ol>
+        <p id="no-videos" class="muted" hidden>No timestamps synced yet.</p>
+      </section>
+    </section>
+
+    <section id="account-page" hidden>
+      <section class="card">
+        <h2>Account</h2>
+        <dl id="account-details"></dl>
+      </section>
 
       <section class="card">
         <div class="card-head">
