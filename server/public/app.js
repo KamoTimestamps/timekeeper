@@ -563,10 +563,25 @@ const loadMoreObserver = new IntersectionObserver(
 
 let searchTimer = null;
 
+// Keeps the search in the address ("#/timestamps?q=title%3Alamb"), next to any video or channel
+// filter, so a search can be bookmarked or shared. Replaced rather than pushed: a history entry per
+// keystroke would make Back useless.
+function syncSearchToUrl() {
+  const [path, queryString = ''] = location.hash.slice(1).split('?');
+  if (path !== '/timestamps') return;
+  const params = new URLSearchParams(queryString);
+  if (stampList.query) params.set('q', stampList.query);
+  else params.delete('q');
+  const rest = params.toString();
+  const next = `#${path}${rest ? `?${rest}` : ''}`;
+  if (next !== location.hash) history.replaceState(null, '', next);
+}
+
 function scheduleSearch() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
     stampList.query = $('search').value.trim();
+    syncSearchToUrl();
     loadStamps({ append: false });
   }, 250);
 }
@@ -854,7 +869,8 @@ $('search-form').addEventListener('submit', (event) => event.preventDefault());
 $('load-more').addEventListener('click', () => loadStamps({ append: true }));
 
 // "#/timestamps?video=ID" and "#/timestamps?channel=NAME" are the timestamps view filtered to one
-// video or channel; anything else is the overview.
+// video or channel, and "&q=..." adds a search to any of them; "#/account" is the account page;
+// anything else is the overview.
 function route() {
   if (needsDisplayName) return openDisplayNameForm({ required: true });
   const [path, queryString = ''] = location.hash.slice(1).split('?');
@@ -871,6 +887,11 @@ function route() {
   const hashParams = new URLSearchParams(queryString);
   stampList.video = hashParams.get('video') || '';
   stampList.channel = hashParams.get('channel') || '';
+  // The address is the source of truth for the search too: opening a bookmark fills the box, and a
+  // link without "q" starts a fresh search.
+  const q = (hashParams.get('q') || '').slice(0, 200);
+  $('search').value = q;
+  stampList.query = q.trim();
   $('video-filter').hidden = !stampList.video;
   $('channel-filter').hidden = !stampList.channel;
   $('channel-name').textContent = stampList.channel;
