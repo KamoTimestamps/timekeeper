@@ -274,6 +274,12 @@ describe('landing page video details', () => {
     assert.equal(top.find((v: { videoId: string }) => v.videoId === 'vidB').info, undefined, 'unknown videos stay plain');
     assert.deepEqual(lookups[0].sort(), ['vidA', 'vidB']);
 
+    const headers = { cookie: `${COOKIE}=${cookie.value}` };
+    const byChannel = await h.app.inject({ method: 'GET', url: `/web/timestamps?channel=${encodeURIComponent('A channel')}`, headers });
+    assert.deepEqual(byChannel.json().items.map((i: { videoId: string }) => i.videoId), ['vidA']);
+    const noMatch = await h.app.inject({ method: 'GET', url: '/web/timestamps?channel=Nobody', headers });
+    assert.equal(noMatch.json().total, 0);
+
     const page = await h.app.inject({ method: 'GET', url: '/' });
     assert.match(page.headers['content-security-policy'] as string, /img-src [^;]*https:\/\/i\.ytimg\.com/);
   });

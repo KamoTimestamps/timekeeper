@@ -571,13 +571,17 @@ export class Store {
    */
   searchTimestamps(
     userId: string,
-    { query, videoId, offset, limit }: { query: string; videoId?: string; offset: number; limit: number },
+    { query, videoId, channel, offset, limit }: { query: string; videoId?: string; channel?: string; offset: number; limit: number },
   ): { total: number; items: Array<{ guid: string; videoId: string; start: number; comment: string; updatedAt: number | null }> } {
     const where = ['t.user_id = ?', 't.deleted_at IS NULL'];
     const params: Array<string | number> = [userId];
     if (videoId) {
       where.push('t.video_id = ?');
       params.push(videoId);
+    }
+    if (channel) {
+      where.push('v.channel_title = ?');
+      params.push(channel);
     }
     for (const word of query.split(/\s+/).filter(Boolean).slice(0, 8)) {
       const like = `%${word.replace(/[\\%_]/g, '\\$&')}%`;

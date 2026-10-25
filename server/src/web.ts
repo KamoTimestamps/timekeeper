@@ -31,6 +31,7 @@ const TIMESTAMPS_PAGE_SIZE = 50; // also the most video IDs one YouTube lookup a
 const TimestampsQuery = z.object({
   q: z.string().max(200).default(''),
   video: z.string().min(1).max(64).optional(),
+  channel: z.string().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).default(0),
 });
 
@@ -156,6 +157,7 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
     const { total, items } = store.searchTimestamps(session.userId, {
       query: query.data.q,
       videoId: query.data.video,
+      channel: query.data.channel,
       offset: query.data.offset,
       limit: TIMESTAMPS_PAGE_SIZE,
     });

@@ -38,6 +38,7 @@ function el(tag, props = {}, ...children) {
 
 const number = (n) => n.toLocaleString();
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const dateOnly = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 
 function ago(ms) {
@@ -160,7 +161,7 @@ async function loadOverview() {
 
 // --- timestamps browser ---
 
-const stampList = { query: '', video: '', offset: 0, token: 0 };
+const stampList = { query: '', video: '', channel: '', offset: 0, token: 0 };
 
 function clock(seconds) {
   const s = Math.floor(seconds);
@@ -177,12 +178,19 @@ function renderStamp(item) {
   const label = item.info ? item.info.title : item.videoId;
   const videoLink = el('a', { className: 'stamp-video', href: `#/timestamps?video=${encodeURIComponent(item.videoId)}`, title: label }, label);
   const time = el('a', { className: 'stamp-time', href: watch.toString(), target: '_blank', rel: 'noopener noreferrer', title: 'Open on YouTube at this time' }, clock(item.start));
-  const meta = [item.info?.channelTitle, item.updatedAt ? dateTime.format(item.updatedAt) : ''].filter(Boolean).join(' · ');
+  const channelName = item.info?.channelTitle;
+  const channelLink = channelName
+    ? el('a', { className: 'stamp-channel', href: `#/timestamps?channel=${encodeURIComponent(channelName)}`, title: `Only ${channelName}` }, channelName)
+    : '';
+  const aired =item.info?.publishedAt ? `Aired ${dateOnly.format(new Date(item.info.publishedAt))}` : '';
+  const updated = item.updatedAt ? dateTime.format(item.updatedAt) : '';
+  const meta = el('div', { className: 'stamp-meta muted' }, videoLink);
+  for (const part of [channelLink, aired, updated]) if (part) meta.append(' · ', part);
   return el('li', {},
     time,
     el('div', { className: 'stamp-body' },
       el('div', { className: 'stamp-comment' }, item.comment || '(no comment)'),
-      el('div', { className: 'stamp-meta muted' }, videoLink, meta ? ` · ${meta}` : '')));
+      meta));
 }
 
 async function loadStamps({ append }) {
@@ -190,6 +198,7 @@ async function loadStamps({ append }) {
   if (!append) stampList.offset = 0;
   const params = new URLSearchParams({ q: stampList.query, offset: String(stampList.offset) });
   if (stampList.video) params.set('video', stampList.video);
+  if (stampList.channel) params.set('channel', stampList.channel);
   $('load-more').disabled = true;
   $('load-more').textContent = 'Loading…';
   const { ok, status, data } = await api(`/web/timestamps?${params}`);
@@ -238,12 +247,17 @@ $('search').addEventListener('input', () => {
 $('search-form').addEventListener('submit', (event) => event.preventDefault());
 $('load-more').addEventListener('click', () => loadStamps({ append: true }));
 
-// "#/timestamps?video=ID" is the timestamps view filtered to one video; anything else is the overview.
+// "#/timestamps?video=ID" and "#/timestamps?channel=NAME" are the timestamps view filtered to one
+// video or channel; anything else is the overview.
 function route() {
   const [path, queryString = ''] = location.hash.slice(1).split('?');
   if (path !== '/timestamps') return show('dashboard');
-  stampList.video = new URLSearchParams(queryString).get('video') || '';
+  const hashParams = new URLSearchParams(queryString);
+  stampList.video = hashParams.get('video') || '';
+  stampList.channel = hashParams.get('channel') || '';
   $('video-filter').hidden = !stampList.video;
+  $('channel-filter').hidden = !stampList.channel;
+  $('channel-name').textContent = stampList.channel;
   show('timestamps');
   loadStamps({ append: false });
 }
