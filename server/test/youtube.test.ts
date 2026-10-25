@@ -209,3 +209,14 @@ describe('video length refresh', () => {
     assert.equal(store.getCachedVideoInfo(['v'])[0].info?.durationSeconds, 7200);
   });
 });
+
+describe('prefetcher notification', () => {
+  it('reports each saved batch so open pages can refresh', async () => {
+    const store = new Store(':memory:');
+    const saved: string[][] = [];
+    const prefetcher = createVideoPrefetcher(store, async (ids) => new Map(ids.map((id) => [id, info(`t ${id}`)])), log, (ids) => saved.push(ids));
+    prefetcher.enqueue(['a', 'b']);
+    await prefetcher.idle();
+    assert.deepEqual(saved, [['a', 'b']]);
+  });
+});

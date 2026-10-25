@@ -324,9 +324,13 @@ function watchOverview() {
   if (overviewLive.source) return;
   const source = new EventSource('/web/events');
   overviewLive.source = source;
-  source.addEventListener('overview', refreshOverview);
+  const onSignal = () => {
+    refreshOverview();
+    refreshStamps();
+  };
+  source.addEventListener('overview', onSignal);
   // Also on the first open, and on every automatic reconnect: signals sent while it was down are gone.
-  source.addEventListener('open', refreshOverview);
+  source.addEventListener('open', onSignal);
   source.addEventListener('error', () => {
     if (source.readyState !== EventSource.CLOSED) return; // still reconnecting by itself
     overviewLive.source = null; // refused (e.g. 401 or a proxy error), which the browser won't retry
@@ -343,6 +347,7 @@ function stopWatchingOverview() {
 
 document.addEventListener('visibilitychange', () => {
   if (overviewLive.stale) refreshOverview();
+  if (stampList.stale) refreshStamps();
 });
 // Relative times ("5 minutes ago") keep moving between signals.
 setInterval(() => {
@@ -355,7 +360,27 @@ setInterval(() => {
 // --- timestamps browser ---
 
 // `loaded` counts rows shown; `cursor` is the server's opaque "continue after the last row" marker.
-const stampList = { query: '', video: '', channel: '', loaded: 0, total: 0, cursor: null, token: 0, group: null };
+const stampList = { query: '', video: '', channel: '', loaded: 0, total: 0, cursor: null, token: 0, group: null, stale: false };
+
+// The same signal that refreshes the overview. Reloading the list would throw away how far the
+// reader has scrolled and loaded, so it reloads on its own only when they are at the top, and
+// otherwise offers a Refresh link.
+const NEAR_TOP_PX = 150;
+
+function refreshStamps() {
+  if ($('timestamps').hidden || document.hidden) {
+    stampList.stale = !$('timestamps').hidden; // on screen but in a background tab: catch up when it returns
+    return;
+  }
+  stampList.stale = false;
+  if (window.scrollY <= NEAR_TOP_PX) loadStamps({ append: false });
+  else $('stamps-updated').hidden = false;
+}
+
+$('stamps-refresh').addEventListener('click', () => {
+  $('stamps-updated').hidden = true;
+  loadStamps({ append: false });
+});
 
 // Zero-padded to the width of `longest`, so every time in one video's list lines up: with a
 // timestamp past an hour they are all h:mm:ss ("0:57:47"), otherwise m:ss padded to its minutes.
@@ -534,6 +559,7 @@ new ResizeObserver(() => {
 async function loadStamps({ append }) {
   const token = ++stampList.token; // a slower, older response must not overwrite a newer search
   if (!append) {
+    $('stamps-updated').hidden = true;
     stampList.loaded = 0;
     stampList.cursor = null;
   }

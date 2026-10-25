@@ -718,6 +718,15 @@ export class Store {
       .run(videoId, channelId, membersOnly ? 1 : 0, now);
   }
 
+  /** Users with live timestamps on any of these videos, i.e. whose pages show their details. */
+  userIdsWithVideos(videoIds: string[]): string[] {
+    if (videoIds.length === 0) return [];
+    const rows = this.db
+      .prepare(`SELECT DISTINCT user_id FROM timestamps WHERE deleted_at IS NULL AND video_id IN (${videoIds.map(() => '?').join(',')})`)
+      .all(...videoIds) as Array<{ user_id: string }>;
+    return rows.map((r) => r.user_id);
+  }
+
   /** Whether each of these videos is members-only, for the ones a userscript has reported; others are absent. */
   getMembersOnly(videoIds: string[]): Map<string, boolean> {
     if (videoIds.length === 0) return new Map();

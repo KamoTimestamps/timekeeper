@@ -96,6 +96,18 @@ describe('members-only access', () => {
     assert.equal(h.store.getVideoAccess('other1'), null);
   });
 
+  it('tells every user with timestamps on a video when its members-only status changes', async () => {
+    const one = await h.login('n1', 'n1@example.com');
+    const two = await h.login('n2', 'n2@example.com');
+    const rec = [{ guid: 'g-n', video_id: 'nv1', start: 1, comment: 'x', write_counter: 1 }];
+    const push = (token: string, videos: unknown[]) => h.app.inject({ method: 'POST', url: '/sync/push', headers: bearer(token), payload: { deviceId: 'd', records: rec, videos } });
+    await push(two.accessToken, []);
+    assert.deepEqual(h.store.userIdsWithVideos(['nv1']), [two.userId]);
+    assert.deepEqual(h.store.userIdsWithVideos([]), []);
+    await push(one.accessToken, [{ videoId: 'nv1', channelId: 'UCn', membersOnly: true }]);
+    assert.deepEqual(h.store.userIdsWithVideos(['nv1']).sort(), [one.userId, two.userId].sort());
+  });
+
   it('skips malformed reports without refusing the timestamps', async () => {
     const { accessToken } = await h.login('a7', 'a7@example.com');
     const push = async (video: Record<string, unknown>) => {

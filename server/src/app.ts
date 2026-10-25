@@ -78,7 +78,11 @@ export async function buildApp({ config, store, verifyGoogle, youtube, subscript
   // overview event streams never end on their own, so shutdown would hang until systemd killed it.
   app.addHook('preClose', async () => hub.close());
 
-  const prefetcher = youtube && createVideoPrefetcher(store, youtube, app.log);
+  // A page showing a video should pick up its title, thumbnail and length once they are cached.
+  const notifyVideoViewers = (videoIds: string[]) => {
+    for (const userId of store.userIdsWithVideos(videoIds)) hub.notifyOverview(userId);
+  };
+  const prefetcher = youtube && createVideoPrefetcher(store, youtube, app.log, notifyVideoViewers);
   if (prefetcher) {
     app.addHook('onClose', () => prefetcher.idle()); // finish writing before the caller closes the store
     if (backfillVideoInfo) {
@@ -238,12 +242,15 @@ export async function buildApp({ config, store, verifyGoogle, youtube, subscript
 
     const result = store.applyPush(req.userId, body.data.deviceId, body.data.records);
     const pushedVideoIds = new Set(body.data.records.map((r) => r.video_id));
+    const changedVideoIds: string[] = [];
     for (const entry of body.data.videos ?? []) {
       const video = VideoAccessReport.safeParse(entry);
-      if (video.success && pushedVideoIds.has(video.data.videoId)) {
-        store.saveVideoAccess(video.data.videoId, video.data.channelId, video.data.membersOnly, Date.now());
-      }
+      if (!video.success || !pushedVideoIds.has(video.data.videoId)) continue;
+      const before = store.getVideoAccess(video.data.videoId);
+      store.saveVideoAccess(video.data.videoId, video.data.channelId, video.data.membersOnly, Date.now());
+      if (before?.membersOnly !== video.data.membersOnly || before?.channelId !== video.data.channelId) changedVideoIds.push(video.data.videoId);
     }
+    if (changedVideoIds.length > 0) notifyVideoViewers(changedVideoIds);
     if (result.accepted.length > 0) {
       hub.notifyOverview(req.userId);
       prefetcher?.enqueue([...new Set(result.accepted.filter((r) => !r.deleted_at).map((r) => r.video_id))]);
