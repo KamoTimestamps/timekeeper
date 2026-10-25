@@ -26,6 +26,8 @@ export interface VideoInfo {
   channelTitle: string;
   thumbnailUrl: string | null;
   publishedAt: string | null;
+  /** Null when unknown, including live and upcoming videos, which have no length yet. */
+  durationSeconds: number | null;
 }
 
 export type StoredRecord = TimestampRecord & { seq: number };
@@ -100,6 +102,7 @@ CREATE TABLE IF NOT EXISTS video_info (
   channel_title TEXT,
   thumbnail_url TEXT,
   published_at TEXT,
+  duration_seconds INTEGER,
   fetched_at INTEGER NOT NULL
 ) WITHOUT ROWID;
 `;
@@ -143,6 +146,14 @@ export class Store {
     const columns = this.db.prepare("SELECT name FROM pragma_table_info('timestamps')").all() as { name: string }[];
     if (!columns.some((c) => c.name === 'updated_at')) {
       this.db.exec('ALTER TABLE timestamps ADD COLUMN updated_at INTEGER');
+    }
+
+    const videoColumns = this.db.prepare("SELECT name FROM pragma_table_info('video_info')").all() as { name: string }[];
+    if (!videoColumns.some((c) => c.name === 'duration_seconds')) {
+      this.db.exec('ALTER TABLE video_info ADD COLUMN duration_seconds INTEGER');
+      // Rows cached before the column existed have no length; fetched_at = 0 makes them all stale,
+      // so they are looked up again (at startup, and whenever a page shows them).
+      this.db.exec('UPDATE video_info SET fetched_at = 0');
     }
 
     const sessionColumns = this.db.prepare("SELECT name FROM pragma_table_info('sessions')").all() as { name: string }[];
@@ -505,7 +516,7 @@ export class Store {
     if (videoIds.length === 0) return [];
     const rows = this.db
       .prepare(
-        `SELECT video_id, title, channel_title, thumbnail_url, published_at, fetched_at
+        `SELECT video_id, title, channel_title, thumbnail_url, published_at, duration_seconds, fetched_at
          FROM video_info WHERE video_id IN (${videoIds.map(() => '?').join(',')})`,
       )
       .all(...videoIds) as Array<{
@@ -514,6 +525,7 @@ export class Store {
       channel_title: string | null;
       thumbnail_url: string | null;
       published_at: string | null;
+      duration_seconds: number | null;
       fetched_at: number;
     }>;
     return rows.map((row) => ({
@@ -527,8 +539,21 @@ export class Store {
               channelTitle: row.channel_title ?? '',
               thumbnailUrl: row.thumbnail_url,
               publishedAt: row.published_at,
+              durationSeconds: row.duration_seconds,
             },
     }));
+  }
+
+  /** Video IDs with live timestamps (any user) whose cached details were fetched before `olderThan`. */
+  staleVideoIds(olderThan: number): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT t.video_id FROM timestamps t
+         JOIN video_info v ON v.video_id = t.video_id
+         WHERE t.deleted_at IS NULL AND v.fetched_at < ?`,
+      )
+      .all(olderThan) as Array<{ video_id: string }>;
+    return rows.map((r) => r.video_id);
   }
 
   /** Video IDs with live timestamps (any user) that have never been looked up. */
@@ -545,15 +570,24 @@ export class Store {
 
   saveVideoInfo(entries: Array<{ videoId: string; info: VideoInfo | null }>, now: number): void {
     const upsert = this.db.prepare(
-      `INSERT INTO video_info (video_id, title, channel_title, thumbnail_url, published_at, fetched_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO video_info (video_id, title, channel_title, thumbnail_url, published_at, duration_seconds, fetched_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(video_id) DO UPDATE SET title = excluded.title, channel_title = excluded.channel_title,
-         thumbnail_url = excluded.thumbnail_url, published_at = excluded.published_at, fetched_at = excluded.fetched_at`,
+         thumbnail_url = excluded.thumbnail_url, published_at = excluded.published_at,
+         duration_seconds = excluded.duration_seconds, fetched_at = excluded.fetched_at`,
     );
     this.db.exec('BEGIN IMMEDIATE');
     try {
       for (const { videoId, info } of entries) {
-        upsert.run(videoId, info?.title ?? null, info?.channelTitle ?? null, info?.thumbnailUrl ?? null, info?.publishedAt ?? null, now);
+        upsert.run(
+          videoId,
+          info?.title ?? null,
+          info?.channelTitle ?? null,
+          info?.thumbnailUrl ?? null,
+          info?.publishedAt ?? null,
+          info?.durationSeconds ?? null,
+          now,
+        );
       }
       this.db.exec('COMMIT');
     } catch (err) {

@@ -241,7 +241,7 @@ describe('timestamp browser', () => {
       record('n1', 3, { video_id: 'newer', start: 80 }),
       record('n2', 4, { video_id: 'newer', start: 10 }),
     ]);
-    const details = (publishedAt: string | null) => ({ title: 't', channelTitle: 'c', thumbnailUrl: null, publishedAt });
+    const details = (publishedAt: string | null) => ({ title: 't', channelTitle: 'c', thumbnailUrl: null, publishedAt, durationSeconds: null });
     h.store.saveVideoInfo(
       [
         { videoId: 'older', info: details('2024-01-01T00:00:00Z') },
@@ -283,7 +283,7 @@ describe('landing page video details', () => {
   before(async () => {
     h = await createHarness({}, async (ids) => {
       lookups.push(ids);
-      return new Map(ids.filter((id) => id === 'vidA').map((id) => [id, { title: 'A title', channelTitle: 'A channel', thumbnailUrl: 'https://i.ytimg.com/vi/vidA/mqdefault.jpg', publishedAt: null }]));
+      return new Map(ids.filter((id) => id === 'vidA').map((id) => [id, { title: 'A title', channelTitle: 'A channel', thumbnailUrl: 'https://i.ytimg.com/vi/vidA/mqdefault.jpg', publishedAt: null, durationSeconds: 15011 }]));
     });
   });
   after(async () => {
@@ -310,6 +310,7 @@ describe('landing page video details', () => {
     const headers = { cookie: `${COOKIE}=${cookie.value}` };
     const byChannel = await h.app.inject({ method: 'GET', url: `/web/timestamps?channel=${encodeURIComponent('A channel')}`, headers });
     assert.deepEqual(byChannel.json().items.map((i: { videoId: string }) => i.videoId), ['vidA']);
+    assert.equal(byChannel.json().items[0].info.durationSeconds, 15011, 'the video length reaches the page');
     const noMatch = await h.app.inject({ method: 'GET', url: '/web/timestamps?channel=Nobody', headers });
     assert.equal(noMatch.json().total, 0);
 

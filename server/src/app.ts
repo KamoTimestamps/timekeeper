@@ -8,7 +8,7 @@ import type { GoogleVerifier } from './google.ts';
 import { Hub } from './hub.ts';
 import { Store, type User } from './store.ts';
 import { signAccessToken, verifyAccessToken } from './tokens.ts';
-import { createVideoPrefetcher, type VideoLookup } from './youtube.ts';
+import { createVideoPrefetcher, VIDEO_INFO_TTL_MS, type VideoLookup } from './youtube.ts';
 import { registerWeb } from './web.ts';
 
 export interface AppDeps {
@@ -69,7 +69,11 @@ export async function buildApp({ config, store, verifyGoogle, youtube, backfillV
   const prefetcher = youtube && createVideoPrefetcher(store, youtube, app.log);
   if (prefetcher) {
     app.addHook('onClose', () => prefetcher.idle()); // finish writing before the caller closes the store
-    if (backfillVideoInfo) prefetcher.enqueue(store.uncachedVideoIds());
+    if (backfillVideoInfo) {
+      prefetcher.enqueue(store.uncachedVideoIds());
+      // Cached details past their TTL, which includes everything cached before video lengths were stored.
+      prefetcher.enqueue(store.staleVideoIds(Date.now() - VIDEO_INFO_TTL_MS), true);
+    }
   }
 
   await registerWeb(app, { config, store, verifyGoogle, hub, youtube });

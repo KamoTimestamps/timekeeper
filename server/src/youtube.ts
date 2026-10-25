@@ -20,16 +20,26 @@ interface VideosResponse {
       publishedAt?: string;
       thumbnails?: Record<string, { url?: string } | undefined>;
     };
+    contentDetails?: { duration?: string };
   }>;
+}
+
+/** ISO 8601 durations as YouTube sends them ("PT4H10M11S", "P1DT2H"). Null when absent, unparseable or zero (live/upcoming report "P0D"). */
+export function parseIsoDuration(value: string | undefined): number | null {
+  const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(value ?? '');
+  if (!match) return null;
+  const [days, hours, minutes, seconds] = match.slice(1).map((part) => Number(part ?? 0));
+  const total = ((days * 24 + hours) * 60 + minutes) * 60 + seconds;
+  return total > 0 ? total : null;
 }
 
 /** YouTube Data API `videos.list`: one quota unit per call. The key goes in a header, not the URL, so it stays out of logs. */
 export function createYouTubeClient(apiKey: string, fetchFn: typeof fetch = fetch): VideoLookup {
   return async (videoIds) => {
     const url = new URL(VIDEOS_URL);
-    url.searchParams.set('part', 'snippet');
+    url.searchParams.set('part', 'snippet,contentDetails');
     url.searchParams.set('id', videoIds.join(','));
-    url.searchParams.set('fields', 'items(id,snippet(title,channelTitle,publishedAt,thumbnails))');
+    url.searchParams.set('fields', 'items(id,snippet(title,channelTitle,publishedAt,thumbnails),contentDetails(duration))');
 
     const res = await fetchFn(url, { headers: { 'x-goog-api-key': apiKey }, signal: AbortSignal.timeout(5000) });
     if (!res.ok) throw new Error(`YouTube API responded ${res.status}`);
@@ -43,6 +53,7 @@ export function createYouTubeClient(apiKey: string, fetchFn: typeof fetch = fetc
         channelTitle: item.snippet.channelTitle ?? '',
         thumbnailUrl: item.snippet.thumbnails?.medium?.url ?? item.snippet.thumbnails?.default?.url ?? null,
         publishedAt: item.snippet.publishedAt ?? null,
+        durationSeconds: parseIsoDuration(item.contentDetails?.duration),
       });
     }
     return found;
@@ -83,8 +94,11 @@ export async function resolveVideoInfo(
 }
 
 export interface VideoPrefetcher {
-  /** Looks up, in the background, any of these videos that have never been cached. Returns immediately. */
-  enqueue(videoIds: string[]): void;
+  /**
+   * Looks up, in the background, any of these videos that have never been cached (all of them with
+   * `force`, for refreshing cached details). Returns immediately.
+   */
+  enqueue(videoIds: string[], force?: boolean): void;
   /** Resolves once nothing is queued or in flight. */
   idle(): Promise<void>;
 }
@@ -123,8 +137,8 @@ export function createVideoPrefetcher(
   };
 
   return {
-    enqueue(videoIds) {
-      const seen = new Set(store.getCachedVideoInfo(videoIds).map((entry) => entry.videoId));
+    enqueue(videoIds, force = false) {
+      const seen = force ? new Set<string>() : new Set(store.getCachedVideoInfo(videoIds).map((entry) => entry.videoId));
       for (const videoId of videoIds) if (!seen.has(videoId)) queued.add(videoId);
       if (queued.size > 0 && !draining) draining = drain();
     },

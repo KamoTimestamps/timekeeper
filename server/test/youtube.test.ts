@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { Store, type VideoInfo } from '../src/store.ts';
-import { createVideoPrefetcher, createYouTubeClient, resolveVideoInfo, VIDEO_INFO_TTL_MS, type VideoLookup } from '../src/youtube.ts';
+import { createVideoPrefetcher, createYouTubeClient, parseIsoDuration, resolveVideoInfo, VIDEO_INFO_TTL_MS, type VideoLookup } from '../src/youtube.ts';
 
-const info = (title: string): VideoInfo => ({ title, channelTitle: 'Chan', thumbnailUrl: 'https://i.ytimg.com/vi/x/mqdefault.jpg', publishedAt: '2026-01-01T00:00:00Z' });
+const info = (title: string): VideoInfo => ({ title, channelTitle: 'Chan', thumbnailUrl: 'https://i.ytimg.com/vi/x/mqdefault.jpg', publishedAt: '2026-01-01T00:00:00Z', durationSeconds: 3600 });
 const log = { warn: () => {} };
 
 describe('YouTube client', () => {
@@ -13,8 +17,9 @@ describe('YouTube client', () => {
       seen = { url, headers: init.headers as Record<string, string> };
       return Response.json({
         items: [
-          { id: 'a', snippet: { title: 'Hello', channelTitle: 'Chan', publishedAt: '2026-01-01T00:00:00Z', thumbnails: { default: { url: 'd' }, medium: { url: 'm' } } } },
+          { id: 'a', snippet: { title: 'Hello', channelTitle: 'Chan', publishedAt: '2026-01-01T00:00:00Z', thumbnails: { default: { url: 'd' }, medium: { url: 'm' } } }, contentDetails: { duration: 'PT4H10M11S' } },
           { id: 'b', snippet: { title: 'No thumbs' } },
+          { id: 'live', snippet: { title: 'Live now' }, contentDetails: { duration: 'P0D' } },
         ],
       });
     }) as unknown as typeof fetch;
@@ -22,11 +27,12 @@ describe('YouTube client', () => {
     const found = await createYouTubeClient('secret', fakeFetch)(['a', 'b', 'gone']);
 
     assert.equal(seen?.url.searchParams.get('id'), 'a,b,gone');
-    assert.equal(seen?.url.searchParams.get('part'), 'snippet');
+    assert.equal(seen?.url.searchParams.get('part'), 'snippet,contentDetails');
     assert.equal(seen?.headers['x-goog-api-key'], 'secret');
     assert.ok(!seen?.url.href.includes('secret'), 'key must not be in the URL');
-    assert.deepEqual(found.get('a'), { title: 'Hello', channelTitle: 'Chan', thumbnailUrl: 'm', publishedAt: '2026-01-01T00:00:00Z' });
-    assert.deepEqual(found.get('b'), { title: 'No thumbs', channelTitle: '', thumbnailUrl: null, publishedAt: null });
+    assert.deepEqual(found.get('a'), { title: 'Hello', channelTitle: 'Chan', thumbnailUrl: 'm', publishedAt: '2026-01-01T00:00:00Z', durationSeconds: 15011 });
+    assert.deepEqual(found.get('b'), { title: 'No thumbs', channelTitle: '', thumbnailUrl: null, publishedAt: null, durationSeconds: null });
+    assert.equal(found.get('live')?.durationSeconds, null, 'a live video has no length yet');
     assert.equal(found.has('gone'), false);
   });
 
@@ -140,5 +146,65 @@ describe('video prefetcher', () => {
     ]);
     store.saveVideoInfo([{ videoId: 'cached', info: null }], 1);
     assert.deepEqual(store.uncachedVideoIds(), ['old']);
+  });
+});
+
+describe('parseIsoDuration', () => {
+  it('reads hours, minutes, seconds and days, and treats zero or junk as unknown', () => {
+    assert.equal(parseIsoDuration('PT4H10M11S'), 15011);
+    assert.equal(parseIsoDuration('PT57M'), 3420);
+    assert.equal(parseIsoDuration('PT45S'), 45);
+    assert.equal(parseIsoDuration('P1DT2H'), 93600);
+    assert.equal(parseIsoDuration('P0D'), null);
+    assert.equal(parseIsoDuration('nonsense'), null);
+    assert.equal(parseIsoDuration(undefined), null);
+  });
+});
+
+describe('video length refresh', () => {
+  it('marks details cached before lengths existed as stale, so they are fetched again', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tk-migrate-'));
+    const path = join(dir, 'legacy.db');
+    try {
+      const legacy = new DatabaseSync(path);
+      legacy.exec(`CREATE TABLE video_info (video_id TEXT PRIMARY KEY, title TEXT, channel_title TEXT, thumbnail_url TEXT, published_at TEXT, fetched_at INTEGER NOT NULL) WITHOUT ROWID;
+                   INSERT INTO video_info VALUES ('old', 'Old title', 'Chan', NULL, '2026-01-01T00:00:00Z', 5000);`);
+      legacy.close();
+
+      const store = new Store(path);
+      const [entry] = store.getCachedVideoInfo(['old']);
+      assert.equal(entry.fetchedAt, 0, 'forced stale');
+      assert.equal(entry.info?.title, 'Old title');
+      assert.equal(entry.info?.durationSeconds, null);
+      store.close();
+
+      const again = new Store(path); // a second start must not reset fresh rows
+      again.saveVideoInfo([{ videoId: 'old', info: { ...info('Old title'), durationSeconds: 15011 } }], 9000);
+      again.close();
+      const third = new Store(path);
+      assert.deepEqual([third.getCachedVideoInfo(['old'])[0].fetchedAt, third.getCachedVideoInfo(['old'])[0].info?.durationSeconds], [9000, 15011]);
+      third.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('prefetches already-cached videos only when forced', async () => {
+    const store = new Store(':memory:');
+    const { user } = store.upsertGoogleUser({ sub: 's', email: 'e@example.com' });
+    store.applyPush(user.id, 'd', [{ guid: 'g', video_id: 'v', start: 1, comment: '', write_counter: 1 }]);
+    store.saveVideoInfo([{ videoId: 'v', info: info('cached') }], 0);
+    assert.deepEqual(store.staleVideoIds(1000), ['v']);
+    assert.deepEqual(store.staleVideoIds(0), []);
+
+    const calls: string[][] = [];
+    const prefetcher = createVideoPrefetcher(store, async (ids) => (calls.push(ids), new Map(ids.map((id) => [id, { ...info('fresh'), durationSeconds: 7200 }]))), log);
+    prefetcher.enqueue(['v']);
+    await prefetcher.idle();
+    assert.equal(calls.length, 0, 'cached, so not fetched');
+    prefetcher.enqueue(['v'], true);
+    await prefetcher.idle();
+    assert.deepEqual(calls, [['v']]);
+    assert.equal(store.getCachedVideoInfo(['v'])[0].info?.durationSeconds, 7200);
   });
 });

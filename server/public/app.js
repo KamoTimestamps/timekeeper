@@ -241,12 +241,17 @@ setInterval(() => {
 
 const stampList = { query: '', video: '', channel: '', offset: 0, token: 0, group: null };
 
-function clock(seconds) {
+// Zero-padded to the width of `longest`, so every time in one video's list lines up: with a
+// timestamp past an hour they are all h:mm:ss ("0:57:47"), otherwise m:ss padded to its minutes.
+function clock(seconds, longest = seconds) {
   const s = Math.floor(seconds);
-  const h = Math.floor(s / 3600);
-  const mm = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, '0');
+  const top = Math.floor(longest);
   const ss = String(s % 60).padStart(2, '0');
-  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  if (top >= 3600) {
+    const h = String(Math.floor(s / 3600)).padStart(String(Math.floor(top / 3600)).length, '0');
+    return `${h}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${ss}`;
+  }
+  return `${String(Math.floor(s / 60)).padStart(String(Math.floor(top / 60)).length, '0')}:${ss}`;
 }
 
 // The row above a video's hits: thumbnail, title, channel and air date. `info` is only present
@@ -274,7 +279,7 @@ function renderHit(item) {
   const watch = new URL('https://www.youtube.com/watch');
   watch.searchParams.set('v', item.videoId);
   watch.searchParams.set('t', `${Math.floor(item.start)}s`);
-  const time = el('a', { className: 'stamp-time', href: watch.toString(), target: '_blank', rel: 'noopener noreferrer', title: 'Open on YouTube at this time' }, clock(item.start));
+  const time = el('a', { className: 'stamp-time', href: watch.toString(), target: '_blank', rel: 'noopener noreferrer', title: 'Open on YouTube at this time', 'data-start': String(item.start) }, clock(item.start));
   return el('li', {}, time, el('div', { className: 'stamp-body' }, el('div', { className: 'stamp-comment' }, item.comment || '(no comment)')));
 }
 
@@ -286,13 +291,22 @@ function addStamps(items, append) {
     list.replaceChildren();
     stampList.group = null;
   }
+  const touched = new Set();
   for (const item of items) {
     if (stampList.group?.videoId !== item.videoId) {
       const hits = el('ol', { className: 'stamps' });
       list.append(el('li', { className: 'group' }, renderVideoHead(item), hits));
-      stampList.group = { videoId: item.videoId, hits };
+      // The video's real length when known, so times pad to it even if no hit is near the end.
+      stampList.group = { videoId: item.videoId, hits, longest: item.info?.durationSeconds ?? 0 };
     }
-    stampList.group.hits.append(renderHit(item));
+    const group = stampList.group;
+    group.longest = Math.max(group.longest, item.start);
+    group.hits.append(renderHit(item));
+    touched.add(group);
+  }
+  // A later page can bring a longer timestamp for a video already on screen, which widens them all.
+  for (const group of touched) {
+    for (const time of group.hits.querySelectorAll('.stamp-time')) time.textContent = clock(Number(time.dataset.start), group.longest);
   }
 }
 
