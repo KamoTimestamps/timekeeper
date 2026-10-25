@@ -5706,23 +5706,20 @@ if (!isLiveChatFrame()) {
     }
   });
 
-  // Tell the sync server whether this video is members-only; it answers whether the account can access it.
-  function reportWatchPageAccess(navigation: any) {
+  // Remember whether this video is members-only; sync reports it when it pushes timestamps for the video.
+  function noteWatchPage(navigation: any) {
     const pageWindow: any = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
     const page = readWatchPageAccess(
       navigation?.response ?? pageWindow.ytInitialData,
       navigation?.playerResponse ?? pageWindow.ytInitialPlayerResponse,
     );
-    if (!page) return;
-    void SyncClient.reportWatchPageAccess(page).then((access) => {
-      if (access) log(`Video ${page.videoId}: members-only=${access.membersOnly}, can access=${access.canAccess}`);
-    });
+    if (page) SyncClient.noteWatchPage(page);
   }
 
   // Listen for navigation completion and load timestamps when navigation finishes
   window.addEventListener("yt-navigate-finish", (event) => {
     log("Navigation finished (yt-navigate-finish event fired)");
-    reportWatchPageAccess((event as CustomEvent).detail?.response);
+    noteWatchPage((event as CustomEvent).detail?.response);
     // Only handle if the URL changed since last handled
     if (window.location.href !== lastHandledUrl) {
       handleUrlChange();

@@ -154,7 +154,10 @@ let lastSyncedAt: number | null = null;
 /** Local rows the server refuses outright (e.g. oversized); skipped so they can't block the rest. */
 const skippedGuids = new Set<string>();
 let subscriptionsInFlight = false;
-let currentVideoAccess: { videoId: string; access: VideoAccess } | null = null;
+/** What watch pages showed (members-only, channel), by video; sent along with the next push of that video's timestamps. */
+const watchPages = new Map<string, WatchPageAccess>();
+/** The watch-page status the server last accepted for each video, so an unchanged one isn't sent again. */
+const reportedWatchPages = new Map<string, string>();
 
 let stopped = true;
 let socket: WebSocket | null = null;
@@ -659,7 +662,6 @@ export async function shareSubscriptions(): Promise<void> {
     if (!res.ok) throw new HttpError(res.status, `Sharing subscriptions failed (HTTP ${res.status})`);
     const { count } = (await res.json()) as { count: number };
     log(`Shared ${count} YouTube subscriptions with Timekeeper Sync`);
-    currentVideoAccess = null; // stale until the next page report is evaluated with the new subscriptions
   } catch (err) {
     channel.close();
     log('Sharing YouTube subscriptions failed:', err, 'error');
@@ -669,35 +671,11 @@ export async function shareSubscriptions(): Promise<void> {
   }
 }
 
-export interface VideoAccess {
-  membersOnly: boolean | null;
-  /** True/false once subscriptions are shared; null while unknown. */
-  subscribed: boolean | null;
-  /** Whether this account can see the video's timestamps; null while unknown. */
-  canAccess: boolean | null;
-}
+const watchPageKey = (page: WatchPageAccess) => `${page.channelId}:${page.membersOnly}`;
 
-/**
- * Tells the server what the watch page shows (channel, members-only) and returns whether the signed-in
- * user can access the video. Null when signed out or the server can't be reached.
- */
-export async function reportWatchPageAccess(page: WatchPageAccess): Promise<VideoAccess | null> {
-  if (!getSyncAuthState().isSignedIn) return null;
-  try {
-    const res = await apiFetch('/videos/access', { method: 'POST', body: page });
-    if (!res.ok) return null;
-    const body = (await res.json()) as VideoAccess;
-    currentVideoAccess = { videoId: page.videoId, access: body };
-    return body;
-  } catch (err) {
-    log('Reporting video access failed:', err, 'warn');
-    return null;
-  }
-}
-
-/** The most recent answer from reportWatchPageAccess, for the video it was about. */
-export function getVideoAccess(videoId: string): VideoAccess | null {
-  return currentVideoAccess?.videoId === videoId ? currentVideoAccess.access : null;
+/** Remembers what a watch page showed, to be reported with the next push of timestamps for that video. */
+export function noteWatchPage(page: WatchPageAccess) {
+  watchPages.set(page.videoId, page);
 }
 
 export async function signOutFromSync() {
@@ -707,6 +685,7 @@ export async function signOutFromSync() {
   cursors = { pushCounter: 0, pullSeq: 0 };
   serverKnown.clear();
   skippedGuids.clear();
+  reportedWatchPages.clear();
   await saveAuthState();
   saveCursors();
   setStatus('signed-out');
@@ -790,7 +769,11 @@ async function pullAll() {
  */
 async function pushChunk(chunk: TimestampRow[]): Promise<void> {
   try {
-    const result = await apiJson('/sync/push', { method: 'POST', body: { deviceId, records: chunk } }, PushResponseSchema);
+    const videos = [...new Set(chunk.map((row) => row.video_id))]
+      .map((videoId) => watchPages.get(videoId))
+      .filter((page): page is WatchPageAccess => !!page && reportedWatchPages.get(page.videoId) !== watchPageKey(page));
+    const result = await apiJson('/sync/push', { method: 'POST', body: { deviceId, records: chunk, videos } }, PushResponseSchema);
+    for (const page of videos) reportedWatchPages.set(page.videoId, watchPageKey(page));
     // Server copies that beat ours: adopt them (the normal merge rules decide).
     await applyRemote(result.rejected);
     for (const row of chunk) skippedGuids.delete(row.guid);

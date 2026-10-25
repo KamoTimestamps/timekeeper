@@ -10,7 +10,6 @@ import { Store, type User } from './store.ts';
 import { createSubscriptionsClient, SubscriptionsAuthError, type SubscriptionsLookup } from './subscriptions.ts';
 import { signAccessToken, verifyAccessToken } from './tokens.ts';
 import { createVideoPrefetcher, VIDEO_INFO_TTL_MS, type VideoLookup } from './youtube.ts';
-import { createVideoAccessChecker, VIDEO_ACCESS_TTL_MS, type VideoAccessCheck } from './video-access.ts';
 import { registerWeb } from './web.ts';
 
 export interface AppDeps {
@@ -20,8 +19,6 @@ export interface AppDeps {
   youtube?: VideoLookup;
   /** Lists a Google account's subscribed channels; defaults to the real YouTube Data API. */
   subscriptions?: SubscriptionsLookup;
-  /** Anonymous members-only lookup for videos as they are first synced; unset disables server-side checks. */
-  checkVideoAccess?: VideoAccessCheck;
   /** Also look up videos that are already synced but were never cached (once, at startup). */
   backfillVideoInfo?: boolean;
 }
@@ -39,22 +36,24 @@ const RecordSchema = z.object({
   deleted_at: z.number().optional(),
 });
 
-const GoogleLoginBody = z.object({ idToken: z.string().min(1) });
-const RefreshBody = z.object({ refreshToken: z.string().min(1) });
-const PushBody = z.object({
-  deviceId: z.string().min(1).max(128),
-  records: z.array(RecordSchema).max(MAX_RECORDS_PER_PUSH),
-});
-const PullQuery = z.object({
-  since: z.coerce.number().int().nonnegative().default(0),
-  limit: z.coerce.number().int().positive().max(MAX_PULL_LIMIT).default(MAX_PULL_LIMIT),
-});
 const SubscriptionsSyncBody = z.object({ accessToken: z.string().min(1).max(4096) });
 const VideoIdParam = z.string().regex(/^[\w-]{1,64}$/);
 const VideoAccessReport = z.object({
   videoId: VideoIdParam,
   channelId: z.string().regex(/^[\w-]{1,64}$/),
   membersOnly: z.boolean(),
+});
+const GoogleLoginBody = z.object({ idToken: z.string().min(1) });
+const RefreshBody = z.object({ refreshToken: z.string().min(1) });
+const PushBody = z.object({
+  deviceId: z.string().min(1).max(128),
+  records: z.array(RecordSchema).max(MAX_RECORDS_PER_PUSH),
+  /** What the userscript saw on the watch pages of videos in `records`. Optional extras: a bad entry is skipped, never a reason to refuse the timestamps. */
+  videos: z.array(z.unknown()).max(MAX_RECORDS_PER_PUSH).optional(),
+});
+const PullQuery = z.object({
+  since: z.coerce.number().int().nonnegative().default(0),
+  limit: z.coerce.number().int().positive().max(MAX_PULL_LIMIT).default(MAX_PULL_LIMIT),
 });
 const WsAuthMessage = z.object({
   type: z.literal('auth'),
@@ -68,7 +67,7 @@ declare module 'fastify' {
   }
 }
 
-export async function buildApp({ config, store, verifyGoogle, youtube, subscriptions = createSubscriptionsClient(), checkVideoAccess, backfillVideoInfo }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, store, verifyGoogle, youtube, subscriptions = createSubscriptionsClient(), backfillVideoInfo }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: process.env.NODE_ENV !== 'test', bodyLimit: 5 * 1024 * 1024 });
   const hub = new Hub();
 
@@ -89,19 +88,6 @@ export async function buildApp({ config, store, verifyGoogle, youtube, subscript
       prefetcher.enqueue(uncached);
       // Cached details past their TTL, which includes everything cached before video lengths were stored.
       prefetcher.enqueue(stale, true);
-    }
-  }
-
-  const accessChecker = checkVideoAccess && createVideoAccessChecker(store, checkVideoAccess, app.log);
-  if (accessChecker) {
-    app.addHook('onClose', () => {
-      accessChecker.stop();
-      return accessChecker.idle();
-    });
-    if (backfillVideoInfo) {
-      const needed = store.videoIdsNeedingAccessCheck(Date.now() - VIDEO_ACCESS_TTL_MS);
-      app.log.info({ videos: needed.length }, 'video access backfill');
-      accessChecker.enqueue(needed);
     }
   }
 
@@ -234,15 +220,10 @@ export async function buildApp({ config, store, verifyGoogle, youtube, subscript
     return { count: channelIds.length, syncedAt };
   });
 
-  // Members-only status isn't in the YouTube Data API, so the userscript reports what the watch page
-  // shows. Any signed-in user can report, and the latest report wins; nothing is enforced on it yet.
-  app.post('/videos/access', { preHandler: authenticate }, async (req, reply) => {
-    const body = VideoAccessReport.safeParse(req.body);
-    if (!body.success) return reply.code(400).send({ error: 'invalid_request' });
-    store.saveVideoAccess(body.data.videoId, body.data.channelId, body.data.membersOnly, Date.now());
-    return videoAccess(req.userId, body.data.videoId);
-  });
-
+  // Members-only status isn't in the YouTube Data API and the server can't look it up (YouTube
+  // challenges datacenter IPs), so it only learns it from userscripts: they attach what the watch page
+  // shows to the pushes that carry timestamps for that video. Nothing is enforced on it yet, and the
+  // latest report wins.
   app.get('/videos/:videoId/access', { preHandler: authenticate }, async (req, reply) => {
     const videoId = VideoIdParam.safeParse((req.params as { videoId: string }).videoId);
     if (!videoId.success) return reply.code(400).send({ error: 'invalid_request' });
@@ -256,11 +237,16 @@ export async function buildApp({ config, store, verifyGoogle, youtube, subscript
     if (!body.success) return reply.code(400).send({ error: 'invalid_request', detail: z.prettifyError(body.error) });
 
     const result = store.applyPush(req.userId, body.data.deviceId, body.data.records);
+    const pushedVideoIds = new Set(body.data.records.map((r) => r.video_id));
+    for (const entry of body.data.videos ?? []) {
+      const video = VideoAccessReport.safeParse(entry);
+      if (video.success && pushedVideoIds.has(video.data.videoId)) {
+        store.saveVideoAccess(video.data.videoId, video.data.channelId, video.data.membersOnly, Date.now());
+      }
+    }
     if (result.accepted.length > 0) {
       hub.notifyOverview(req.userId);
-      const addedVideoIds = [...new Set(result.accepted.filter((r) => !r.deleted_at).map((r) => r.video_id))];
-      prefetcher?.enqueue(addedVideoIds);
-      accessChecker?.enqueue(addedVideoIds);
+      prefetcher?.enqueue([...new Set(result.accepted.filter((r) => !r.deleted_at).map((r) => r.video_id))]);
       hub.broadcast(req.userId, body.data.deviceId, {
         type: 'changes',
         fromSeq: result.fromSeq,

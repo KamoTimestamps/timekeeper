@@ -2,7 +2,6 @@ import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
 import { createGoogleVerifier } from './google.ts';
 import { Store } from './store.ts';
-import { createVideoAccessCheck } from './video-access.ts';
 import { createYouTubeClient } from './youtube.ts';
 
 const config = loadConfig();
@@ -12,7 +11,6 @@ const app = await buildApp({
   store,
   verifyGoogle: createGoogleVerifier(config.googleClientId),
   youtube: config.youtubeApiKey ? createYouTubeClient(config.youtubeApiKey) : undefined,
-  checkVideoAccess: createVideoAccessCheck(),
   backfillVideoInfo: true,
 });
 

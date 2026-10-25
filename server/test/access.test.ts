@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import { createVideoAccessCheck, createVideoAccessChecker, type VideoAccessResult } from '../src/video-access.ts';
-import { Store } from '../src/store.ts';
 import { createSubscriptionsClient, SubscriptionsAuthError } from '../src/subscriptions.ts';
 import { bearer, createHarness, type TestHarness } from './helpers.ts';
 
@@ -19,13 +17,18 @@ describe('members-only access', () => {
     await h.app.close();
   });
 
-  const report = (token: string, payload: Record<string, unknown>) => h.app.inject({ method: 'POST', url: '/videos/access', headers: bearer(token), payload });
+  // A userscript reports a video's status on the push that carries timestamps for it.
+  const report = async (token: string, payload: Record<string, unknown>) => {
+    const videoId = String(payload.videoId);
+    const records = [{ guid: `g-${videoId}`, video_id: videoId, start: 1, comment: 'x', write_counter: 1 }];
+    const res = await h.app.inject({ method: 'POST', url: '/sync/push', headers: bearer(token), payload: { deviceId: 'd', records, videos: [payload] } });
+    return res.statusCode === 200 ? access(token, videoId) : res;
+  };
   const access = (token: string, id: string) => h.app.inject({ method: 'GET', url: `/videos/${id}/access`, headers: bearer(token) });
   const sync = (token: string) => h.app.inject({ method: 'POST', url: '/subscriptions/sync', headers: bearer(token), payload: { accessToken: 'g-token' } });
 
   it('requires authentication', async () => {
     assert.equal((await h.app.inject({ method: 'GET', url: '/videos/abc/access' })).statusCode, 401);
-    assert.equal((await h.app.inject({ method: 'POST', url: '/videos/access', payload: {} })).statusCode, 401);
     assert.equal((await h.app.inject({ method: 'POST', url: '/subscriptions/sync', payload: {} })).statusCode, 401);
   });
 
@@ -81,10 +84,33 @@ describe('members-only access', () => {
     failWith = null;
   });
 
-  it('rejects malformed reports', async () => {
+  it('ignores a report for a video the push carries no timestamps for', async () => {
+    const { accessToken } = await h.login('a8', 'a8@example.com');
+    const records = [{ guid: 'g-real', video_id: 'real1', start: 1, comment: 'x', write_counter: 1 }];
+    const videos = [
+      { videoId: 'real1', channelId: 'UCreal', membersOnly: true },
+      { videoId: 'other1', channelId: 'UCother', membersOnly: true },
+    ];
+    await h.app.inject({ method: 'POST', url: '/sync/push', headers: bearer(accessToken), payload: { deviceId: 'd', records, videos } });
+    assert.equal(h.store.getVideoAccess('real1')?.membersOnly, true);
+    assert.equal(h.store.getVideoAccess('other1'), null);
+  });
+
+  it('skips malformed reports without refusing the timestamps', async () => {
     const { accessToken } = await h.login('a7', 'a7@example.com');
-    assert.equal((await report(accessToken, { videoId: 'x y', channelId: 'UC1', membersOnly: true })).statusCode, 400);
-    assert.equal((await report(accessToken, { videoId: 'v', channelId: 'UC1', membersOnly: 'yes' })).statusCode, 400);
+    const push = async (video: Record<string, unknown>) => {
+      const id = String(video.videoId);
+      return h.app.inject({
+        method: 'POST',
+        url: '/sync/push',
+        headers: bearer(accessToken),
+        payload: { deviceId: 'd', records: [{ guid: `g-${id}`, video_id: id, start: 1, comment: 'x', write_counter: 1 }], videos: [video] },
+      });
+    };
+    assert.equal((await push({ videoId: 'x y', channelId: 'UC1', membersOnly: true })).statusCode, 200);
+    assert.equal((await push({ videoId: 'v7', channelId: 'UC1', membersOnly: 'yes' })).statusCode, 200);
+    assert.equal(h.store.getVideoAccess('x y'), null);
+    assert.equal(h.store.getVideoAccess('v7'), null);
   });
 });
 
@@ -111,86 +137,5 @@ describe('subscriptions client', () => {
     await assert.rejects(status(401), SubscriptionsAuthError);
     await assert.rejects(status(403), SubscriptionsAuthError);
     await assert.rejects(status(500), (err: Error) => !(err instanceof SubscriptionsAuthError));
-  });
-});
-
-describe('server-side members-only check', () => {
-  const page = (player: unknown) => `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(player)};var meta = {};</script></html>`;
-  const watchFetch = (html: string, status = 200) => (async () => new Response(html, { status })) as unknown as typeof fetch;
-  const membersOnlyReply = {
-    playabilityStatus: { status: 'UNPLAYABLE', errorScreen: { playerLegacyDesktopYpcOfferRenderer: { offerId: 'sponsors_only_video' } } },
-    videoDetails: { channelId: 'UCmem', title: 'has } and { and \\" in it' },
-  };
-
-  it('reads members-only, public, and unanswerable videos from the watch page', async () => {
-    assert.deepEqual(await createVideoAccessCheck(watchFetch(page(membersOnlyReply)))('v'), { channelId: 'UCmem', membersOnly: true });
-    assert.deepEqual(
-      await createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'OK' }, videoDetails: { channelId: 'UCpub' } })))('v'),
-      { channelId: 'UCpub', membersOnly: false },
-    );
-    assert.deepEqual(await createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'ERROR', reason: 'This video is unavailable' } })))('v'), { unavailable: 'ERROR: This video is unavailable' });
-    assert.deepEqual(await createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'LOGIN_REQUIRED' }, videoDetails: { channelId: 'UC1' } })))('v'), { unavailable: 'LOGIN_REQUIRED' });
-    assert.deepEqual(await createVideoAccessCheck(watchFetch('<html>no player here</html>'))('v'), { unavailable: 'no player data in page' });
-    await assert.rejects(createVideoAccessCheck(watchFetch('', 429))('v'), /429/);
-    await assert.rejects(
-      createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'LOGIN_REQUIRED', reason: 'Sign in to confirm you’re not a bot' } })))('v'),
-      /challenging this server/,
-    );
-  });
-
-  it('checks each newly pushed video once, and its answer outranks a userscript report', async () => {
-    const asked: string[] = [];
-    const h = await createHarness({}, undefined, undefined, async (videoId) => {
-      asked.push(videoId);
-      return videoId === 'gone' ? { unavailable: 'ERROR' } : { channelId: 'UCsrv', membersOnly: videoId === 'secret' };
-    });
-    try {
-      const { accessToken } = await h.login('c1', 'c1@example.com');
-      const push = (records: unknown[]) => h.app.inject({ method: 'POST', url: '/sync/push', headers: bearer(accessToken), payload: { deviceId: 'd', records } });
-      const rec = (guid: string, video_id: string) => ({ guid, video_id, start: 1, comment: 'x', write_counter: 1 });
-
-      await push([rec('1', 'secret'), rec('2', 'open'), rec('3', 'gone')]);
-      await push([rec('4', 'secret'), rec('5', 'gone')]);
-      for (let i = 0; i < 20 && h.store.getVideoAccess('open') === null; i++) await new Promise((r) => setTimeout(r, 25));
-      await new Promise((r) => setTimeout(r, 400));
-
-      assert.deepEqual(asked.sort(), ['gone', 'open', 'secret'], 'every video is asked about once, including unanswerable ones');
-      assert.deepEqual(h.store.getVideoAccess('secret'), { channelId: 'UCsrv', membersOnly: true });
-      assert.equal(h.store.getVideoAccess('gone'), null);
-
-      await h.app.inject({ method: 'POST', url: '/videos/access', headers: bearer(accessToken), payload: { videoId: 'secret', channelId: 'UCfake', membersOnly: false } });
-      assert.deepEqual(h.store.getVideoAccess('secret'), { channelId: 'UCsrv', membersOnly: true }, 'a client report does not replace the server check');
-      h.store.saveVideoAccess('open', 'UCsrv', true, Date.now(), 'server');
-      assert.equal(h.store.getVideoAccess('open')?.membersOnly, true, 'a newer server check does replace an older one');
-    } finally {
-      await h.app.close();
-    }
-  });
-});
-
-describe('video access checker logging', () => {
-  it('logs a start, a finish with totals, and each video it got no answer for; a challenge drops the queue loudly', async () => {
-    const store = new Store(':memory:');
-    const lines: Array<[string, object, string]> = [];
-    const log = { info: (o: object, m: string) => lines.push(['info', o, m]), warn: (o: object, m: string) => lines.push(['warn', o, m]) };
-    const answers: Record<string, () => Promise<VideoAccessResult>> = {
-      a: async () => ({ channelId: 'UC1', membersOnly: true }),
-      b: async () => ({ channelId: 'UC1', membersOnly: false }),
-      c: async () => ({ unavailable: 'ERROR: gone' }),
-    };
-    const checker = createVideoAccessChecker(store, (id) => answers[id](), log, 0);
-    checker.enqueue(['a', 'b', 'c']);
-    await checker.idle();
-    assert.deepEqual(lines.map(([, , m]) => m), ['video access check started', 'video access: no answer', 'video access check finished']);
-    assert.deepEqual(lines[2][1], { checked: 3, membersOnly: 1, public: 1, unavailable: 1, ms: (lines[2][1] as { ms: number }).ms });
-
-    lines.length = 0;
-    answers.d = async () => { throw new Error('YouTube is challenging this server'); };
-    answers.e = async () => ({ channelId: 'UC1', membersOnly: false });
-    checker.enqueue(['d', 'e']);
-    await checker.idle();
-    const warn = lines.find(([level]) => level === 'warn');
-    assert.match(warn?.[2] ?? '', /queue dropped/);
-    assert.equal((warn?.[1] as { dropped: number }).dropped, 1);
   });
 });
