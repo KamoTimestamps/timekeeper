@@ -1,21 +1,22 @@
 .PHONY: build build-devel server watch bump install release release-push
 
 build:
-	@npm install
-	@npm run build
-	@npm run build:firefox
-	@npm run build:userscript
+	@pnpm install --frozen-lockfile
+	@pnpm run build
+	@pnpm run build:firefox
+	@pnpm run build:userscript
 
 # Devel-channel userscript only (../timekeeper.devel.user.js); commit it on the devel branch only.
 build-devel:
-	@npm run build:userscript:devel
+	@pnpm install --frozen-lockfile
+	@pnpm run build:userscript:devel
 
 install:
 	@pnpm install
 	@pnpm add -D http-server 2>/dev/null; true
 
 server: install
-	@npm run build:userscript
+	@pnpm run build:userscript
 	@pnpm dlx http-server -a 127.0.0.1 -p0 -c-1 .. &
 	@sleep 1 && open "http://127.0.0.1:8080/timekeeper.user.js" 2>/dev/null || true
 	@wait

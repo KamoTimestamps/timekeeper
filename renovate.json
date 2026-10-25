@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "labels": ["dependencies"],
+  "schedule": ["before 6am on monday"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  },
+  "packageRules": [
+    {
+      "description": "client/ (pnpm) and server/ (npm): batch non-major dev tooling updates",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "dev dependencies (non-major)"
+    },
+    {
+      "description": "Batch non-major runtime updates",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "dependencies (non-major)"
+    },
+    {
+      "description": "Workflow action bumps (pinned by digest)",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    },
+    {
+      "description": "Server runs on Node 24 (engines >=24); keep the base image and @types/node on that major",
+      "matchPackageNames": ["node", "@types/node"],
+      "matchFileNames": ["server/**"],
+      "allowedVersions": "<25"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "minimumReleaseAge": null,
+    "schedule": ["at any time"],
+    "labels": ["dependencies", "security"]
+  }
+}
