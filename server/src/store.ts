@@ -567,8 +567,8 @@ export class Store {
   /**
    * A user's live timestamps for the landing page. Every word of `query` must match the comment, the
    * video ID, or the title/channel of the video when its YouTube details are cached. Rows come back
-   * grouped by video, videos with the most recent change first, each video's hits in playback order;
-   * a page can end mid-video, and the next page then continues it.
+   * grouped by video, newest air date first (videos without cached details last), each video's hits
+   * in playback order; a page can end mid-video, and the next page then continues it.
    */
   searchTimestamps(
     userId: string,
@@ -594,7 +594,8 @@ export class Store {
     const from = `FROM timestamps t LEFT JOIN video_info v ON v.video_id = t.video_id WHERE ${where.join(' AND ')}`;
 
     const { total } = this.db.prepare(`SELECT COUNT(*) AS total ${from}`).get(...params) as { total: number };
-    const order = 'MAX(COALESCE(t.updated_at, 0)) OVER (PARTITION BY t.video_id) DESC, t.video_id, t.start, t.guid';
+    // published_at is ISO 8601, so it sorts as text; NULLs (no cached YouTube details) sort last in DESC.
+    const order = 'v.published_at DESC, t.video_id, t.start, t.guid';
     const rows = this.db
       .prepare(`SELECT t.guid, t.video_id, t.start, t.comment, t.updated_at ${from} ORDER BY ${order} LIMIT ? OFFSET ?`)
       .all(...params, limit, offset) as Array<{ guid: string; video_id: string; start: number; comment: string; updated_at: number | null }>;

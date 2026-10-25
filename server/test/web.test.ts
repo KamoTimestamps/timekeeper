@@ -230,17 +230,30 @@ describe('timestamp browser', () => {
     assert.equal((await get('/web/timestamps', other)).json().total, 1);
   });
 
-  it('puts the video with the most recent change first', async () => {
+  it('orders videos by air date, newest first and undated last, then hits by time', async () => {
     const script = await h.login('t3', 't3@example.com');
     const send = (records: unknown[]) =>
       h.app.inject({ method: 'POST', url: '/sync/push', headers: bearer(script.accessToken), payload: { deviceId: 'd', records } });
-    await send([record('o1', 1, { video_id: 'older', start: 50 })]);
-    await new Promise((r) => setTimeout(r, 5));
-    await send([record('n1', 1, { video_id: 'newer', start: 80 }), record('n2', 2, { video_id: 'newer', start: 10 })]);
+    // Pushed oldest-airing first, so neither push order nor change time matches the expected order.
+    await send([
+      record('o1', 1, { video_id: 'older', start: 50 }),
+      record('u1', 2, { video_id: 'undated', start: 5 }),
+      record('n1', 3, { video_id: 'newer', start: 80 }),
+      record('n2', 4, { video_id: 'newer', start: 10 }),
+    ]);
+    const details = (publishedAt: string | null) => ({ title: 't', channelTitle: 'c', thumbnailUrl: null, publishedAt });
+    h.store.saveVideoInfo(
+      [
+        { videoId: 'older', info: details('2024-01-01T00:00:00Z') },
+        { videoId: 'newer', info: details('2026-06-01T00:00:00Z') },
+        { videoId: 'undated', info: null },
+      ],
+      Date.now(),
+    );
     const login = await h.app.inject({ method: 'POST', url: '/web/login', headers: { origin: ORIGIN }, payload: { idToken: await h.idToken({ sub: 't3', email: 't3@example.com' }) } });
     const cookie = { cookie: `${COOKIE}=${login.cookies.find((c) => c.name === COOKIE)!.value}` };
     const items = (await get('/web/timestamps', cookie)).json().items as Array<{ guid: string }>;
-    assert.deepEqual(items.map((i) => i.guid), ['n2', 'n1', 'o1']);
+    assert.deepEqual(items.map((i) => i.guid), ['n2', 'n1', 'o1', 'u1']);
   });
 
   it('searches case-insensitively, requires every word, and treats % and _ literally', async () => {
