@@ -336,6 +336,14 @@ describe('landing page video details', () => {
     assert.equal(top.find((v: { videoId: string }) => v.videoId === 'vidB').info, undefined, 'unknown videos stay plain');
     assert.deepEqual(lookups[0].sort(), ['vidA', 'vidB']);
 
+    h.store.saveVideoAccess('vidA', 'UC1', true, Date.now());
+    h.store.saveVideoAccess('vidB', 'UC1', false, Date.now());
+    const again = (await h.app.inject({ method: 'GET', url: '/web/overview', headers: { cookie: `${COOKIE}=${cookie.value}` } })).json().stats.topVideos;
+    assert.equal(again.find((v: { videoId: string }) => v.videoId === 'vidA').membersOnly, true);
+    assert.equal(again.find((v: { videoId: string }) => v.videoId === 'vidB').membersOnly, false);
+    const listed = (await h.app.inject({ method: 'GET', url: '/web/timestamps?video=vidA', headers: { cookie: `${COOKIE}=${cookie.value}` } })).json();
+    assert.equal(listed.items[0].membersOnly, true, 'the timestamps list carries it too');
+
     const headers = { cookie: `${COOKIE}=${cookie.value}` };
     const byChannel = await h.app.inject({ method: 'GET', url: `/web/timestamps?channel=${encodeURIComponent('A channel')}`, headers });
     assert.deepEqual(byChannel.json().items.map((i: { videoId: string }) => i.videoId), ['vidA']);

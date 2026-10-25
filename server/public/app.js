@@ -147,6 +147,11 @@ function renderTiles(stats) {
   $('tiles').replaceChildren(...nodes);
 }
 
+// `membersOnly` is only present once a userscript has reported the video, so no badge means "not known to be".
+function membersBadge(video) {
+  return video.membersOnly ? [' ', el('span', { className: 'badge members', title: 'Members-only stream' }, 'Members')] : [];
+}
+
 function renderTopVideos(videos) {
   $('no-videos').hidden = videos.length > 0;
   $('top-videos').replaceChildren(
@@ -156,14 +161,14 @@ function renderTopVideos(videos) {
       const href = { href: url.toString(), target: '_blank', rel: 'noopener noreferrer' };
       const count = el('span', { className: 'count' }, `${number(video.count)} timestamp${video.count === 1 ? '' : 's'}`);
       // `info` is only present when the server has a YouTube API key and the video is public.
-      if (!video.info) return el('li', {}, el('a', href, video.videoId), count);
+      if (!video.info) return el('li', {}, el('a', href, video.videoId), ...membersBadge(video), count);
 
       const thumb = video.info.thumbnailUrl
         ? el('img', { className: 'thumb', src: video.info.thumbnailUrl, alt: '', loading: 'lazy', width: '80', height: '45' })
         : el('span', { className: 'thumb' });
       const text = el('div', { className: 'video-text' },
         el('a', { ...href, className: 'video-title', title: video.info.title }, video.info.title),
-        el('div', { className: 'muted', title: video.info.channelTitle }, video.info.channelTitle));
+        el('div', { className: 'muted', title: video.info.channelTitle }, video.info.channelTitle, ...membersBadge(video)));
       return el('li', { className: 'rich' }, thumb, text, count);
     }),
   );
@@ -379,6 +384,7 @@ function renderVideoHead(item) {
   if (channelName) sub.append(el('a', { href: `#/timestamps?channel=${encodeURIComponent(channelName)}`, title: `Only ${channelName}` }, channelName));
   if (channelName && aired) sub.append(' · ');
   if (aired) sub.append(aired);
+  sub.append(...(channelName || aired ? membersBadge(item) : membersBadge(item).slice(1)));
   return el('div', { className: 'group-head' },
     el('a', { href: filter, tabindex: '-1', 'aria-hidden': 'true' }, thumb),
     el('div', { className: 'video-text' },

@@ -718,6 +718,15 @@ export class Store {
       .run(videoId, channelId, membersOnly ? 1 : 0, now);
   }
 
+  /** Whether each of these videos is members-only, for the ones a userscript has reported; others are absent. */
+  getMembersOnly(videoIds: string[]): Map<string, boolean> {
+    if (videoIds.length === 0) return new Map();
+    const rows = this.db
+      .prepare(`SELECT video_id, members_only FROM video_access WHERE video_id IN (${videoIds.map(() => '?').join(',')})`)
+      .all(...videoIds) as Array<{ video_id: string; members_only: number }>;
+    return new Map(rows.map((r) => [r.video_id, r.members_only === 1]));
+  }
+
   getVideoAccess(videoId: string): { channelId: string; membersOnly: boolean } | null {
     const row = this.db.prepare('SELECT channel_id, members_only FROM video_access WHERE video_id = ?').get(videoId) as
       | { channel_id: string; members_only: number }

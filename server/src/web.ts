@@ -177,6 +177,9 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
     }
 
     const stats = store.getStats(session.userId);
+    // Absent, not false, until a userscript has reported the video.
+    const topMembersOnly = store.getMembersOnly(stats.topVideos.map((v) => v.videoId));
+    stats.topVideos = stats.topVideos.map((v) => (topMembersOnly.has(v.videoId) ? { ...v, membersOnly: topMembersOnly.get(v.videoId) } : v));
     if (youtube && stats.topVideos.length > 0) {
       const info = await resolveVideoInfo(store, youtube, stats.topVideos.map((v) => v.videoId), req.log);
       stats.topVideos = stats.topVideos.map((v) => (info.has(v.videoId) ? { ...v, info: info.get(v.videoId) } : v));
@@ -252,9 +255,14 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
     const info = youtube && items.length > 0
       ? await resolveVideoInfo(store, youtube, [...new Set(items.map((i) => i.videoId))], req.log)
       : new Map();
+    const membersOnly = store.getMembersOnly([...new Set(items.map((i) => i.videoId))]);
     return {
       total,
-      items: items.map((i) => (info.has(i.videoId) ? { ...i, info: info.get(i.videoId) } : i)),
+      items: items.map((i) => ({
+        ...i,
+        ...(info.has(i.videoId) ? { info: info.get(i.videoId) } : {}),
+        ...(membersOnly.has(i.videoId) ? { membersOnly: membersOnly.get(i.videoId) } : {}),
+      })),
       nextCursor: next ? encodeCursor(next) : null,
     };
   });
