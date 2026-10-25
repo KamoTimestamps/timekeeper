@@ -12,20 +12,21 @@ describe('search query parsing', () => {
       words: ['boss', 'fight'],
       title: ['cult'],
       channel: ['Kanna Yanagi'],
+      date: [],
     });
-    assert.deepEqual(parseSearch('TITLE:Lamb Channel:x'), { words: [], title: ['Lamb'], channel: ['x'] }, 'field names ignore case');
-    assert.deepEqual(parseSearch('title:"Cult of the Lamb"'), { words: [], title: ['Cult of the Lamb'], channel: [] });
+    assert.deepEqual(parseSearch('TITLE:Lamb Channel:x'), { words: [], title: ['Lamb'], channel: ['x'], date: [] }, 'field names ignore case');
+    assert.deepEqual(parseSearch('title:"Cult of the Lamb"'), { words: [], title: ['Cult of the Lamb'], channel: [], date: [] });
   });
 
   it('ignores a field with nothing after it, and unterminated quotes still count', () => {
-    assert.deepEqual(parseSearch('title:'), { words: [], title: [], channel: [] });
-    assert.deepEqual(parseSearch('boss channel: '), { words: ['boss'], title: [], channel: [] });
-    assert.deepEqual(parseSearch('title:""'), { words: [], title: [], channel: [] });
-    assert.deepEqual(parseSearch('title:"half open'), { words: [], title: ['half open'], channel: [] });
+    assert.deepEqual(parseSearch('title:'), { words: [], title: [], channel: [], date: [] });
+    assert.deepEqual(parseSearch('boss channel: '), { words: ['boss'], title: [], channel: [], date: [] });
+    assert.deepEqual(parseSearch('title:""'), { words: [], title: [], channel: [], date: [] });
+    assert.deepEqual(parseSearch('title:"half open'), { words: [], title: ['half open'], channel: [], date: [] });
   });
 
   it('only treats the exact field names as fields, and caps the number of terms', () => {
-    assert.deepEqual(parseSearch('comment:x mytitle:y'), { words: ['comment:x', 'mytitle:y'], title: [], channel: [] });
+    assert.deepEqual(parseSearch('comment:x mytitle:y'), { words: ['comment:x', 'mytitle:y'], title: [], channel: [], date: [] });
     const many = parseSearch(Array.from({ length: 12 }, (_, i) => `w${i}`).join(' '));
     assert.equal(many.words.length, 8);
   });

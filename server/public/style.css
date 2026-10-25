@@ -223,7 +223,49 @@ th { color: var(--muted); font-weight: 500; border-top: 0; }
 #display-name-cancel { margin-top: 12px; }
 dd .ghost { margin-left: 8px; }
 
-.search { position: relative; }
+.search-row { display: flex; gap: 8px; align-items: stretch; }
+.search { position: relative; flex: 1; min-width: 0; }
+.icon-button { flex: none; display: grid; place-items: center; width: 42px; padding: 0; color: var(--muted); }
+.icon-button svg { width: 20px; height: 20px; }
+.icon-button:hover, .icon-button[aria-expanded="true"] { color: var(--text); }
+
+/* The calendar for "date:" terms, opened from the button beside the search box. */
+.date-picker {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 4;
+  width: 300px;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+}
+.dp-head { display: flex; gap: 6px; align-items: center; }
+.dp-head select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.dp-head .ghost { padding: 4px 10px; font-size: 18px; line-height: 1; }
+.dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 8px; }
+.dp-weekdays span { text-align: center; font-size: 12px; color: var(--muted); }
+.dp-day { padding: 6px 0; border: 0; border-radius: 6px; background: transparent; font-size: 13px; }
+.dp-day:hover { background: var(--bg); }
+.dp-day.today { box-shadow: inset 0 0 0 1px var(--accent); }
+.dp-day.inside { background: var(--bg); }
+.dp-day.edge, .dp-day.edge:hover { background: var(--accent); color: var(--card); }
+.date-picker #dp-summary { min-height: 1.5em; margin: 10px 0 0; font-size: 13px; }
+.dp-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+#dp-apply:disabled { opacity: 0.5; cursor: default; }
 .suggestions {
   position: absolute;
   top: 100%;

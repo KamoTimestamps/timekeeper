@@ -519,7 +519,8 @@ async function loadStamps({ append }) {
     stampList.loaded = 0;
     stampList.cursor = null;
   }
-  const params = new URLSearchParams({ q: stampList.query });
+  // tz: so a "date:" day is the viewer's own day, matching the air dates shown on the page.
+  const params = new URLSearchParams({ q: stampList.query, tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
   if (stampList.cursor) params.set('cursor', stampList.cursor);
   if (stampList.video) params.set('video', stampList.video);
   if (stampList.channel) params.set('channel', stampList.channel);
@@ -572,7 +573,7 @@ function scheduleSearch() {
 
 // Autocomplete. "title:" and "channel:" search one field (the server parses them); suggestions are
 // those two operators plus titles and channel names from the videos you have timestamps on.
-const SEARCH_OPERATORS = ['title:', 'channel:'];
+const SEARCH_OPERATORS = ['title:', 'channel:', 'date:'];
 const suggestions = { items: [], active: -1, request: 0, timer: null };
 
 // The word being typed: everything after the last space that is not inside quotes.
@@ -615,8 +616,16 @@ async function updateSuggestions() {
   const request = ++suggestions.request;
   const value = $('search').value;
   const { text } = currentSearchToken(value);
-  const field = /^(title|channel):/i.exec(text);
+  const field = /^(title|channel|date):/i.exec(text);
   const lower = text.toLowerCase();
+
+  // Dates are not looked up on the server: offer quick ranges and the calendar.
+  if (field?.[1].toLowerCase() === 'date') {
+    suggestions.items = dateSuggestions(text.slice(field[0].length));
+    suggestions.active = -1;
+    renderSuggestions();
+    return;
+  }
 
   const items = [];
   if (!field && (value === '' || (text !== '' && SEARCH_OPERATORS.some((op) => op.startsWith(lower))))) {
@@ -638,6 +647,10 @@ async function updateSuggestions() {
 function applySuggestion(index) {
   const item = suggestions.items[index];
   if (!item) return;
+  if (item.kind === 'calendar') {
+    closeSuggestions();
+    return openDatePicker();
+  }
   const input = $('search');
   input.value = input.value.slice(0, currentSearchToken(input.value).start) + item.insert;
   input.focus();
@@ -671,6 +684,164 @@ $('search').addEventListener('keydown', (event) => {
     closeSuggestions();
   }
 });
+// --- date picker: "date:" takes a day, month or year (2026-10-25, 2026-10, 2026) or a range
+// (2026-10-01..2026-10-25, either end optional). The calendar writes the term into the search box.
+const pad2 = (n) => String(n).padStart(2, '0');
+const localDay = (date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+const dayAt = (iso) => new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)));
+const DATE_TERM = /(^|\s)date:\S*/i;
+
+function dateSuggestions(partial) {
+  const items = [{ kind: 'calendar', label: 'Pick on a calendar…' }];
+  if (partial !== '') return items;
+  const now = new Date();
+  const ago = (days) => localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days));
+  const month = (offset) => new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  const monthTerm = (date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
+  const presets = [
+    ['Today', ago(0)],
+    ['Yesterday', ago(1)],
+    ['Last 7 days', `${ago(6)}..${ago(0)}`],
+    ['Last 30 days', `${ago(29)}..${ago(0)}`],
+    ['This month', monthTerm(month(0))],
+    ['Last month', monthTerm(month(-1))],
+    ['This year', String(now.getFullYear())],
+  ];
+  return [...presets.map(([label, term]) => ({ kind: 'date', label, insert: `date:${term} ` })), ...items];
+}
+
+const picker = { year: 0, month: 0, start: null, end: null }; // month is 0-11; start/end are 'YYYY-MM-DD'
+const monthLabels = Array.from({ length: 12 }, (_, m) => new Intl.DateTimeFormat(undefined, { month: 'long' }).format(new Date(2000, m, 1)));
+const dayFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+const fullDayFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'full' });
+// 0 = Sunday. Intl's week info is not in every browser; Sunday is the fallback.
+const weekStartsOn = (() => {
+  try {
+    const locale = new Intl.Locale(navigator.language);
+    return (locale.getWeekInfo?.() ?? locale.weekInfo)?.firstDay % 7 || 0;
+  } catch {
+    return 0;
+  }
+})();
+
+function renderDatePicker() {
+  const { year, month, start, end } = picker;
+  $('dp-month').value = String(month);
+  if (![...$('dp-year').options].some((o) => o.value === String(year))) $('dp-year').append(el('option', { value: String(year) }, String(year)));
+  $('dp-year').value = String(year);
+
+  const today = localDay(new Date());
+  const cells = [];
+  for (let blank = (new Date(year, month, 1).getDay() - weekStartsOn + 7) % 7; blank > 0; blank--) cells.push(el('span'));
+  for (let day = 1, last = new Date(year, month + 1, 0).getDate(); day <= last; day++) {
+    const iso = `${year}-${pad2(month + 1)}-${pad2(day)}`;
+    const edge = iso === start || iso === end;
+    const inside = start && end && iso > start && iso < end;
+    const cell = el('button', {
+      type: 'button',
+      className: `dp-day${edge ? ' edge' : ''}${inside ? ' inside' : ''}${iso === today ? ' today' : ''}`,
+      'aria-pressed': String(edge || Boolean(inside)),
+      'aria-label': fullDayFormat.format(dayAt(iso)),
+    }, String(day));
+    cell.addEventListener('click', () => pickDay(iso));
+    cells.push(cell);
+  }
+  $('dp-days').replaceChildren(...cells);
+
+  $('dp-summary').textContent = !start
+    ? 'Click a day, or two days for a range.'
+    : !end || end === start
+      ? `${dayFormat.format(dayAt(start))} (click another day to make a range)`
+      : `${dayFormat.format(dayAt(start))} – ${dayFormat.format(dayAt(end))}`;
+  $('dp-apply').disabled = !start;
+}
+
+function pickDay(iso) {
+  if (!picker.start || picker.end) {
+    picker.start = iso; // a new selection
+    picker.end = null;
+  } else if (iso < picker.start) {
+    [picker.start, picker.end] = [iso, picker.start];
+  } else {
+    picker.end = iso;
+  }
+  renderDatePicker();
+}
+
+function shiftMonth(by) {
+  const moved = new Date(picker.year, picker.month + by, 1);
+  [picker.year, picker.month] = [moved.getFullYear(), moved.getMonth()];
+  renderDatePicker();
+}
+
+function closeDatePicker() {
+  $('date-picker').hidden = true;
+  $('date-button').setAttribute('aria-expanded', 'false');
+}
+
+function openDatePicker() {
+  // Start from the day or range already in the box, when it is spelled out in full days.
+  const existing = /(?:^|\s)date:(\d{4}-\d{2}-\d{2})?(?:\.\.(\d{4}-\d{2}-\d{2})?)?(?:\s|$)/i.exec($('search').value);
+  picker.start = existing?.[1] ?? null;
+  picker.end = existing?.[2] ?? null;
+  if (!picker.start && picker.end) [picker.start, picker.end] = [picker.end, null];
+  const shown = picker.start ? dayAt(picker.start) : new Date();
+  [picker.year, picker.month] = [shown.getFullYear(), shown.getMonth()];
+  renderDatePicker();
+  closeSuggestions();
+  $('date-picker').hidden = false;
+  $('date-button').setAttribute('aria-expanded', 'true');
+  $('dp-month').focus();
+}
+
+function setDateTerm(term) {
+  const input = $('search');
+  if (DATE_TERM.test(input.value)) {
+    input.value = term ? input.value.replace(DATE_TERM, (_, lead) => `${lead}${term}`) : input.value.replace(DATE_TERM, '').replace(/\s{2,}/g, ' ').trim();
+  } else if (term) {
+    input.value = `${input.value}${input.value && !input.value.endsWith(' ') ? ' ' : ''}${term}`;
+  }
+  scheduleSearch();
+}
+
+$('dp-month').replaceChildren(...monthLabels.map((label, m) => el('option', { value: String(m) }, label)));
+$('dp-year').replaceChildren(
+  ...Array.from({ length: new Date().getFullYear() - 2005 + 2 }, (_, i) => String(new Date().getFullYear() + 1 - i)).map((y) => el('option', { value: y }, y)),
+);
+$('dp-weekdays').replaceChildren(
+  ...Array.from({ length: 7 }, (_, i) =>
+    el('span', {}, new Intl.DateTimeFormat(undefined, { weekday: 'narrow' }).format(new Date(2023, 0, 1 + ((weekStartsOn + i) % 7))))),
+);
+$('dp-prev').addEventListener('click', () => shiftMonth(-1));
+$('dp-next').addEventListener('click', () => shiftMonth(1));
+$('dp-month').addEventListener('change', () => ((picker.month = Number($('dp-month').value)), renderDatePicker()));
+$('dp-year').addEventListener('change', () => ((picker.year = Number($('dp-year').value)), renderDatePicker()));
+$('dp-apply').addEventListener('click', () => {
+  const { start, end } = picker;
+  setDateTerm(!end || end === start ? `date:${start}` : `date:${start}..${end}`);
+  closeDatePicker();
+  $('search').focus();
+});
+$('dp-clear').addEventListener('click', () => {
+  setDateTerm('');
+  closeDatePicker();
+  $('search').focus();
+});
+$('dp-cancel').addEventListener('click', () => {
+  closeDatePicker();
+  $('date-button').focus();
+});
+$('date-button').addEventListener('click', () => ($('date-picker').hidden ? openDatePicker() : closeDatePicker()));
+document.addEventListener('mousedown', (event) => {
+  if (!$('date-picker').hidden && !$('date-picker').contains(event.target) && !$('date-button').contains(event.target)) closeDatePicker();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !$('date-picker').hidden) {
+    closeDatePicker();
+    $('date-button').focus();
+  }
+});
+
 $('search-form').addEventListener('submit', (event) => event.preventDefault());
 $('load-more').addEventListener('click', () => loadStamps({ append: true }));
 

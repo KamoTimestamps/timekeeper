@@ -7,10 +7,12 @@ export interface ParsedSearch {
   title: string[];
   /** Must be in the channel's name. */
   channel: string[];
+  /** Air-date terms, still as typed (a day, month, year or range; see dates.ts). */
+  date: string[];
 }
 
 /** A value is one word, or a "quoted phrase" (so it can hold spaces): `title:boss`, `channel:"Kanna Yanagi"`. */
-const TOKEN = /(?:(title|channel):)?(?:"([^"]*)"?|([^\s"]+))/gi;
+const TOKEN = /(?:(title|channel|date):)?(?:"([^"]*)"?|([^\s"]+))/gi;
 
 /**
  * Splits a query into what to match where. Every term must match (AND), at most `maxTerms` of them.
@@ -18,14 +20,14 @@ const TOKEN = /(?:(title|channel):)?(?:"([^"]*)"?|([^\s"]+))/gi;
  * searched for as text.
  */
 export function parseSearch(query: string, maxTerms = 8): ParsedSearch {
-  const parsed: ParsedSearch = { words: [], title: [], channel: [] };
+  const parsed: ParsedSearch = { words: [], title: [], channel: [], date: [] };
   let count = 0;
   for (const match of query.matchAll(TOKEN)) {
     if (count >= maxTerms) break;
     const [, field, quoted, bare] = match;
     const value = (quoted ?? bare).trim();
-    if (!value || (!field && /^(?:title|channel):$/i.test(value))) continue;
-    (field ? parsed[field.toLowerCase() as 'title' | 'channel'] : parsed.words).push(value);
+    if (!value || (!field && /^(?:title|channel|date):$/i.test(value))) continue;
+    (field ? parsed[field.toLowerCase() as 'title' | 'channel' | 'date'] : parsed.words).push(value);
     count++;
   }
   return parsed;

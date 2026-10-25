@@ -40,6 +40,7 @@ const TimestampsQuery = z.object({
   video: z.string().min(1).max(64).optional(),
   channel: z.string().min(1).max(200).optional(),
   cursor: z.string().max(600).optional(),
+  tz: z.string().max(64).optional(), // the page's time zone, so "date:" means the viewer's own days
 });
 
 // The cursor is opaque to the page: the sort key of the last row it has, so the next page resumes after it.
@@ -232,6 +233,7 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
       channel: query.data.channel,
       after,
       limit: TIMESTAMPS_PAGE_SIZE,
+      timeZone: query.data.tz,
     });
     const info = youtube && items.length > 0
       ? await resolveVideoInfo(store, youtube, [...new Set(items.map((i) => i.videoId))], req.log)

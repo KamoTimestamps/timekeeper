@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs';
 import type { ClientInfo } from './client-info.ts';
 import { NAME_CHANGE_LIMIT, NAME_CHANGE_WINDOW_MS } from './username.ts';
 import { likeContains, parseSearch } from './search.ts';
+import { dateRange } from './dates.ts';
 import { dirname } from 'node:path';
 
 export interface User {
@@ -699,7 +700,14 @@ export class Store {
    */
   searchTimestamps(
     userId: string,
-    { query, videoId, channel, after, limit }: { query: string; videoId?: string; channel?: string; after?: TimestampPageKey; limit: number },
+    {
+      query,
+      videoId,
+      channel,
+      after,
+      limit,
+      timeZone,
+    }: { query: string; videoId?: string; channel?: string; after?: TimestampPageKey; limit: number; timeZone?: string },
   ): {
     /** Number of matches; null when `after` is given (only the first page counts). */
     total: number | null;
@@ -732,6 +740,19 @@ export class Store {
     for (const term of search.channel) {
       where.push(`v.channel_title LIKE ? ESCAPE '\\'`);
       params.push(likeContains(term));
+    }
+    // Air date; a term that isn't a valid date or range is ignored, like an empty field. Videos with no
+    // cached details have no date and never match one.
+    for (const term of search.date) {
+      const range = dateRange(term, timeZone);
+      if (range?.from) {
+        where.push('v.published_at >= ?');
+        params.push(range.from);
+      }
+      if (range?.to) {
+        where.push('v.published_at < ?');
+        params.push(range.to);
+      }
     }
     const from = `FROM timestamps t LEFT JOIN video_info v ON v.video_id = t.video_id WHERE ${where.join(' AND ')}`;
 
