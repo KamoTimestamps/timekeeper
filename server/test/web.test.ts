@@ -182,6 +182,68 @@ describe('log out all sessions closes live connections', () => {
   });
 });
 
+describe('timestamp browser', () => {
+  let h: TestHarness;
+  let cookieHeader: Record<string, string>;
+  let other: Record<string, string>;
+  before(async () => {
+    h = await createHarness();
+    const webCookie = async (sub: string, email: string) => {
+      const res = await h.app.inject({ method: 'POST', url: '/web/login', headers: { origin: ORIGIN }, payload: { idToken: await h.idToken({ sub, email }) } });
+      return { cookie: `${COOKIE}=${res.cookies.find((c) => c.name === COOKIE)!.value}` };
+    };
+    const mine = await h.login('t1', 't1@example.com');
+    const theirs = await h.login('t2', 't2@example.com');
+    const push = (token: string, records: unknown[]) =>
+      h.app.inject({ method: 'POST', url: '/sync/push', headers: bearer(token), payload: { deviceId: 'd', records } });
+    await push(mine.accessToken, [
+      record('a', 1, { video_id: 'vidA', start: 90, comment: 'Boss fight begins' }),
+      record('b', 2, { video_id: 'vidA', start: 30, comment: '100% funny_moment' }),
+      record('c', 3, { video_id: 'vidB', start: 5, comment: 'boss intro' }),
+      record('d', 4, { video_id: 'vidB', start: 6, comment: 'boss deleted', deleted_at: 1700000000000 }),
+    ]);
+    await push(theirs.accessToken, [record('x', 1, { video_id: 'vidA', comment: 'boss of someone else' })]);
+    cookieHeader = await webCookie('t1', 't1@example.com');
+    other = await webCookie('t2', 't2@example.com');
+  });
+  after(async () => {
+    await h.app.close();
+  });
+
+  const get = (url: string, headers = cookieHeader) => h.app.inject({ method: 'GET', url, headers });
+
+  it('requires a session', async () => {
+    assert.equal((await h.app.inject({ method: 'GET', url: '/web/timestamps' })).statusCode, 401);
+  });
+
+  it('lists only the user\'s live timestamps, newest change first', async () => {
+    const body = (await get('/web/timestamps')).json();
+    assert.equal(body.total, 3);
+    assert.deepEqual(body.items.map((i: { guid: string }) => i.guid), ['c', 'b', 'a']);
+    assert.equal((await get('/web/timestamps', other)).json().total, 1);
+  });
+
+  it('searches case-insensitively, requires every word, and treats % and _ literally', async () => {
+    const guids = async (q: string) => (await get(`/web/timestamps?q=${encodeURIComponent(q)}`)).json().items.map((i: { guid: string }) => i.guid).sort();
+    assert.deepEqual(await guids('BOSS'), ['a', 'c']);
+    assert.deepEqual(await guids('boss intro'), ['c']);
+    assert.deepEqual(await guids('100%'), ['b']);
+    assert.deepEqual(await guids('%'), ['b']);
+    assert.deepEqual(await guids('funny_moment'), ['b']);
+    assert.deepEqual(await guids('funny?moment'), []);
+    assert.deepEqual(await guids('vidB'), ['c']);
+  });
+
+  it('filters to one video in playback order and pages with offset', async () => {
+    const one = (await get('/web/timestamps?video=vidA')).json();
+    assert.deepEqual(one.items.map((i: { start: number }) => i.start), [30, 90]);
+    const second = (await get('/web/timestamps?offset=2')).json();
+    assert.equal(second.total, 3);
+    assert.deepEqual(second.items.map((i: { guid: string }) => i.guid), ['a']);
+    assert.equal((await get('/web/timestamps?offset=-1')).statusCode, 400);
+  });
+});
+
 describe('landing page video details', () => {
   const lookups: string[][] = [];
   let h: TestHarness;

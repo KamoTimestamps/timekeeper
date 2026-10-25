@@ -8,7 +8,7 @@ import type { GoogleVerifier } from './google.ts';
 import { Hub } from './hub.ts';
 import { Store, type User } from './store.ts';
 import { signAccessToken, verifyAccessToken } from './tokens.ts';
-import type { VideoLookup } from './youtube.ts';
+import { createVideoPrefetcher, type VideoLookup } from './youtube.ts';
 import { registerWeb } from './web.ts';
 
 export interface AppDeps {
@@ -16,6 +16,8 @@ export interface AppDeps {
   store: Store;
   verifyGoogle: GoogleVerifier;
   youtube?: VideoLookup;
+  /** Also look up videos that are already synced but were never cached (once, at startup). */
+  backfillVideoInfo?: boolean;
 }
 
 const MAX_RECORDS_PER_PUSH = 500;
@@ -53,7 +55,7 @@ declare module 'fastify' {
   }
 }
 
-export async function buildApp({ config, store, verifyGoogle, youtube }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, store, verifyGoogle, youtube, backfillVideoInfo }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: process.env.NODE_ENV !== 'test', bodyLimit: 5 * 1024 * 1024 });
   const hub = new Hub();
 
@@ -61,6 +63,12 @@ export async function buildApp({ config, store, verifyGoogle, youtube }: AppDeps
   await app.register(websocket);
   app.decorateRequest('userId', '');
   app.addHook('onClose', async () => hub.close());
+
+  const prefetcher = youtube && createVideoPrefetcher(store, youtube, app.log);
+  if (prefetcher) {
+    app.addHook('onClose', () => prefetcher.idle()); // finish writing before the caller closes the store
+    if (backfillVideoInfo) prefetcher.enqueue(store.uncachedVideoIds());
+  }
 
   await registerWeb(app, { config, store, verifyGoogle, hub, youtube });
 
@@ -149,6 +157,7 @@ export async function buildApp({ config, store, verifyGoogle, youtube }: AppDeps
 
     const result = store.applyPush(req.userId, body.data.deviceId, body.data.records);
     if (result.accepted.length > 0) {
+      prefetcher?.enqueue([...new Set(result.accepted.filter((r) => !r.deleted_at).map((r) => r.video_id))]);
       hub.broadcast(req.userId, body.data.deviceId, {
         type: 'changes',
         fromSeq: result.fromSeq,

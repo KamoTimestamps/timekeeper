@@ -531,6 +531,18 @@ export class Store {
     }));
   }
 
+  /** Video IDs with live timestamps (any user) that have never been looked up. */
+  uncachedVideoIds(): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT t.video_id FROM timestamps t
+         LEFT JOIN video_info v ON v.video_id = t.video_id
+         WHERE t.deleted_at IS NULL AND v.video_id IS NULL`,
+      )
+      .all() as Array<{ video_id: string }>;
+    return rows.map((r) => r.video_id);
+  }
+
   saveVideoInfo(entries: Array<{ videoId: string; info: VideoInfo | null }>, now: number): void {
     const upsert = this.db.prepare(
       `INSERT INTO video_info (video_id, title, channel_title, thumbnail_url, published_at, fetched_at)
@@ -551,6 +563,41 @@ export class Store {
   }
 
   // --- timestamps ---
+
+  /**
+   * A user's live timestamps for the landing page. Every word of `query` must match the comment, the
+   * video ID, or the title/channel of the video when its YouTube details are cached. Newest change
+   * first, except within one video, where they run in playback order.
+   */
+  searchTimestamps(
+    userId: string,
+    { query, videoId, offset, limit }: { query: string; videoId?: string; offset: number; limit: number },
+  ): { total: number; items: Array<{ guid: string; videoId: string; start: number; comment: string; updatedAt: number | null }> } {
+    const where = ['t.user_id = ?', 't.deleted_at IS NULL'];
+    const params: Array<string | number> = [userId];
+    if (videoId) {
+      where.push('t.video_id = ?');
+      params.push(videoId);
+    }
+    for (const word of query.split(/\s+/).filter(Boolean).slice(0, 8)) {
+      const like = `%${word.replace(/[\\%_]/g, '\\$&')}%`;
+      where.push(
+        `(t.comment LIKE ? ESCAPE '\\' OR t.video_id = ? OR v.title LIKE ? ESCAPE '\\' OR v.channel_title LIKE ? ESCAPE '\\')`,
+      );
+      params.push(like, word, like, like);
+    }
+    const from = `FROM timestamps t LEFT JOIN video_info v ON v.video_id = t.video_id WHERE ${where.join(' AND ')}`;
+
+    const { total } = this.db.prepare(`SELECT COUNT(*) AS total ${from}`).get(...params) as { total: number };
+    const order = videoId ? 't.start, t.guid' : 'COALESCE(t.updated_at, 0) DESC, t.seq DESC';
+    const rows = this.db
+      .prepare(`SELECT t.guid, t.video_id, t.start, t.comment, t.updated_at ${from} ORDER BY ${order} LIMIT ? OFFSET ?`)
+      .all(...params, limit, offset) as Array<{ guid: string; video_id: string; start: number; comment: string; updated_at: number | null }>;
+    return {
+      total,
+      items: rows.map((r) => ({ guid: r.guid, videoId: r.video_id, start: r.start, comment: r.comment, updatedAt: r.updated_at })),
+    };
+  }
 
   /**
    * Last-writer-wins by Lamport write_counter, the same rule the userscript uses when merging

@@ -20,7 +20,10 @@ function show(view) {
   $('loading').hidden = view !== 'loading';
   $('signed-out').hidden = view !== 'signed-out';
   $('dashboard').hidden = view !== 'dashboard';
-  $('account').hidden = view !== 'dashboard';
+  $('timestamps').hidden = view !== 'timestamps';
+  $('account').hidden = view !== 'dashboard' && view !== 'timestamps';
+  $('nav-overview').classList.toggle('active', view === 'dashboard');
+  $('nav-timestamps').classList.toggle('active', view === 'timestamps');
 }
 
 function el(tag, props = {}, ...children) {
@@ -152,8 +155,86 @@ async function loadOverview() {
   renderTiles(data.stats);
   renderTopVideos(data.stats.topVideos);
   renderSessions(data.sessions);
-  show('dashboard');
+  route();
 }
+
+// --- timestamps browser ---
+
+const stampList = { query: '', video: '', offset: 0, token: 0 };
+
+function clock(seconds) {
+  const s = Math.floor(seconds);
+  const h = Math.floor(s / 3600);
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function renderStamp(item) {
+  const watch = new URL('https://www.youtube.com/watch');
+  watch.searchParams.set('v', item.videoId);
+  watch.searchParams.set('t', `${Math.floor(item.start)}s`);
+  const label = item.info ? item.info.title : item.videoId;
+  const videoLink = el('a', { className: 'stamp-video', href: `#/timestamps?video=${encodeURIComponent(item.videoId)}`, title: label }, label);
+  const time = el('a', { className: 'stamp-time', href: watch.toString(), target: '_blank', rel: 'noopener noreferrer', title: 'Open on YouTube at this time' }, clock(item.start));
+  const meta = [item.info?.channelTitle, item.updatedAt ? dateTime.format(item.updatedAt) : ''].filter(Boolean).join(' · ');
+  return el('li', {},
+    time,
+    el('div', { className: 'stamp-body' },
+      el('div', { className: 'stamp-comment' }, item.comment || '(no comment)'),
+      el('div', { className: 'stamp-meta muted' }, videoLink, meta ? ` · ${meta}` : '')));
+}
+
+async function loadStamps({ append }) {
+  const token = ++stampList.token; // a slower, older response must not overwrite a newer search
+  if (!append) stampList.offset = 0;
+  const params = new URLSearchParams({ q: stampList.query, offset: String(stampList.offset) });
+  if (stampList.video) params.set('video', stampList.video);
+  $('load-more').disabled = true;
+  const { ok, status, data } = await api(`/web/timestamps?${params}`);
+  if (token !== stampList.token) return;
+  if (status === 401) return showSignedOut('Your session has ended. Please sign in again.');
+  if (!ok) {
+    $('results-summary').textContent = 'Could not load timestamps. Please try again.';
+    $('load-more').disabled = false;
+    return;
+  }
+  const nodes = data.items.map(renderStamp);
+  if (append) $('timestamp-list').append(...nodes);
+  else $('timestamp-list').replaceChildren(...nodes);
+  stampList.offset += data.items.length;
+  $('results-summary').textContent =
+    data.total === 0 ? 'No timestamps found.' : `Showing ${number(stampList.offset)} of ${number(data.total)} timestamp${data.total === 1 ? '' : 's'}`;
+  $('load-more').hidden = stampList.offset >= data.total;
+  $('load-more').disabled = false;
+}
+
+let searchTimer = null;
+
+$('search').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    stampList.query = $('search').value.trim();
+    loadStamps({ append: false });
+  }, 250);
+});
+$('search-form').addEventListener('submit', (event) => event.preventDefault());
+$('load-more').addEventListener('click', () => loadStamps({ append: true }));
+
+// "#/timestamps?video=ID" is the timestamps view filtered to one video; anything else is the overview.
+function route() {
+  const [path, queryString = ''] = location.hash.slice(1).split('?');
+  if (path !== '/timestamps') return show('dashboard');
+  stampList.video = new URLSearchParams(queryString).get('video') || '';
+  $('video-filter').hidden = !stampList.video;
+  show('timestamps');
+  loadStamps({ append: false });
+}
+
+window.addEventListener('hashchange', () => {
+  if (!$('signed-out').hidden || !$('loading').hidden) return;
+  route();
+});
 
 let signInReady = null;
 

@@ -97,7 +97,11 @@ and devices you have synced, review your sessions, and **log out all sessions**.
   believes those headers when the connection comes from Cloudflare's published IP ranges, which
   `deploy/remote-update.sh` refreshes into `/etc/caddy/cloudflare-*.caddy` on every deploy.
   Other deployments need an equivalent proxy rule.
-- **Routes:** `GET /web/config`, `POST /web/login`, `GET /web/overview`, `POST /web/logout`,
+- **Timestamps page** (`#/timestamps`): browse and search all your live timestamps, 50 per page,
+  newest change first. Every search word must match the comment, the video ID, or a video's
+  title/channel (title and channel need `YOUTUBE_API_KEY`; see "Video details"). Clicking a video shows just that video in playback order; clicking a time opens
+  YouTube at that moment. `GET /web/timestamps?q=&video=&offset=`.
+- **Routes:** `GET /web/config`, `POST /web/login`, `GET /web/overview`, `GET /web/timestamps`, `POST /web/logout`,
   `POST /web/logout-all`, plus the static files under `/` and `/assets/`.
 
 ## Video details
@@ -106,7 +110,9 @@ With `YOUTUBE_API_KEY` set, the landing page's "Most-annotated videos" shows eac
 title and channel (from the YouTube Data API's `videos.list`) instead of the bare ID. Create the key
 in Google Cloud Console, enable **YouTube Data API v3** and restrict the key to that API. Results are
 cached in the `video_info` table for 24 hours, including "not found" for private or deleted videos,
-so a dashboard load costs at most one quota unit. If YouTube can't be reached the page falls back to
+so a dashboard load costs at most one quota unit. New video IDs are looked up in the background as
+soon as a push brings them in (50 per call), and at startup the server fills in any synced videos
+that were never cached, so titles are searchable without anyone having to view them first. If YouTube can't be reached the page falls back to
 the cached copy, or to the bare ID. Without a key nothing calls YouTube.
 
 ## Sessions

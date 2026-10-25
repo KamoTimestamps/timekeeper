@@ -11,6 +11,7 @@ const app = await buildApp({
   store,
   verifyGoogle: createGoogleVerifier(config.googleClientId),
   youtube: config.youtubeApiKey ? createYouTubeClient(config.youtubeApiKey) : undefined,
+  backfillVideoInfo: true,
 });
 
 const shutdown = async () => {

@@ -27,6 +27,12 @@ export interface WebDeps {
 
 const PUBLIC_DIR = new URL('../public/', import.meta.url);
 const LoginBody = z.object({ idToken: z.string().min(1) });
+const TIMESTAMPS_PAGE_SIZE = 50; // also the most video IDs one YouTube lookup accepts
+const TimestampsQuery = z.object({
+  q: z.string().max(200).default(''),
+  video: z.string().min(1).max(64).optional(),
+  offset: z.coerce.number().int().min(0).default(0),
+});
 
 // Only what Google's sign-in button needs: https://developers.google.com/identity/gsi/web/guides/client-library
 const CSP = [
@@ -135,6 +141,28 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
       stats,
       sessions: store.listSessions(session.userId).map((s) => ({ ...s, current: s.id === session.sessionId })),
     };
+  });
+
+  app.get('/web/timestamps', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const session = currentSession(req);
+    if (!session) {
+      clearSessionCookie(reply);
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    const query = TimestampsQuery.safeParse(req.query);
+    if (!query.success) return reply.code(400).send({ error: 'invalid_request' });
+
+    const { total, items } = store.searchTimestamps(session.userId, {
+      query: query.data.q,
+      videoId: query.data.video,
+      offset: query.data.offset,
+      limit: TIMESTAMPS_PAGE_SIZE,
+    });
+    const info = youtube && items.length > 0
+      ? await resolveVideoInfo(store, youtube, [...new Set(items.map((i) => i.videoId))], req.log)
+      : new Map();
+    return { total, items: items.map((i) => (info.has(i.videoId) ? { ...i, info: info.get(i.videoId) } : i)) };
   });
 
   app.post('/web/logout', { preHandler: requireSameOrigin }, async (req, reply) => {

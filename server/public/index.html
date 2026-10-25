@@ -11,6 +11,10 @@
   <header class="top">
     <h1>Timekeeper <span>Sync</span></h1>
     <div id="account" class="account" hidden>
+      <nav class="nav">
+        <a id="nav-overview" href="#/">Overview</a>
+        <a id="nav-timestamps" href="#/timestamps">Timestamps</a>
+      </nav>
       <span id="account-email"></span>
       <button id="signout" class="ghost" type="button">Sign out</button>
     </div>
@@ -56,6 +60,21 @@
             <tbody id="sessions"></tbody>
           </table>
         </div>
+      </section>
+    </section>
+
+    <section id="timestamps" hidden>
+      <section class="card">
+        <h2>Timestamps</h2>
+        <form id="search-form" class="search" role="search">
+          <input id="search" type="search" placeholder="Search comments, video titles and channels" maxlength="200" autocomplete="off" aria-label="Search timestamps">
+        </form>
+        <p id="video-filter" class="muted" hidden>
+          Showing one video, in playback order. <a href="#/timestamps" id="clear-video">Show all videos</a>
+        </p>
+        <p id="results-summary" class="muted" role="status"></p>
+        <ol id="timestamp-list" class="stamps"></ol>
+        <button id="load-more" class="ghost" type="button" hidden>Load more</button>
       </section>
     </section>
   </main>
