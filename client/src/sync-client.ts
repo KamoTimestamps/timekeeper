@@ -44,7 +44,10 @@ const OAUTH_CHANNEL = 'timekeeper_sync_oauth';
 const SETTINGS_AUTH_KEY = 'syncAuthState';
 const SETTINGS_CURSORS_KEY = 'syncCursors';
 
-const PUSH_DEBOUNCE_MS = 1500;
+// A local write is pushed once writes pause for PUSH_DEBOUNCE_MS, but never later than
+// PUSH_MAX_WAIT_MS after the first unpushed one, so continuous editing can't starve the push.
+const PUSH_DEBOUNCE_MS = 500;
+const PUSH_MAX_WAIT_MS = 5000;
 const PUSH_CHUNK_SIZE = 200;
 const PULL_PAGE_SIZE = 500;
 const TOKEN_REFRESH_MARGIN_MS = 60 * 1000;
@@ -145,6 +148,14 @@ let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
+let firstPendingWriteAt = 0;
+/**
+ * Whether the next cycle must pull before pushing. While the socket is up and every batch we
+ * see is contiguous, the cursor is already current, so a local edit only needs the push.
+ * Set on start, reconnect (unless the server's seq matches ours), a seq gap, a dropped socket
+ * and any failed cycle.
+ */
+let pullNeeded = true;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryAttempts = 0;
 let unsubscribeWrites: (() => void) | null = null;
@@ -618,7 +629,10 @@ async function applyRemote(records: TimestampRow[]) {
  * missing and a pull is needed.
  */
 function noteSeqRange(fromSeq: number, seq: number): boolean {
-  if (fromSeq > cursors.pullSeq) return false;
+  if (fromSeq > cursors.pullSeq) {
+    pullNeeded = true;
+    return false;
+  }
   if (seq > cursors.pullSeq) {
     cursors.pullSeq = seq;
     saveCursors();
@@ -681,7 +695,12 @@ async function syncCycle() {
   syncing = true;
   updateSyncStatusDisplay();
   try {
-    await pullAll();
+    // Offline-to-online or gap recovery pulls first so the push sees the freshest server state;
+    // otherwise the websocket has kept us current and the push goes out immediately.
+    if (pullNeeded || !socket) {
+      await pullAll();
+      pullNeeded = false;
+    }
     await pushPending();
     lastSyncedAt = Date.now();
     retryAttempts = 0;
@@ -691,6 +710,7 @@ async function syncCycle() {
       return;
     }
     log('Sync cycle failed:', err, 'warn');
+    pullNeeded = true;
     scheduleRetry();
   } finally {
     syncing = false;
@@ -712,16 +732,20 @@ function scheduleRetry() {
 
 function onLocalWrite() {
   if (stopped) return;
+  const now = Date.now();
   if (pushTimer) clearTimeout(pushTimer);
+  else firstPendingWriteAt = now;
+  const delay = Math.max(0, Math.min(PUSH_DEBOUNCE_MS, firstPendingWriteAt + PUSH_MAX_WAIT_MS - now));
   pushTimer = setTimeout(() => {
     pushTimer = null;
     requestSync();
-  }, PUSH_DEBOUNCE_MS);
+  }, delay);
 }
 
 /** Manual "Sync Now": reconnects immediately if offline and runs a cycle. */
 export function syncNow() {
   if (stopped) return;
+  pullNeeded = true; // an explicit sync (or the browser coming back online) always checks the server
   if (!socket) {
     reconnectAttempts = 0;
     if (reconnectTimer) clearTimeout(reconnectTimer);
@@ -775,17 +799,21 @@ async function connect() {
     if (message.data.type === 'ready') {
       reconnectAttempts = 0;
       setStatus('online');
-      requestSync(); // catch up on anything missed while disconnected
+      // Catch up on anything missed while disconnected; the server's seq tells us if there is any.
+      if (message.data.seq === undefined || message.data.seq !== cursors.pullSeq) pullNeeded = true;
+      requestSync();
     } else if (message.data.type === 'changes' && message.data.records) {
       const { fromSeq, seq, records } = message.data;
       void enqueue(async () => {
         await applyRemote(records);
-        if (fromSeq === undefined || seq === undefined || !noteSeqRange(fromSeq, seq)) requestSync();
+        if (fromSeq === undefined || seq === undefined) pullNeeded = true;
+        if (pullNeeded || !noteSeqRange(fromSeq!, seq!)) requestSync();
       }).catch((err) => log('Sync: failed to apply live changes:', err, 'error'));
     }
   };
   ws.onclose = (event) => {
     if (socket === ws) socket = null;
+    pullNeeded = true;
     if (stopped) return;
     // 4401: the server rejected our access token; force a refresh before reconnecting.
     if (event.code === 4401) rejectedAccessToken = token;
