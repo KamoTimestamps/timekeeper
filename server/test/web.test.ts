@@ -43,6 +43,21 @@ describe('landing page', () => {
     assert.equal(config.googleClientId, testConfig.googleClientId);
   });
 
+  it('names assets by content hash, so a new page never runs a cached old script', async () => {
+    const page = (await h.app.inject({ method: 'GET', url: '/' })).body;
+    for (const path of ['/assets/app.js', '/assets/theme.js', '/assets/style.css', '/assets/favicon.png']) {
+      const named = new RegExp(`"(${path.replace('.', '\\.')}\\?v=[0-9a-f]{10})"`).exec(page);
+      assert.ok(named, `${path} is referenced with a version`);
+      const versioned = await h.app.inject({ method: 'GET', url: named[1] });
+      assert.equal(versioned.statusCode, 200);
+      assert.match(versioned.headers['cache-control'] as string, /immutable/, 'the versioned URL never changes, so it can be cached');
+      assert.equal((await h.app.inject({ method: 'GET', url: path })).headers['cache-control'], 'no-cache', 'the bare URL is always rechecked');
+      assert.equal((await h.app.inject({ method: 'GET', url: `${path}?v=0000000000` })).headers['cache-control'], 'no-cache', 'a wrong version is not cached forever');
+    }
+    assert.equal((await h.app.inject({ method: 'GET', url: '/' })).headers['cache-control'], 'no-cache', 'the page itself is never cached');
+    assert.equal((await h.app.inject({ method: 'GET', url: '/' })).body, page, 'the references are stable between requests');
+  });
+
   it('signs in with an HttpOnly, Secure, SameSite=Strict cookie and rejects bad tokens', async () => {
     const { res, cookie } = await webLogin('w1', 'w1@example.com');
     assert.equal(res.statusCode, 200);

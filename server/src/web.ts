@@ -6,6 +6,7 @@ import { clientInfo } from './client-info.ts';
 import type { Config } from './config.ts';
 import type { GoogleVerifier } from './google.ts';
 import type { Hub } from './hub.ts';
+import { createHash } from 'node:crypto';
 import type { Store, TimestampPageKey } from './store.ts';
 import { checkUsername } from './username.ts';
 import { resolveVideoInfo, type VideoLookup } from './youtube.ts';
@@ -95,12 +96,25 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
   const cookieName = secure ? '__Host-tk_web' : 'tk_web';
 
   const csp = buildCsp(config.features);
+  const assets = new Map<string, { body: Buffer; type: string; version: string }>();
   for (const [path, { file, type }] of Object.entries(STATIC_FILES)) {
     const body = readFileSync(new URL(file, PUBLIC_DIR));
-    app.get(path, async (_req, reply) =>
+    assets.set(path, { body, type, version: createHash('sha256').update(body).digest('hex').slice(0, 10) });
+  }
+  // Cloudflare and browsers keep scripts and styles for hours whatever Cache-Control says, so after a
+  // deploy a new page could run an old script. The page names each asset by its content hash instead:
+  // a changed file is a new URL, and an unchanged one can be cached for as long as anyone likes.
+  const page = assets.get('/')!;
+  page.body = Buffer.from(
+    [...assets]
+      .filter(([path]) => path !== '/')
+      .reduce((html, [path, { version }]) => html.replaceAll(`"${path}"`, `"${path}?v=${version}"`), page.body.toString('utf8')),
+  );
+  for (const [path, { body, type, version }] of assets) {
+    app.get(path, async (req, reply) =>
       reply
         .header('Content-Type', type)
-        .header('Cache-Control', 'no-cache')
+        .header('Cache-Control', path !== '/' && (req.query as { v?: string }).v === version ? 'public, max-age=31536000, immutable' : 'no-cache')
         .header('Content-Security-Policy', csp)
         .header('X-Content-Type-Options', 'nosniff')
         .header('Referrer-Policy', 'no-referrer')
