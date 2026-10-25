@@ -35,7 +35,7 @@ describe('landing page', () => {
     assert.match(page.headers['content-type'] as string, /text\/html/);
     assert.match(page.headers['content-security-policy'] as string, /default-src 'none'/);
     assert.match(page.body, /Timekeeper/);
-    for (const asset of ['/assets/app.js', '/assets/style.css']) {
+    for (const asset of ['/assets/app.js', '/assets/style.css', '/assets/favicon.png']) {
       assert.equal((await h.app.inject({ method: 'GET', url: asset })).statusCode, 200, asset);
     }
     const config = (await h.app.inject({ method: 'GET', url: '/web/config' })).json();
