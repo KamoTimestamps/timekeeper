@@ -28,7 +28,8 @@ const LoginBody = z.object({ idToken: z.string().min(1) });
 const CSP = [
   "default-src 'none'",
   "script-src 'self' https://accounts.google.com/gsi/client",
-  "style-src 'self' https://accounts.google.com/gsi/style",
+  // The hash is the one inline stylesheet Google's button script injects.
+  "style-src 'self' https://accounts.google.com/gsi/style 'sha256-RU4sU0AaS8IBGZx8XrGt/pa9A5SLA3dQszGeqT5L3Kw='",
   // Google's button sets inline style attributes; this allows those only, never <style> blocks.
   "style-src-attr 'unsafe-inline'",
   "frame-src https://accounts.google.com/gsi/",
