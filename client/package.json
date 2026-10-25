@@ -11,6 +11,7 @@
     "prebuild:firefox": "node build-tools/sync-version.js && node build-tools/sync-generated.js",
     "build:firefox": "npx extension@latest build --browser firefox",
     "build:userscript": "node build-tools/build.js",
+    "build:userscript:devel": "node build-tools/build.js --channel=devel",
     "clean": "rm -rf dist",
     "release": "bash build-tools/release.sh",
     "release:patch": "bash build-tools/release.sh patch",

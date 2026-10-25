@@ -32,6 +32,7 @@ function setExtensionStorageValue(key: string, value: unknown): Promise<void> {
 }
 
 import * as GoogleDrive from "./google-drive";
+import * as SyncClient from "./sync-client";
 import {
   PanePositionSchema,
   TimestampRecord,
@@ -105,6 +106,11 @@ if (hash && hash.length > 1) {
       throw new Error("OAuth window closed");
     }
   }
+}
+
+// Timekeeper Sync sign-in popup: hand the Google ID token to the opener tab, then stop here.
+if (SyncClient.handleSyncOAuthRedirect()) {
+  throw new Error("OAuth window closed");
 }
 
 // Handles in live chat (iframe) and comments (top frame)
@@ -3920,7 +3926,7 @@ if (!isLiveChatFrame()) {
 
       // Function to create and toggle the settings modal
       function toggleSettingsModal(
-        initialTab: "general" | "google" | "drive" = "general",
+        initialTab: "general" | "google" | "sync" | "drive" = "general",
       ) {
         if (
           settingsModalInstance &&
@@ -4026,17 +4032,23 @@ if (!isLiveChatFrame()) {
         const generalSection = document.createElement("div");
         const googleSection = document.createElement("div");
         googleSection.className = "ytls-button-grid";
+        const syncSection = document.createElement("div");
+        syncSection.className = "ytls-button-grid";
 
-        function showSection(section: "general" | "google") {
+        function showSection(section: "general" | "google" | "sync") {
           generalSection.style.display =
             section === "general" ? "block" : "none";
           googleSection.style.display = section === "google" ? "block" : "none";
+          syncSection.style.display = section === "sync" ? "block" : "none";
           generalTab.classList.toggle("active", section === "general");
           googleTab.classList.toggle("active", section === "google");
+          syncTab.classList.toggle("active", section === "sync");
           sectionHeading.textContent =
             section === "general"
               ? "General"
-              : "Google";
+              : section === "google"
+                ? "Google"
+                : "Sync";
         }
 
         const generalTab = document.createElement("button");
@@ -4064,8 +4076,18 @@ if (!isLiveChatFrame()) {
           }
           showSection("google");
         };
+        const syncTab = document.createElement("button");
+        syncTab.appendChild(createIcon("server", 16));
+        const syncTabText = document.createElement("span");
+        syncTabText.className = "ytls-tab-text";
+        syncTabText.textContent = " Sync";
+        syncTab.appendChild(syncTabText);
+        addTooltip(syncTab, "Live sync across devices");
+        syncTab.classList.add("ytls-settings-modal-button");
+        syncTab.onclick = () => showSection("sync");
         nav.appendChild(generalTab);
         nav.appendChild(googleTab);
+        nav.appendChild(syncTab);
 
         header.appendChild(nav);
         header.appendChild(closeButton);
@@ -4249,10 +4271,71 @@ if (!isLiveChatFrame()) {
         GoogleDrive.updateBackupStatusDisplay();
         refreshBackupButtons();
 
+        // Build Timekeeper Sync section
+        const syncSignButton = createButton(
+          "Sign In",
+          "Sign in to Timekeeper Sync with Google",
+          async () => {
+            if (SyncClient.getSyncAuthState().isSignedIn) {
+              await SyncClient.signOutFromSync();
+            } else {
+              await SyncClient.signInToSync();
+            }
+          },
+          "login",
+        );
+        const syncNowButton = createButton(
+          "Sync Now",
+          "Sync with the server immediately",
+          () => SyncClient.syncNow(),
+          "refresh",
+        );
+        const refreshSyncButtons = () => {
+          const signedIn = SyncClient.getSyncAuthState().isSignedIn;
+          setIconLabel(
+            syncSignButton,
+            signedIn ? "logout" : "login",
+            signedIn ? "Sign Out" : "Sign In",
+          );
+          addTooltip(
+            syncSignButton,
+            signedIn
+              ? "Sign out of Timekeeper Sync"
+              : "Sign in to Timekeeper Sync with Google",
+          );
+          syncSignButton.disabled = !signedIn && !SyncClient.isSyncConfigured();
+          syncNowButton.disabled = !signedIn;
+        };
+        SyncClient.setSyncUiRefresher(refreshSyncButtons);
+
+        syncSection.appendChild(syncSignButton);
+        syncSection.appendChild(syncNowButton);
+
+        const syncInfoContainer = document.createElement("div");
+        syncInfoContainer.style.marginTop = "15px";
+        syncInfoContainer.style.paddingTop = "10px";
+        syncInfoContainer.style.borderTop = "1px solid #555";
+        syncInfoContainer.style.fontSize = "12px";
+        syncInfoContainer.style.color = "#aaa";
+
+        const syncAuthDiv = document.createElement("div");
+        syncAuthDiv.style.marginBottom = "8px";
+        syncAuthDiv.style.fontWeight = "bold";
+        syncInfoContainer.appendChild(syncAuthDiv);
+        SyncClient.setSyncAuthStatusDisplay(syncAuthDiv);
+
+        const syncStatusDiv = document.createElement("div");
+        syncInfoContainer.appendChild(syncStatusDiv);
+        SyncClient.setSyncStatusDisplay(syncStatusDiv);
+
+        syncSection.appendChild(syncInfoContainer);
+        SyncClient.updateSyncStatusDisplay();
+
         // Append sections
         settingsContent.appendChild(sectionHeading);
         settingsContent.appendChild(generalSection);
         settingsContent.appendChild(googleSection);
+        settingsContent.appendChild(syncSection);
         const normalizedInitialTab = initialTab === "drive" ? "google" : initialTab;
         showSection(normalizedInitialTab);
 
@@ -5645,6 +5728,18 @@ if (!isLiveChatFrame()) {
     },
     true,
   );
+
+  // Live sync: show remote changes in the open video (and other tabs), then resume the saved session.
+  SyncClient.setOnRemoteChange((videoIds) => {
+    for (const videoId of videoIds) {
+      safePostMessage({ type: "timestamps_updated", videoId, action: "synced" });
+    }
+    if (currentLoadedVideoId && videoIds.includes(currentLoadedVideoId)) {
+      loadTimestamps();
+    }
+  });
+  // Not awaited: a slow or unreachable sync server must never delay the UI.
+  void SyncClient.loadSyncAuthState();
 
   // Timekeeper initialization: ensure handlers are active and wait for navigation finish before drawing UI
   setupUrlChangeHandlers();

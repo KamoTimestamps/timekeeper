@@ -1,0 +1,11 @@
+devel.kamotimestamps.com {
+	# Let's Encrypt short-lived (~6 day) certificates; Caddy renews them automatically.
+	tls {
+		issuer acme {
+			profile shortlived
+		}
+	}
+
+	# WebSocket upgrades (/sync/ws) are proxied automatically.
+	reverse_proxy 127.0.0.1:8787
+}

@@ -359,6 +359,34 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
   return { mergedVideos, mergedTimestamps };
 }
 
+/**
+ * Rows (including soft-deleted ones) written after the given Lamport counter, oldest first.
+ * This is what the live sync pushes; device_id is storage-only and never leaves the device.
+ */
+export async function getRecordsChangedSince(counter: number): Promise<Array<TimestampRecord & { video_id: string; write_counter: number }>> {
+  const rows: Array<TimestampRecord & { video_id: string; write_counter: number }> = [];
+  for (const row of await TimestampRepository.getAllTimestamps()) {
+    const parsed = TimestampRowSchema.safeParse(row);
+    if (!parsed.success || parsed.data.write_counter === undefined || parsed.data.write_counter <= counter) continue;
+    const { guid, video_id, start, comment, write_counter, deleted_at } = parsed.data;
+    rows.push({ guid, video_id, start, comment, write_counter, ...(deleted_at !== undefined ? { deleted_at } : {}) });
+  }
+  return rows.sort((a, b) => a.write_counter - b.write_counter);
+}
+
+/**
+ * Merge records received from the sync server using the same Lamport rules as a backup restore.
+ */
+export function mergeRemoteRecords(
+  records: Array<TimestampRecord & { video_id: string }>
+): Promise<{ mergedVideos: number; mergedTimestamps: number }> {
+  const byVideo: Record<string, { video_id: string; timestamps: TimestampRecord[] }> = {};
+  for (const { video_id, ...timestamp } of records) {
+    (byVideo[`ytls-${video_id}`] ??= { video_id, timestamps: [] }).timestamps.push(timestamp);
+  }
+  return mergeBackupData(JSON.stringify(byVideo));
+}
+
 // === Settings Business Logic ===
 
 /**

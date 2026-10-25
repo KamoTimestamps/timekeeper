@@ -1,15 +1,26 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { execSync } = require('node:child_process');
 const esbuild = require('esbuild');
 const { syncVersion } = require('./sync-version');
 const { syncGenerated } = require('./sync-generated');
+const channels = require('./channels');
 
 const repoRoot = path.join(__dirname, '..');
 const headerTemplateFile = path.join(repoRoot, 'src', 'userscript-header.txt');
 const packageJsonFile = path.join(repoRoot, 'package.json');
 const distDir = path.join(repoRoot, 'dist');
 const publishRoot = path.join(repoRoot, '..');
-const userscriptFile = path.join(publishRoot, 'timekeeper.user.js');
+
+// `node build-tools/build.js [--channel=<name>]`; see channels.js
+const channelName = (process.argv.find((a) => a.startsWith('--channel=')) || '--channel=main').split('=')[1];
+const channel = channels[channelName];
+if (!channel) {
+  console.error(`Unknown channel "${channelName}". Known: ${Object.keys(channels).join(', ')}`);
+  process.exit(1);
+}
+const isMainChannel = channelName === 'main';
+const userscriptFile = path.join(publishRoot, channel.outputFile);
 const legacyUserscriptFile = path.join(publishRoot, 'ts.user.js');
 
 function readHeaderTemplate() {
@@ -22,6 +33,21 @@ function readHeaderTemplate() {
 function readVersion() {
   const packageJson = JSON.parse(fs.readFileSync(packageJsonFile, 'utf8'));
   return packageJson.version;
+}
+
+function channelVersion(baseVersion) {
+  if (!channel.versionFromCommitCount) return baseVersion;
+  const commits = execSync('git rev-list --count HEAD', { cwd: repoRoot }).toString().trim();
+  return `${baseVersion}.${commits}`;
+}
+
+// Point the self-update URLs at the channel's branch and output file.
+function applyChannelUrls(header) {
+  if (isMainChannel) return header;
+  return header.replace(
+    /(@(?:downloadURL|updateURL)\s+https:\/\/raw\.githubusercontent\.com\/KamoTimestamps\/timekeeper\/)main\/timekeeper\.user\.js/g,
+    `$1${channel.branch}/${channel.outputFile}`,
+  );
 }
 
 function removeExistingHeader(content) {
@@ -55,11 +81,15 @@ async function buildUserscript() {
     loader: {
       '.svg': 'text',
     },
+    define: {
+      __SYNC_API_URL__: JSON.stringify(channel.syncApiUrl),
+      __SYNC_GOOGLE_CLIENT_ID__: JSON.stringify(channel.syncGoogleClientId),
+    },
   });
 
   const headerTemplate = readHeaderTemplate();
-  const version = readVersion();
-  const renderedHeader = headerTemplate.replace(/\$\{TIMEKEEPER_VERSION\}/g, version);
+  const version = channelVersion(readVersion());
+  const renderedHeader = applyChannelUrls(headerTemplate.replace(/\$\{TIMEKEEPER_VERSION\}/g, version));
 
   const distContent = fs.readFileSync(path.join(distDir, 'timekeeper.js'), 'utf8');
   const bodyWithoutHeader = removeExistingHeader(distContent);
@@ -67,9 +97,9 @@ async function buildUserscript() {
 
   fs.writeFileSync(path.join(distDir, 'timekeeper.js'), `${finalContent}\n`, 'utf8');
   fs.writeFileSync(userscriptFile, `${finalContent}\n`, 'utf8');
-  fs.writeFileSync(legacyUserscriptFile, `${finalContent}\n`, 'utf8');
+  if (isMainChannel) fs.writeFileSync(legacyUserscriptFile, `${finalContent}\n`, 'utf8');
 
-  console.log('✓ Built single bundled userscript to timekeeper.user.js and ts.user.js');
+  console.log(`✓ Built ${channelName} userscript (v${version}) to ${channel.outputFile}${isMainChannel ? ' and ts.user.js' : ''}`);
 }
 
 buildUserscript().catch(err => {

@@ -13,6 +13,7 @@
 
 import { TimestampRecord } from './schema';
 import * as TimestampService from './services/timestampService';
+import * as TimestampRepository from './services/timestampRepository';
 
 // ============================================================================
 // TIMESTAMP MANAGEMENT
@@ -123,4 +124,29 @@ export function exportAllTimestampsCsv(): Promise<void> {
  */
 export function mergeBackupData(json: string): Promise<{ mergedVideos: number; mergedTimestamps: number }> {
   return TimestampService.mergeBackupData(json);
+}
+
+// ============================================================================
+// LIVE SYNC SUPPORT
+// ============================================================================
+
+/**
+ * Rows (including soft-deleted ones) written after the given Lamport counter, oldest first
+ */
+export function getRecordsChangedSince(counter: number) {
+  return TimestampService.getRecordsChangedSince(counter);
+}
+
+/**
+ * Merge records received from the sync server (Lamport conflict resolution)
+ */
+export function mergeRemoteRecords(records: Array<TimestampRecord & { video_id: string }>) {
+  return TimestampService.mergeRemoteRecords(records);
+}
+
+/**
+ * Be notified after every committed timestamp write. Returns an unsubscribe function.
+ */
+export function onTimestampsWritten(listener: () => void): () => void {
+  return TimestampRepository.onTimestampsWritten(listener);
 }

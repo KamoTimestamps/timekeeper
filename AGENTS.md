@@ -11,7 +11,8 @@ Timekeeper is a userscript browser extension for YouTube that lets viewers add, 
 - `client/` — the userscript / browser extension (all source, build tooling, `package.json`, `Makefile`). Run every command below from `client/`.
 - `timekeeper.user.js`, `ts.user.js` — built userscript outputs, committed at the repo root because installed copies auto-update from their raw GitHub URLs. Never move them.
 - `metadata/` — channel video metadata, refreshed daily by `.github/workflows/fetch-youtube.yml`.
-- `.github/`, `README.md`, `AGENTS.md` — repo-level, shared with the upcoming backend service.
+- `server/` — the sync backend (Fastify + `node:sqlite`): Google sign-in and live timestamp sync. Has its own `package.json`; see `server/README.md`. Run its commands from `server/`.
+- `.github/`, `README.md`, `AGENTS.md` — repo-level, shared by `client/` and `server/`.
 
 Paths in the rest of this file are relative to `client/` unless noted.
 
@@ -22,6 +23,8 @@ make build          # Install deps, build for chromium + firefox + userscript
 npm run build:userscript  # Build userscript output only (writes ../timekeeper.user.js)
 npm run clean       # Remove dist/
 ```
+
+Release channels (`client/build-tools/channels.js`): `npm run build:userscript` builds the `main` channel (`../timekeeper.user.js` + `../ts.user.js`, sync backend unconfigured). `npm run build:userscript:devel` builds `../timekeeper.devel.user.js`, whose `@updateURL`/`@downloadURL` point at the `devel` branch, whose version gets a 4th component (commit count) so every push is seen as an update, and which has the dev sync backend URL and Google client ID injected. Rebuild and commit the devel bundle with each push to `devel`; do not commit it to `main`, and do not commit the `main` bundles on feature branches.
 
 The build pipeline: `build-tools/sync-generated.js` regenerates `src/styles.ts` (from `src/styles.css`) and `src/header-icons.ts` (from `assets/`), esbuild bundles `src/timekeeper.ts` -> `dist/`, then a userscript header is prepended to produce `../timekeeper.user.js`.
 
@@ -50,6 +53,7 @@ The codebase follows a repository-service-model pattern:
 |------|---------|
 | `src/dvr-enablement.ts` | Intercepts YouTube's `playerResponse` getter/setter to enable DVR/rewind on live streams |
 | `src/google-drive.ts` | OAuth2 auth flow, backup scheduling, Drive file upload (uses fflate for zip) |
+| `src/sync-client.ts` | Sync backend sign-in (Google ID token via popup) and live sync: write-counter push, seq-cursor pull, WebSocket for other devices' changes |
 | `src/icons.ts` | Tabler icon imports and DOM creation helpers |
 | `src/tooltip.ts` | Custom tooltip system with mouse-following positioning |
 | `src/util.ts` | Shared utilities: logging, time formatting, URL building |

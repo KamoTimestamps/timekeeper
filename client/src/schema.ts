@@ -234,6 +234,40 @@ export const GoogleAuthStateSchema = catchWith(
   { isSignedIn: false, accessToken: null, userName: null, email: null },
 );
 
+export interface SyncAuthStateParsed {
+  isSignedIn: boolean;
+  accessToken: string | null;
+  accessTokenExpiresAt: number | null;
+  refreshToken: string | null;
+  userId: string | null;
+  userName: string | null;
+  email: string | null;
+}
+
+export const SIGNED_OUT_SYNC_AUTH_STATE: SyncAuthStateParsed = {
+  isSignedIn: false,
+  accessToken: null,
+  accessTokenExpiresAt: null,
+  refreshToken: null,
+  userId: null,
+  userName: null,
+  email: null,
+};
+
+// Falls back to a signed-out state on any malformed value, so parsing never fails.
+export const SyncAuthStateSchema = catchWith(
+  object<SyncAuthStateParsed>({
+    isSignedIn: catchWith(boolean(), false),
+    accessToken: catchWith(nullable(string()), null),
+    accessTokenExpiresAt: catchWith(nullable(number({ finite: true })), null),
+    refreshToken: catchWith(nullable(string()), null),
+    userId: catchWith(nullable(string()), null),
+    userName: catchWith(nullable(string()), null),
+    email: catchWith(nullable(string()), null),
+  }),
+  SIGNED_OUT_SYNC_AUTH_STATE,
+);
+
 export interface AutoBackupSettings {
   autoBackupEnabled: boolean;
   autoBackupIntervalMinutes: number;

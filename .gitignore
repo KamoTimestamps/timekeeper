@@ -6,3 +6,11 @@ node_modules/
 
 # Playwright MCP session output (snapshots, console logs)
 .playwright-mcp/
+
+# Local secrets and runtime data (server/ also has its own .gitignore)
+.env
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm

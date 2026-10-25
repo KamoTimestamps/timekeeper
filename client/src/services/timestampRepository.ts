@@ -300,6 +300,27 @@ function executeTransaction<T>(
   });
 }
 
+const writeListeners = new Set<() => void>();
+
+/**
+ * Be told after every committed timestamp write (local edits and merged-in remote rows alike).
+ * Returns an unsubscribe function.
+ */
+export function onTimestampsWritten(listener: () => void): () => void {
+  writeListeners.add(listener);
+  return () => writeListeners.delete(listener);
+}
+
+function notifyTimestampsWritten(): void {
+  for (const listener of writeListeners) {
+    try {
+      listener();
+    } catch (err) {
+      log('Timestamp write listener failed:', err, 'error');
+    }
+  }
+}
+
 /**
  * Run `body` inside one readwrite transaction over the timestamp and settings stores.
  * Resolves when the transaction commits and rejects if it aborts. An exception thrown by
@@ -318,7 +339,10 @@ function runWrite(
       return;
     }
 
-    tx.oncomplete = () => resolve();
+    tx.oncomplete = () => {
+      resolve();
+      notifyTimestampsWritten();
+    };
     tx.onerror = () => reject(new Error(`IndexedDB write failed: ${tx.error?.message ?? 'unknown'}`));
     tx.onabort = () => reject(new Error(`IndexedDB transaction aborted: ${tx.error?.message ?? 'unknown'}`));
 

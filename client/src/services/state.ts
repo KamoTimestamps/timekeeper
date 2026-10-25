@@ -3,7 +3,13 @@
  * Single source of truth for application state across all modules
  */
 
-import { GoogleAuthStateParsed, TimestampRecord, PanePosition } from '../schema';
+import {
+  GoogleAuthStateParsed,
+  SIGNED_OUT_SYNC_AUTH_STATE,
+  SyncAuthStateParsed,
+  TimestampRecord,
+  PanePosition,
+} from '../schema';
 
 /**
  * Complete application state structure
@@ -12,6 +18,7 @@ export interface AppState {
   // Authentication & Backup state
   auth: {
     googleAuthState: GoogleAuthStateParsed;
+    syncAuthState: SyncAuthStateParsed;
     autoBackupEnabled: boolean;
     autoBackupIntervalMinutes: number;
     autoBackupRetryAttempts: number;
@@ -48,6 +55,7 @@ const DEFAULT_STATE: AppState = {
       userName: null,
       email: null,
     },
+    syncAuthState: SIGNED_OUT_SYNC_AUTH_STATE,
     autoBackupEnabled: true,
     autoBackupIntervalMinutes: 30,
     autoBackupRetryAttempts: 0,
@@ -119,6 +127,14 @@ export function getGoogleAuthState(): GoogleAuthStateParsed {
 
 export function setGoogleAuthState(authState: GoogleAuthStateParsed): void {
   setAuth('googleAuthState', authState);
+}
+
+export function getSyncAuthState(): SyncAuthStateParsed {
+  return appState.auth.syncAuthState;
+}
+
+export function setSyncAuthState(authState: SyncAuthStateParsed): void {
+  setAuth('syncAuthState', authState);
 }
 
 export function setAutoBackupEnabled(enabled: boolean): void {
