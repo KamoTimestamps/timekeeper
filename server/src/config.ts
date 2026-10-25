@@ -24,6 +24,11 @@ export interface Config {
   trustProxyHeaders: boolean;
   /** YouTube Data API key used to show video titles and thumbnails on the landing page; null disables that. */
   youtubeApiKey: string | null;
+  /** Switches for unfinished or optional features; each is off unless its environment variable is "true". */
+  features: {
+    /** The floating YouTube player on the timestamps page. Also what lets the page's CSP frame YouTube. */
+    miniPlayer: boolean;
+  };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -54,5 +59,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webSessionTtlSeconds: 7 * 24 * 60 * 60,
     trustProxyHeaders: env.TRUST_PROXY_HEADERS === 'true',
     youtubeApiKey: env.YOUTUBE_API_KEY?.trim() || null,
+    features: { miniPlayer: env.FEATURE_MINI_PLAYER === 'true' },
   };
 }

@@ -36,14 +36,15 @@ const TimestampsQuery = z.object({
 });
 
 // Only what Google's sign-in button needs: https://developers.google.com/identity/gsi/web/guides/client-library
-const CSP = [
+const buildCsp = (features: Config['features']) => [
   "default-src 'none'",
   "script-src 'self' https://accounts.google.com/gsi/client",
   // The hash is the one inline stylesheet Google's button script injects.
   "style-src 'self' https://accounts.google.com/gsi/style 'sha256-RU4sU0AaS8IBGZx8XrGt/pa9A5SLA3dQszGeqT5L3Kw='",
   // Google's button sets inline style attributes; this allows those only, never <style> blocks.
   "style-src-attr 'unsafe-inline'",
-  "frame-src https://accounts.google.com/gsi/",
+  // Google's sign-in button, and the mini player's YouTube embed when that feature is on.
+  `frame-src https://accounts.google.com/gsi/${features.miniPlayer ? ' https://www.youtube-nocookie.com' : ''}`,
   "connect-src 'self' https://accounts.google.com/gsi/",
   // The flag-emoji font for browsers whose system has none (Windows).
   "font-src 'self'",
@@ -69,13 +70,14 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
   // The __Host- prefix makes browsers refuse the cookie unless it is Secure, Path=/ and has no Domain.
   const cookieName = secure ? '__Host-tk_web' : 'tk_web';
 
+  const csp = buildCsp(config.features);
   for (const [path, { file, type }] of Object.entries(STATIC_FILES)) {
     const body = readFileSync(new URL(file, PUBLIC_DIR));
     app.get(path, async (_req, reply) =>
       reply
         .header('Content-Type', type)
         .header('Cache-Control', 'no-cache')
-        .header('Content-Security-Policy', CSP)
+        .header('Content-Security-Policy', csp)
         .header('X-Content-Type-Options', 'nosniff')
         .header('Referrer-Policy', 'no-referrer')
         .send(body),
@@ -144,6 +146,7 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
 
     return {
       account,
+      features: config.features,
       stats,
       sessions: store.listSessions(session.userId).map((s) => ({ ...s, current: s.id === session.sessionId })),
     };

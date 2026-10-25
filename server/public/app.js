@@ -17,6 +17,7 @@ async function api(path, { method = 'GET', body } = {}) {
 }
 
 function show(view) {
+  if (view !== 'timestamps') closePlayer(); // the player belongs to the timestamps page
   $('loading').hidden = view !== 'loading';
   $('signed-out').hidden = view !== 'signed-out';
   $('dashboard').hidden = view !== 'dashboard';
@@ -152,6 +153,7 @@ function renderSessions(sessions) {
 async function loadOverview() {
   const { ok, data } = await api('/web/overview');
   if (!ok) return showSignedOut();
+  features = data.features ?? {};
   renderAccount(data.account);
   renderTiles(data.stats);
   renderTopVideos(data.stats.topVideos);
@@ -275,11 +277,54 @@ function renderVideoHead(item) {
       sub));
 }
 
+// --- mini player ---
+
+// Server-side feature switches, delivered with the overview. Each is off unless the server says so.
+let features = {};
+
+// YouTube's plain iframe embed: a new iframe per click, starting at the timestamp. It needs a
+// referrer to accept the embed, which this page's no-referrer policy would otherwise withhold.
+function playAt(item) {
+  const title = item.info ? item.info.title : item.videoId;
+  const embed = new URL(`https://www.youtube-nocookie.com/embed/${encodeURIComponent(item.videoId)}`);
+  embed.searchParams.set('start', String(Math.floor(item.start)));
+  embed.searchParams.set('autoplay', '1');
+  embed.searchParams.set('rel', '0');
+  const watch = new URL('https://www.youtube.com/watch');
+  watch.searchParams.set('v', item.videoId);
+  watch.searchParams.set('t', `${Math.floor(item.start)}s`);
+
+  $('player-frame').replaceChildren(
+    el('iframe', {
+      src: embed.toString(),
+      title,
+      allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen',
+      allowfullscreen: '',
+      referrerpolicy: 'strict-origin-when-cross-origin',
+    }),
+  );
+  $('player-title').textContent = `${clock(item.start)} · ${title}`;
+  $('player-open').href = watch.toString();
+  $('mini-player').hidden = false;
+}
+
+function closePlayer() {
+  $('player-frame').replaceChildren(); // removing the iframe is what stops playback
+  $('mini-player').hidden = true;
+}
+
+$('player-close').addEventListener('click', closePlayer);
+
 function renderHit(item) {
   const watch = new URL('https://www.youtube.com/watch');
   watch.searchParams.set('v', item.videoId);
   watch.searchParams.set('t', `${Math.floor(item.start)}s`);
-  const time = el('a', { className: 'stamp-time', href: watch.toString(), target: '_blank', rel: 'noopener noreferrer', title: 'Open on YouTube at this time', 'data-start': String(item.start) }, clock(item.start));
+  const time = el('a', { className: 'stamp-time', href: watch.toString(), target: '_blank', rel: 'noopener noreferrer', title: features.miniPlayer ? 'Play here (Ctrl/⌘-click for YouTube)' : 'Open on YouTube at this time', 'data-start': String(item.start) }, clock(item.start));
+  time.addEventListener('click', (event) => {
+    if (!features.miniPlayer || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; // let the browser open YouTube
+    event.preventDefault();
+    playAt(item);
+  });
   return el('li', {}, time, el('div', { className: 'stamp-body' }, el('div', { className: 'stamp-comment' }, item.comment || '(no comment)')));
 }
 

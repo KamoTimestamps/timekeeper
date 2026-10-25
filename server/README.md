@@ -36,6 +36,8 @@ waits for `/healthz`. Re-run it for every update. Set `DEPLOY_HOST` to deploy el
   SQLite database is `/var/lib/timekeeper/timekeeper.db`.
 - Config: `/etc/timekeeper/server.env` (created on first deploy, never overwritten). Set
   `GOOGLE_CLIENT_ID` there, then `systemctl restart timekeeper-server`.
+  Optional feature switches live there too (off unless set to `true`): `FEATURE_MINI_PLAYER`
+  turns on the floating YouTube player on the timestamps page.
 - TLS: Caddy terminates HTTPS with Let's Encrypt's `shortlived` profile (about 6-day
   certificates, renewed automatically) and proxies to the app, WebSockets included.
 - Logs: `journalctl -u timekeeper-server -f` and `journalctl -u caddy -f`.

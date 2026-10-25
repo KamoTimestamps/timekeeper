@@ -316,6 +316,7 @@ describe('landing page video details', () => {
 
     const page = await h.app.inject({ method: 'GET', url: '/' });
     assert.match(page.headers['content-security-policy'] as string, /img-src [^;]*https:\/\/i\.ytimg\.com/);
+    assert.match(page.headers['content-security-policy'] as string, /frame-src [^;]*https:\/\/www\.youtube-nocookie\.com/, 'the mini player embed');
   });
 });
 
@@ -393,5 +394,43 @@ describe('shutdown with an open event stream', () => {
 
     const closed = await Promise.race([h.app.close().then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 3000))]);
     assert.ok(closed, 'app.close() hung on an open /web/events stream');
+  });
+});
+
+describe('mini player feature flag', () => {
+  const csp = async (h: TestHarness) => (await h.app.inject({ method: 'GET', url: '/' })).headers['content-security-policy'] as string;
+  const overviewFeatures = async (h: TestHarness) => {
+    const login = await h.app.inject({ method: 'POST', url: '/web/login', headers: { origin: ORIGIN }, payload: { idToken: await h.idToken({ sub: 'ff', email: 'ff@example.com' }) } });
+    const cookie = `${COOKIE}=${login.cookies.find((c) => c.name === COOKIE)!.value}`;
+    return (await h.app.inject({ method: 'GET', url: '/web/overview', headers: { cookie } })).json().features;
+  };
+
+  it('is off unless enabled: no YouTube framing in the CSP, and the page is told so', async () => {
+    const h = await createHarness({ features: { miniPlayer: false } });
+    try {
+      assert.doesNotMatch(await csp(h), /youtube/);
+      assert.deepEqual(await overviewFeatures(h), { miniPlayer: false });
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  it('when enabled, allows the embed and tells the page', async () => {
+    const h = await createHarness({ features: { miniPlayer: true } });
+    try {
+      assert.match(await csp(h), /frame-src [^;]*https:\/\/www\.youtube-nocookie\.com/);
+      assert.deepEqual(await overviewFeatures(h), { miniPlayer: true });
+    } finally {
+      await h.app.close();
+    }
+  });
+
+  it('reads FEATURE_MINI_PLAYER from the environment, enabled only by exactly "true"', async () => {
+    const { loadConfig } = await import('../src/config.ts');
+    const base = { GOOGLE_CLIENT_ID: 'id', JWT_SECRET: 'x'.repeat(32) };
+    assert.equal(loadConfig({ ...base }).features.miniPlayer, false);
+    assert.equal(loadConfig({ ...base, FEATURE_MINI_PLAYER: 'false' }).features.miniPlayer, false);
+    assert.equal(loadConfig({ ...base, FEATURE_MINI_PLAYER: '1' }).features.miniPlayer, false);
+    assert.equal(loadConfig({ ...base, FEATURE_MINI_PLAYER: 'true' }).features.miniPlayer, true);
   });
 });

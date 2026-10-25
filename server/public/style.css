@@ -46,6 +46,26 @@ body {
   font: 15px/1.5 "Twemoji Country Flags", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+.mini-player {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10;
+  width: min(360px, calc(100vw - 32px));
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.mini-player[hidden] { display: none; }
+.mini-head { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; font-size: 13px; }
+.mini-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-open { flex: none; color: var(--muted); text-decoration: none; }
+.mini-open:hover { color: var(--text); }
+.mini-frame { aspect-ratio: 16 / 9; background: #000; }
+.mini-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
+
 .credits { max-width: 960px; margin: 24px auto; padding: 0 16px; font-size: 12px; }
 .credits a { color: inherit; }
 

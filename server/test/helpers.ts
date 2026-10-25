@@ -25,6 +25,7 @@ export const testConfig: Config = {
   webSessionTtlSeconds: 3600,
   trustProxyHeaders: true,
   youtubeApiKey: null,
+  features: { miniPlayer: true },
 };
 
 export interface TestHarness {
