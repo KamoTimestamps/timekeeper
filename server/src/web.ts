@@ -31,6 +31,10 @@ const LoginBody = z.object({ idToken: z.string().min(1) });
 // The rules themselves (YouTube's handle policy) live in username.ts; the cap only bounds what gets checked.
 const DisplayNameBody = z.object({ displayName: z.string().max(200) });
 const TIMESTAMPS_PAGE_SIZE = 50; // also the most video IDs one YouTube lookup accepts
+const SuggestQuery = z.object({
+  field: z.enum(['title', 'channel', 'any']).default('any'),
+  q: z.string().max(100).default(''),
+});
 const TimestampsQuery = z.object({
   q: z.string().max(200).default(''),
   video: z.string().min(1).max(64).optional(),
@@ -169,6 +173,23 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
       stats,
       sessions: store.listSessions(session.userId).map((s) => ({ ...s, current: s.id === session.sessionId })),
     };
+  });
+
+  // Autocomplete for the search box: titles and/or channel names containing what has been typed.
+  app.get('/web/search-suggestions', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const session = currentSession(req);
+    if (!session) {
+      clearSessionCookie(reply);
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    const query = SuggestQuery.safeParse(req.query);
+    if (!query.success) return reply.code(400).send({ error: 'invalid_request' });
+
+    const { field, q } = query.data;
+    const pick = (f: 'title' | 'channel', limit: number) =>
+      store.suggestSearch(session.userId, f, q, limit).map((value) => ({ field: f, value }));
+    return { suggestions: field === 'any' ? [...pick('channel', 4), ...pick('title', 4)] : pick(field, 8) };
   });
 
   app.put('/web/display-name', { preHandler: requireSameOrigin }, async (req, reply) => {

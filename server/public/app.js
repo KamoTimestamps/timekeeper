@@ -575,12 +575,114 @@ const loadMoreObserver = new IntersectionObserver(
 
 let searchTimer = null;
 
-$('search').addEventListener('input', () => {
+function scheduleSearch() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
     stampList.query = $('search').value.trim();
     loadStamps({ append: false });
   }, 250);
+}
+
+// Autocomplete. "title:" and "channel:" search one field (the server parses them); suggestions are
+// those two operators plus titles and channel names from the videos you have timestamps on.
+const SEARCH_OPERATORS = ['title:', 'channel:'];
+const suggestions = { items: [], active: -1, request: 0, timer: null };
+
+// The word being typed: everything after the last space that is not inside quotes.
+function currentSearchToken(text) {
+  let start = 0;
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '"') quoted = !quoted;
+    else if (text[i] === ' ' && !quoted) start = i + 1;
+  }
+  return { start, text: text.slice(start) };
+}
+
+function renderSuggestions() {
+  const list = $('search-suggestions');
+  list.replaceChildren(
+    ...suggestions.items.map((item, index) => {
+      const row = el('li', { role: 'option', id: `suggestion-${index}`, 'aria-selected': String(index === suggestions.active) },
+        el('span', { className: 'kind' }, item.kind), el('span', { className: 'value' }, item.label));
+      row.addEventListener('mousedown', (event) => event.preventDefault()); // keep the cursor in the box
+      row.addEventListener('click', () => applySuggestion(index));
+      return row;
+    }),
+  );
+  const open = suggestions.items.length > 0;
+  list.hidden = !open;
+  $('search').setAttribute('aria-expanded', String(open));
+  if (suggestions.active >= 0) $('search').setAttribute('aria-activedescendant', `suggestion-${suggestions.active}`);
+  else $('search').removeAttribute('aria-activedescendant');
+}
+
+function closeSuggestions() {
+  suggestions.request++; // an answer still on its way must not reopen the list
+  suggestions.items = [];
+  suggestions.active = -1;
+  renderSuggestions();
+}
+
+async function updateSuggestions() {
+  const request = ++suggestions.request;
+  const value = $('search').value;
+  const { text } = currentSearchToken(value);
+  const field = /^(title|channel):/i.exec(text);
+  const lower = text.toLowerCase();
+
+  const items = [];
+  if (!field && (value === '' || (text !== '' && SEARCH_OPERATORS.some((op) => op.startsWith(lower))))) {
+    for (const op of SEARCH_OPERATORS) if (op.startsWith(lower)) items.push({ kind: 'operator', label: op, insert: op });
+  }
+  const partial = field ? text.slice(field[0].length).replace(/^"/, '').replace(/"$/, '') : text;
+  if (field || text.length >= 2) {
+    const params = new URLSearchParams({ field: field ? field[1].toLowerCase() : 'any', q: partial });
+    const { ok, data } = await api(`/web/search-suggestions?${params}`);
+    if (request !== suggestions.request) return; // a newer keystroke (or closing) superseded this
+    if (ok) for (const s of data.suggestions) items.push({ kind: s.field, label: s.value, insert: `${s.field}:"${s.value.replace(/"/g, '')}" ` });
+  }
+  if (request !== suggestions.request) return;
+  suggestions.items = items;
+  suggestions.active = -1;
+  renderSuggestions();
+}
+
+function applySuggestion(index) {
+  const item = suggestions.items[index];
+  if (!item) return;
+  const input = $('search');
+  input.value = input.value.slice(0, currentSearchToken(input.value).start) + item.insert;
+  input.focus();
+  if (item.kind === 'operator') updateSuggestions(); // carry on typing: show values for it
+  else closeSuggestions();
+  scheduleSearch();
+}
+
+$('search').addEventListener('input', () => {
+  scheduleSearch();
+  clearTimeout(suggestions.timer);
+  suggestions.timer = setTimeout(updateSuggestions, 120);
+});
+$('search').addEventListener('focus', updateSuggestions);
+$('search').addEventListener('blur', closeSuggestions);
+$('search').addEventListener('keydown', (event) => {
+  const count = suggestions.items.length;
+  if (event.key === 'ArrowDown' && count) {
+    event.preventDefault();
+    suggestions.active = (suggestions.active + 1) % count;
+    renderSuggestions();
+  } else if (event.key === 'ArrowUp' && count) {
+    event.preventDefault();
+    suggestions.active = (suggestions.active - 1 + count) % count;
+    renderSuggestions();
+  } else if (event.key === 'Enter' && suggestions.active >= 0) {
+    event.preventDefault();
+    applySuggestion(suggestions.active);
+  } else if (event.key === 'Escape' && count) {
+    event.preventDefault(); // closes the list instead of clearing the box
+    closeSuggestions();
+  }
 });
 $('search-form').addEventListener('submit', (event) => event.preventDefault());
 $('load-more').addEventListener('click', () => loadStamps({ append: true }));

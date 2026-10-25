@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import type { ClientInfo } from './client-info.ts';
 import { NAME_CHANGE_LIMIT, NAME_CHANGE_WINDOW_MS } from './username.ts';
+import { likeContains, parseSearch } from './search.ts';
 import { dirname } from 'node:path';
 
 export interface User {
@@ -546,6 +547,25 @@ export class Store {
     return { ok: true };
   }
 
+  /**
+   * Titles or channel names (of videos this user has timestamps on) containing `partial`, for the
+   * search box's autocomplete. Ones that start with it come first, then alphabetical.
+   */
+  suggestSearch(userId: string, field: 'title' | 'channel', partial: string, limit = 8): string[] {
+    const column = field === 'title' ? 'v.title' : 'v.channel_title';
+    const rows = this.db
+      .prepare(
+        `SELECT ${column} AS value FROM video_info v
+         WHERE ${column} IS NOT NULL AND ${column} != '' AND ${column} LIKE ? ESCAPE '\\'
+           AND EXISTS (SELECT 1 FROM timestamps t WHERE t.video_id = v.video_id AND t.user_id = ? AND t.deleted_at IS NULL)
+         GROUP BY ${column}
+         ORDER BY (${column} LIKE ? ESCAPE '\\') DESC, ${column} COLLATE NOCASE
+         LIMIT ?`,
+      )
+      .all(likeContains(partial), userId, `${likeContains(partial).slice(1, -1)}%`, limit) as Array<{ value: string }>;
+    return rows.map((r) => r.value);
+  }
+
   getStats(userId: string): {
     active: number;
     deleted: number;
@@ -697,12 +717,21 @@ export class Store {
       where.push('v.channel_title = ?');
       params.push(channel);
     }
-    for (const word of query.split(/\s+/).filter(Boolean).slice(0, 8)) {
-      const like = `%${word.replace(/[\\%_]/g, '\\$&')}%`;
+    const search = parseSearch(query);
+    for (const word of search.words) {
+      const like = likeContains(word);
       where.push(
         `(t.comment LIKE ? ESCAPE '\\' OR t.video_id = ? OR v.title LIKE ? ESCAPE '\\' OR v.channel_title LIKE ? ESCAPE '\\')`,
       );
       params.push(like, word, like, like);
+    }
+    for (const term of search.title) {
+      where.push(`v.title LIKE ? ESCAPE '\\'`);
+      params.push(likeContains(term));
+    }
+    for (const term of search.channel) {
+      where.push(`v.channel_title LIKE ? ESCAPE '\\'`);
+      params.push(likeContains(term));
     }
     const from = `FROM timestamps t LEFT JOIN video_info v ON v.video_id = t.video_id WHERE ${where.join(' AND ')}`;
 

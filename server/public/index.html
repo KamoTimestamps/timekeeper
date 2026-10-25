@@ -88,7 +88,8 @@
         <h2>Timestamps</h2>
         <div id="search-bar" class="search-bar">
           <form id="search-form" class="search" role="search">
-            <input id="search" type="search" placeholder="Search comments, video titles and channels" maxlength="200" autocomplete="off" aria-label="Search timestamps">
+            <input id="search" type="search" placeholder="Search comments, titles and channels (try title: or channel:)" maxlength="200" autocomplete="off" aria-label="Search timestamps" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-suggestions">
+            <ul id="search-suggestions" class="suggestions" role="listbox" aria-label="Search suggestions" hidden></ul>
           </form>
           <div id="list-progress" class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" hidden><div class="progress-fill"></div></div>
         </div>
