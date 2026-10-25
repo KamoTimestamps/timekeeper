@@ -62,7 +62,9 @@ export async function buildApp({ config, store, verifyGoogle, youtube, backfillV
   await app.register(cors, { origin: config.allowedOrigins });
   await app.register(websocket);
   app.decorateRequest('userId', '');
-  app.addHook('onClose', async () => hub.close());
+  // preClose, not onClose: Fastify waits for open connections before running onClose hooks, and the
+  // overview event streams never end on their own, so shutdown would hang until systemd killed it.
+  app.addHook('preClose', async () => hub.close());
 
   const prefetcher = youtube && createVideoPrefetcher(store, youtube, app.log);
   if (prefetcher) {

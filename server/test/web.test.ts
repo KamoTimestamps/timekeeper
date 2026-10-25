@@ -380,3 +380,17 @@ describe('overview event stream', () => {
     await reader.cancel();
   });
 });
+
+describe('shutdown with an open event stream', () => {
+  it('closes promptly instead of waiting for the page to leave', async () => {
+    const h = await createHarness();
+    const base = await h.app.listen({ host: '127.0.0.1', port: 0 });
+    const login = await h.app.inject({ method: 'POST', url: '/web/login', headers: { origin: ORIGIN }, payload: { idToken: await h.idToken({ sub: 'sd', email: 'sd@example.com' }) } });
+    const cookie = `${COOKIE}=${login.cookies.find((c) => c.name === COOKIE)!.value}`;
+    const reader = (await fetch(`${base}/web/events`, { headers: { cookie } })).body!.getReader();
+    await reader.read();
+
+    const closed = await Promise.race([h.app.close().then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 3000))]);
+    assert.ok(closed, 'app.close() hung on an open /web/events stream');
+  });
+});
