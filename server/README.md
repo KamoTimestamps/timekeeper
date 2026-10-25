@@ -70,6 +70,24 @@ and deletions are soft (`deleted_at`) so they propagate. Every accepted change g
 per-user `seq`, which clients use as a pull cursor. The seqs of one push are contiguous, so a
 client that receives `changes` with `fromSeq` at or below its cursor knows it missed nothing.
 
+## Landing page
+
+`GET /` serves a small dashboard (`public/`): sign in with Google, see how many timestamps, videos
+and devices you have synced, review your sessions, and **log out all sessions**.
+
+- **Google setup:** add the server's own origin (e.g. `https://devel.kamotimestamps.com`) under
+  *Authorized JavaScript origins* of the same OAuth client. The page uses Google's "Sign in with
+  Google" button, which refuses to load from an origin that isn't listed. The userscript's
+  `https://www.youtube.com/` redirect URI is unchanged.
+- **Session:** an `HttpOnly; Secure; SameSite=Strict` cookie (`__Host-tk_web`), valid 7 days and
+  invisible to page scripts. Requests that change state must carry `Origin: $PUBLIC_ORIGIN`, so
+  set `PUBLIC_ORIGIN` to the exact public origin (no trailing slash).
+- **Log out all sessions** ends every userscript and browser session of the account. Access tokens
+  carry their session id and are checked against it on each request, so they stop working
+  immediately instead of after up to 15 minutes, and open WebSockets are closed.
+- **Routes:** `GET /web/config`, `POST /web/login`, `GET /web/overview`, `POST /web/logout`,
+  `POST /web/logout-all`, plus the static files under `/` and `/assets/`.
+
 ## Sessions
 
 Each sign-in starts a token *family*. Refresh tokens are single-use and rotate on every refresh,
@@ -86,6 +104,4 @@ several YouTube tabs never race each other with a stale token.
   first to reach the server wins and the other device keeps its own copy until the next edit (the
   userscript's merge also keeps the local copy on a tie).
 - No rate limiting or per-user quota yet.
-- A revoked session's open WebSocket stays connected until it reconnects (access tokens last at
-  most 15 minutes).
-- No "sign out everywhere" endpoint yet; logout ends only the current session.
+- Sessions can only be ended one at a time (sign out) or all at once (landing page); there is no per-session revoke.

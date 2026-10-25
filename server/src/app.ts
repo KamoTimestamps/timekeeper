@@ -7,6 +7,7 @@ import type { GoogleVerifier } from './google.ts';
 import { Hub } from './hub.ts';
 import { Store, type User } from './store.ts';
 import { signAccessToken, verifyAccessToken } from './tokens.ts';
+import { registerWeb } from './web.ts';
 
 export interface AppDeps {
   config: Config;
@@ -58,17 +59,24 @@ export async function buildApp({ config, store, verifyGoogle }: AppDeps): Promis
   app.decorateRequest('userId', '');
   app.addHook('onClose', async () => hub.close());
 
-  const authenticate = async (req: FastifyRequest, reply: FastifyReply) => {
-    const header = req.headers.authorization;
-    const userId = header?.startsWith('Bearer ')
-      ? await verifyAccessToken(config.jwtSecret, header.slice(7))
-      : null;
-    if (!userId) return reply.code(401).send({ error: 'unauthorized' });
-    req.userId = userId;
+  await registerWeb(app, { config, store, verifyGoogle, hub });
+
+  // A valid signature isn't enough: the session the token was issued for must still exist, so
+  // signing out (or "log out all sessions") takes effect immediately instead of after 15 minutes.
+  const authenticateToken = async (token: string | undefined) => {
+    const claims = token ? await verifyAccessToken(config.jwtSecret, token) : null;
+    return claims && store.sessionExists(claims.userId, claims.sessionId) ? claims : null;
   };
 
-  const issueSession = async (user: User, refreshToken: string) => ({
-    accessToken: await signAccessToken(config.jwtSecret, user.id, config.accessTokenTtlSeconds),
+  const authenticate = async (req: FastifyRequest, reply: FastifyReply) => {
+    const header = req.headers.authorization;
+    const claims = await authenticateToken(header?.startsWith('Bearer ') ? header.slice(7) : undefined);
+    if (!claims) return reply.code(401).send({ error: 'unauthorized' });
+    req.userId = claims.userId;
+  };
+
+  const issueSession = async (user: User, refreshToken: string, sessionId: string) => ({
+    accessToken: await signAccessToken(config.jwtSecret, user.id, sessionId, config.accessTokenTtlSeconds),
     accessTokenExpiresAt: Date.now() + config.accessTokenTtlSeconds * 1000,
     refreshToken,
     user,
@@ -92,8 +100,10 @@ export async function buildApp({ config, store, verifyGoogle }: AppDeps): Promis
     }
 
     const { user, isNewUser } = store.upsertGoogleUser(identity);
-    const refreshToken = store.createRefreshToken(user.id, config.refreshTokenTtlSeconds);
-    return { ...(await issueSession(user, refreshToken)), isNewUser };
+    const { token, sessionId } = store.createRefreshToken(user.id, config.refreshTokenTtlSeconds, {
+      userAgent: req.headers['user-agent']?.slice(0, 300),
+    });
+    return { ...(await issueSession(user, token, sessionId)), isNewUser };
   });
 
   app.post('/auth/refresh', async (req, reply) => {
@@ -105,15 +115,19 @@ export async function buildApp({ config, store, verifyGoogle }: AppDeps): Promis
       familyMaxSeconds: config.refreshFamilyMaxSeconds,
       graceSeconds: config.refreshReuseGraceSeconds,
     });
-    if (result.status === 'reuse') req.log.warn('refresh token reuse detected; session revoked');
+    if (result.status === 'reuse') {
+      req.log.warn('refresh token reuse detected; session revoked');
+      hub.closeSessions(result.userId, result.sessionId);
+    }
     if (result.status !== 'ok') return reply.code(401).send({ error: 'invalid_refresh_token' });
-    return issueSession(result.user, result.refreshToken);
+    return issueSession(result.user, result.refreshToken, result.sessionId);
   });
 
   app.post('/auth/logout', async (req, reply) => {
     const body = RefreshBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid_request' });
-    store.revokeRefreshToken(body.data.refreshToken);
+    const ended = store.revokeRefreshToken(body.data.refreshToken);
+    if (ended) hub.closeSessions(ended.userId, ended.sessionId);
     return reply.code(204).send();
   });
 
@@ -161,13 +175,13 @@ export async function buildApp({ config, store, verifyGoogle }: AppDeps): Promis
         if (!message.success) return socket.close(4400, 'bad auth message');
 
         authenticated = true; // set before awaiting so a second message can't start a second handshake
-        const userId = await verifyAccessToken(config.jwtSecret, message.data.token);
-        if (!userId) return socket.close(4401, 'unauthorized');
+        const claims = await authenticateToken(message.data.token);
+        if (!claims) return socket.close(4401, 'unauthorized');
         if (socket.readyState !== socket.OPEN) return;
 
         clearTimeout(authTimer);
-        hub.add(userId, message.data.deviceId, socket);
-        socket.send(JSON.stringify({ type: 'ready', seq: store.currentSeq(userId) }));
+        hub.add(claims.userId, claims.sessionId, message.data.deviceId, socket);
+        socket.send(JSON.stringify({ type: 'ready', seq: store.currentSeq(claims.userId) }));
       } catch (err) {
         app.log.warn({ err }, 'websocket handshake failed');
         socket.close(4400, 'bad auth message');

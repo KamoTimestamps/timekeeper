@@ -50,6 +50,8 @@ ENV
   )
 fi
 chmod 600 "$ENV_FILE"
+# The landing page only accepts requests from this origin (must match the Caddyfile's site address).
+grep -q '^PUBLIC_ORIGIN=' "$ENV_FILE" || echo 'PUBLIC_ORIGIN=https://devel.kamotimestamps.com' >> "$ENV_FILE"
 
 log "Installing dependencies"
 chown -R root:root /opt/timekeeper

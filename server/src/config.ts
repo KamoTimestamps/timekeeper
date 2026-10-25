@@ -12,6 +12,10 @@ export interface Config {
   refreshFamilyMaxSeconds: number;
   /** A just-rotated token presented again within this window is treated as a lost response, not theft. */
   refreshReuseGraceSeconds: number;
+  /** Public origin of this server (e.g. https://sync.example.com); the landing page only accepts requests from it. */
+  publicOrigin: string;
+  /** Lifetime of a landing-page (cookie) session. */
+  webSessionTtlSeconds: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -38,5 +42,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     refreshTokenTtlSeconds: 30 * 24 * 60 * 60,
     refreshFamilyMaxSeconds: 90 * 24 * 60 * 60,
     refreshReuseGraceSeconds: 60,
+    publicOrigin: (env.PUBLIC_ORIGIN ?? `http://localhost:${port}`).replace(/\/+$/, ''),
+    webSessionTtlSeconds: 7 * 24 * 60 * 60,
   };
 }

@@ -2,6 +2,7 @@ import type { WebSocket } from 'ws';
 
 interface Connection {
   socket: WebSocket;
+  sessionId: string;
   deviceId: string;
   alive: boolean;
 }
@@ -18,8 +19,15 @@ export class Hub {
     this.heartbeat.unref();
   }
 
-  add(userId: string, deviceId: string, socket: WebSocket): void {
-    const conn: Connection = { socket, deviceId, alive: true };
+  /** Closes the user's sockets: those of one session, or all of them when no session is given. */
+  closeSessions(userId: string, sessionId?: string): void {
+    for (const conn of this.connections.get(userId) ?? []) {
+      if (sessionId === undefined || conn.sessionId === sessionId) conn.socket.close(4401, 'session ended');
+    }
+  }
+
+  add(userId: string, sessionId: string, deviceId: string, socket: WebSocket): void {
+    const conn: Connection = { socket, sessionId, deviceId, alive: true };
     let set = this.connections.get(userId);
     if (!set) this.connections.set(userId, (set = new Set()));
     set.add(conn);

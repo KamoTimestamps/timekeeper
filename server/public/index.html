@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Timekeeper Sync</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Timekeeper <span>Sync</span></h1>
+    <div id="account" class="account" hidden>
+      <span id="account-email"></span>
+      <button id="signout" class="ghost" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <p id="loading" class="muted">Loading…</p>
+
+    <section id="signed-out" class="card narrow" hidden>
+      <h2>Sign in</h2>
+      <p>Use the Google account you sign in with in the Timekeeper userscript. If this is your first time, signing in creates your account.</p>
+      <p id="notice" class="notice" role="status" hidden></p>
+      <div id="google-button"></div>
+      <p id="login-error" class="error" role="alert" hidden></p>
+    </section>
+
+    <section id="dashboard" hidden>
+      <div id="tiles" class="tiles"></div>
+
+      <div class="grid">
+        <section class="card">
+          <h2>Most-annotated videos</h2>
+          <ol id="top-videos" class="videos"></ol>
+          <p id="no-videos" class="muted" hidden>No timestamps synced yet.</p>
+        </section>
+        <section class="card">
+          <h2>Account</h2>
+          <dl id="account-details"></dl>
+        </section>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Sessions</h2>
+          <button id="signout-all" class="danger" type="button">Log out all sessions</button>
+        </div>
+        <p class="muted">Every browser and userscript currently signed in to your account. Logging out all sessions signs out the Timekeeper userscript on every device, and this page too.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Type</th><th>Device</th><th>Signed in</th><th>Last active</th><th></th></tr>
+            </thead>
+            <tbody id="sessions"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

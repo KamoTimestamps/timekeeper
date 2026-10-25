@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY src ./src
+COPY public ./public
 ENV NODE_ENV=production DATABASE_PATH=/data/timekeeper.db
 VOLUME /data
 EXPOSE 8787

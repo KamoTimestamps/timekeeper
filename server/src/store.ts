@@ -56,6 +56,17 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   used_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS refresh_tokens_user ON refresh_tokens(user_id);
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER NOT NULL,
+  user_agent TEXT,
+  web_token_hash TEXT UNIQUE,
+  expires_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
 CREATE TABLE IF NOT EXISTS timestamps (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   guid TEXT NOT NULL,
@@ -66,6 +77,7 @@ CREATE TABLE IF NOT EXISTS timestamps (
   deleted_at INTEGER,
   device_id TEXT,
   seq INTEGER NOT NULL,
+  updated_at INTEGER,
   PRIMARY KEY (user_id, guid)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS timestamps_user_seq ON timestamps(user_id, seq);
@@ -102,6 +114,24 @@ export class Store {
     this.migrate();
     this.db.exec(SCHEMA);
     this.db.exec('CREATE INDEX IF NOT EXISTS refresh_tokens_family ON refresh_tokens(family_id)');
+    this.addMissingColumns();
+    this.backfillSessions();
+  }
+
+  private addMissingColumns(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('timestamps')").all() as { name: string }[];
+    if (!columns.some((c) => c.name === 'updated_at')) {
+      this.db.exec('ALTER TABLE timestamps ADD COLUMN updated_at INTEGER');
+    }
+  }
+
+  /** Sessions that predate the sessions table: one row per existing refresh-token family. */
+  private backfillSessions(): void {
+    this.db.exec(`
+      INSERT OR IGNORE INTO sessions (id, user_id, kind, created_at, last_used_at)
+      SELECT family_id, user_id, 'userscript', MIN(family_started_at), COALESCE(MAX(used_at), MIN(family_started_at))
+      FROM refresh_tokens GROUP BY family_id
+    `);
   }
 
   /** Brings a database created before refresh-token rotation up to date. */
@@ -156,9 +186,29 @@ export class Store {
    * Refresh tokens are opaque and stored hashed. Each belongs to a family (one sign-in) and is
    * single-use: refreshing rotates it for a new one in the same family (see rotateRefreshToken).
    */
-  createRefreshToken(userId: string, ttlSeconds: number, now = Date.now()): string {
+  createRefreshToken(
+    userId: string,
+    ttlSeconds: number,
+    opts: { userAgent?: string | null; now?: number } = {},
+  ): { token: string; sessionId: string } {
+    const now = opts.now ?? Date.now();
     this.db.prepare('DELETE FROM refresh_tokens WHERE expires_at < ?').run(now);
-    return this.insertRefreshToken(userId, randomUUID(), now, now + ttlSeconds * 1000);
+    // Sessions whose tokens have all expired are gone too.
+    this.db
+      .prepare(
+        `DELETE FROM sessions WHERE kind = 'userscript'
+         AND NOT EXISTS (SELECT 1 FROM refresh_tokens WHERE family_id = sessions.id)`,
+      )
+      .run();
+
+    const sessionId = randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO sessions (id, user_id, kind, created_at, last_used_at, user_agent)
+         VALUES (?, ?, 'userscript', ?, ?, ?)`,
+      )
+      .run(sessionId, userId, now, now, opts.userAgent ?? null);
+    return { token: this.insertRefreshToken(userId, sessionId, now, now + ttlSeconds * 1000), sessionId };
   }
 
   private insertRefreshToken(userId: string, familyId: string, familyStartedAt: number, expiresAt: number): string {
@@ -183,7 +233,10 @@ export class Store {
     token: string,
     opts: { ttlSeconds: number; familyMaxSeconds: number; graceSeconds: number },
     now = Date.now(),
-  ): { status: 'ok'; user: User; refreshToken: string } | { status: 'invalid' } | { status: 'reuse' } {
+  ):
+    | { status: 'ok'; user: User; refreshToken: string; sessionId: string }
+    | { status: 'invalid' }
+    | { status: 'reuse'; userId: string; sessionId: string } {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const row = this.db
@@ -212,8 +265,9 @@ export class Store {
 
       if (row.used_at !== null && now - row.used_at > opts.graceSeconds * 1000) {
         this.db.prepare('DELETE FROM refresh_tokens WHERE family_id = ?').run(row.family_id);
+        this.db.prepare('DELETE FROM sessions WHERE id = ?').run(row.family_id);
         this.db.exec('COMMIT');
-        return { status: 'reuse' };
+        return { status: 'reuse', userId: row.user_id, sessionId: row.family_id };
       }
 
       if (row.used_at === null) {
@@ -225,19 +279,134 @@ export class Store {
         row.family_started_at,
         Math.min(now + opts.ttlSeconds * 1000, familyEnd),
       );
+      this.db.prepare('UPDATE sessions SET last_used_at = ? WHERE id = ?').run(now, row.family_id);
       this.db.exec('COMMIT');
-      return { status: 'ok', user: { id: row.user_id, email: row.email, name: row.name }, refreshToken };
+      return {
+        status: 'ok',
+        user: { id: row.user_id, email: row.email, name: row.name },
+        refreshToken,
+        sessionId: row.family_id,
+      };
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
     }
   }
 
-  /** Ends the session (token family) the token belongs to. */
-  revokeRefreshToken(token: string): void {
+  /** Ends the session (token family) the token belongs to. Returns it, or null if the token was unknown. */
+  revokeRefreshToken(token: string): { userId: string; sessionId: string } | null {
+    const row = this.db
+      .prepare('SELECT user_id, family_id FROM refresh_tokens WHERE token_hash = ?')
+      .get(sha256(token)) as { user_id: string; family_id: string } | undefined;
+    if (!row) return null;
+    this.db.prepare('DELETE FROM refresh_tokens WHERE family_id = ?').run(row.family_id);
+    this.db.prepare('DELETE FROM sessions WHERE id = ?').run(row.family_id);
+    return { userId: row.user_id, sessionId: row.family_id };
+  }
+
+  // --- sessions (shown on the landing page; the landing page itself signs in with a cookie session) ---
+
+  /** True while the session has not been revoked or expired. Access tokens are only good for live sessions. */
+  sessionExists(userId: string, sessionId: string): boolean {
+    return this.db.prepare('SELECT 1 FROM sessions WHERE id = ? AND user_id = ?').get(sessionId, userId) !== undefined;
+  }
+
+  createWebSession(userId: string, ttlSeconds: number, userAgent: string | null, now = Date.now()): string {
+    this.db.prepare("DELETE FROM sessions WHERE kind = 'web' AND expires_at < ?").run(now);
+    const token = randomBytes(32).toString('base64url');
     this.db
-      .prepare('DELETE FROM refresh_tokens WHERE family_id = (SELECT family_id FROM refresh_tokens WHERE token_hash = ?)')
-      .run(sha256(token));
+      .prepare(
+        `INSERT INTO sessions (id, user_id, kind, created_at, last_used_at, user_agent, web_token_hash, expires_at)
+         VALUES (?, ?, 'web', ?, ?, ?, ?, ?)`,
+      )
+      .run(randomUUID(), userId, now, now, userAgent, sha256(token), now + ttlSeconds * 1000);
+    return token;
+  }
+
+  findWebSession(token: string, now = Date.now()): { sessionId: string; userId: string } | null {
+    const row = this.db
+      .prepare('SELECT id, user_id FROM sessions WHERE web_token_hash = ? AND expires_at > ?')
+      .get(sha256(token), now) as { id: string; user_id: string } | undefined;
+    if (!row) return null;
+    this.db.prepare('UPDATE sessions SET last_used_at = ? WHERE id = ?').run(now, row.id);
+    return { sessionId: row.id, userId: row.user_id };
+  }
+
+  listSessions(userId: string): Array<{
+    id: string;
+    kind: string;
+    createdAt: number;
+    lastUsedAt: number;
+    userAgent: string | null;
+  }> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, kind, created_at, last_used_at, user_agent FROM sessions
+         WHERE user_id = ? ORDER BY last_used_at DESC`,
+      )
+      .all(userId) as Array<{ id: string; kind: string; created_at: number; last_used_at: number; user_agent: string | null }>;
+    return rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      createdAt: r.created_at,
+      lastUsedAt: r.last_used_at,
+      userAgent: r.user_agent,
+    }));
+  }
+
+  /** Ends one session (any kind). */
+  revokeSession(userId: string, sessionId: string): void {
+    this.db.prepare('DELETE FROM refresh_tokens WHERE family_id = ? AND user_id = ?').run(sessionId, userId);
+    this.db.prepare('DELETE FROM sessions WHERE id = ? AND user_id = ?').run(sessionId, userId);
+  }
+
+  /** Ends every session of the user, userscripts and browsers alike. Returns how many there were. */
+  revokeAllSessions(userId: string): number {
+    this.db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(userId);
+    return Number(this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId).changes);
+  }
+
+  getAccount(userId: string): { email: string; name: string | null; createdAt: number } | null {
+    const row = this.db.prepare('SELECT email, name, created_at FROM users WHERE id = ?').get(userId) as
+      | { email: string; name: string | null; created_at: number }
+      | undefined;
+    return row ? { email: row.email, name: row.name, createdAt: row.created_at } : null;
+  }
+
+  getStats(userId: string): {
+    active: number;
+    deleted: number;
+    videos: number;
+    devices: number;
+    lastSyncAt: number | null;
+    topVideos: Array<{ videoId: string; count: number }>;
+  } {
+    const totals = this.db
+      .prepare(
+        `SELECT
+           COUNT(*) FILTER (WHERE deleted_at IS NULL) AS active,
+           COUNT(*) FILTER (WHERE deleted_at IS NOT NULL) AS deleted,
+           COUNT(DISTINCT CASE WHEN deleted_at IS NULL THEN video_id END) AS videos,
+           COUNT(DISTINCT device_id) AS devices,
+           MAX(updated_at) AS last_sync_at
+         FROM timestamps WHERE user_id = ?`,
+      )
+      .get(userId) as { active: number; deleted: number; videos: number; devices: number; last_sync_at: number | null };
+    const top = this.db
+      .prepare(
+        `SELECT video_id, COUNT(*) AS n FROM timestamps
+         WHERE user_id = ? AND deleted_at IS NULL
+         GROUP BY video_id ORDER BY n DESC, video_id LIMIT 5`,
+      )
+      .all(userId) as Array<{ video_id: string; n: number }>;
+    return {
+      active: totals.active,
+      deleted: totals.deleted,
+      videos: totals.videos,
+      devices: totals.devices,
+      lastSyncAt: totals.last_sync_at,
+      topVideos: top.map((t) => ({ videoId: t.video_id, count: t.n })),
+    };
   }
 
   // --- timestamps ---
@@ -254,12 +423,12 @@ export class Store {
     );
     const nextSeq = this.db.prepare('UPDATE users SET seq = seq + 1 WHERE id = ? RETURNING seq');
     const upsert = this.db.prepare(
-      `INSERT INTO timestamps (user_id, guid, video_id, start, comment, write_counter, deleted_at, device_id, seq)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO timestamps (user_id, guid, video_id, start, comment, write_counter, deleted_at, device_id, seq, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (user_id, guid) DO UPDATE SET
          video_id = excluded.video_id, start = excluded.start, comment = excluded.comment,
          write_counter = excluded.write_counter, deleted_at = excluded.deleted_at,
-         device_id = excluded.device_id, seq = excluded.seq`,
+         device_id = excluded.device_id, seq = excluded.seq, updated_at = excluded.updated_at`,
     );
 
     this.db.exec('BEGIN IMMEDIATE');
@@ -289,6 +458,7 @@ export class Store {
           record.deleted_at ?? null,
           deviceId,
           seq,
+          Date.now(),
         );
         accepted.push(record);
       }

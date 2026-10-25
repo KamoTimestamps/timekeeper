@@ -20,6 +20,8 @@ export const testConfig: Config = {
   refreshTokenTtlSeconds: 3600,
   refreshFamilyMaxSeconds: 7200,
   refreshReuseGraceSeconds: 60,
+  publicOrigin: 'https://sync.test',
+  webSessionTtlSeconds: 3600,
 };
 
 export interface TestHarness {

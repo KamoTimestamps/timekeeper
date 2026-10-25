@@ -51,7 +51,7 @@ describe('refresh token families (store)', () => {
     const store = new Store(':memory:');
     const { user } = store.upsertGoogleUser({ sub: 's', email: 'a@example.com' });
     const t0 = 1_000_000;
-    const first = store.createRefreshToken(user.id, opts.ttlSeconds, t0);
+    const first = store.createRefreshToken(user.id, opts.ttlSeconds, { now: t0 }).token;
 
     const rotated = store.rotateRefreshToken(first, opts, t0 + 10 * SECOND);
     assert.equal(rotated.status, 'ok');
@@ -68,7 +68,7 @@ describe('refresh token families (store)', () => {
     const store = new Store(':memory:');
     const { user } = store.upsertGoogleUser({ sub: 's', email: 'a@example.com' });
     const t0 = 5_000_000;
-    let token = store.createRefreshToken(user.id, opts.ttlSeconds, t0);
+    let token = store.createRefreshToken(user.id, opts.ttlSeconds, { now: t0 }).token;
 
     // Rotate every 50 minutes; each token would live 60 minutes, but the family dies at 120.
     let now = t0;
@@ -86,7 +86,7 @@ describe('refresh token families (store)', () => {
   it('rejects expired and unknown tokens', () => {
     const store = new Store(':memory:');
     const { user } = store.upsertGoogleUser({ sub: 's', email: 'a@example.com' });
-    const token = store.createRefreshToken(user.id, 10, 0);
+    const token = store.createRefreshToken(user.id, 10, { now: 0 }).token;
     assert.equal(store.rotateRefreshToken(token, opts, 11 * SECOND).status, 'invalid');
     assert.equal(store.rotateRefreshToken('nope', opts, 0).status, 'invalid');
     store.close();
