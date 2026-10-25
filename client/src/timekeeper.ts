@@ -7,7 +7,7 @@ import {
   formatTimestampLines,
   getTimestampSuffix,
 } from "./util";
-import { TIMEKEEPER_VERSION } from "./version";
+import { DISPLAY_VERSION } from "./build-info";
 import { PANE_STYLES } from "./styles";
 import { HEADER_ICON_DEFAULT_URL, HEADER_ICON_HOVER_URL } from "./header-icons";
 import { addTooltip, hideActiveTooltip, cleanupAllTooltips } from "./tooltip";
@@ -3402,7 +3402,7 @@ if (!isLiveChatFrame()) {
         true,
       );
 
-      versionDisplay.textContent = `v${TIMEKEEPER_VERSION}`;
+      versionDisplay.textContent = `v${DISPLAY_VERSION}`;
       versionDisplay.classList.add("ytls-version-display"); // Add class for CSS targeting
 
       // Create a wrapper for version and backup indicator

@@ -35,6 +35,12 @@ function readVersion() {
   return packageJson.version;
 }
 
+// Suffix for the version shown in the UI/logs (the short hash of the commit the build was made from).
+function displaySuffix() {
+  if (!channel.displayCommitHash) return '';
+  return `+${execSync('git rev-parse --short HEAD', { cwd: repoRoot }).toString().trim()}`;
+}
+
 function channelVersion(baseVersion) {
   if (!channel.versionFromCommitCount) return baseVersion;
   const commits = execSync('git rev-list --count HEAD', { cwd: repoRoot }).toString().trim();
@@ -82,6 +88,7 @@ async function buildUserscript() {
       '.svg': 'text',
     },
     define: {
+      __BUILD_SUFFIX__: JSON.stringify(displaySuffix()),
       __SYNC_API_URL__: JSON.stringify(channel.syncApiUrl),
       __SYNC_GOOGLE_CLIENT_ID__: JSON.stringify(channel.syncGoogleClientId),
     },
