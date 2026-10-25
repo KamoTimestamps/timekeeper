@@ -486,7 +486,8 @@ export class Store {
 
   /**
    * Last-writer-wins by Lamport write_counter, the same rule the userscript uses when merging
-   * backups. Each accepted record gets the next per-user seq; the whole push is one transaction,
+   * backups. Equal counters with different content are decided by `winsOver`, so every device
+   * and the server converge on the same version. Each accepted record gets the next per-user seq; the whole push is one transaction,
    * so the accepted seqs are contiguous.
    */
   applyPush(userId: string, deviceId: string, records: TimestampRecord[]): PushResult {
@@ -513,10 +514,12 @@ export class Store {
 
       for (const record of records) {
         const existing = getExisting.get(userId, record.guid) as TimestampRow | undefined;
-        if (existing && record.write_counter <= existing.write_counter) {
+        if (existing) {
           const server = toRecord(existing);
-          if (!sameContent(server, record)) rejected.push(server);
-          continue;
+          if (!winsOver(record, server)) {
+            if (!sameContent(server, record)) rejected.push(server);
+            continue;
+          }
         }
 
         seq = (nextSeq.get(userId) as { seq: number }).seq;
@@ -574,6 +577,18 @@ export class Store {
     return row?.seq ?? 0;
   }
 }
+
+/**
+ * Whether `candidate` replaces `current`: a higher write_counter wins; on equal counters the
+ * greater content key does. The userscript applies the identical rule (timestampService.ts),
+ * so devices that edited the same row at the same counter agree on one winner.
+ */
+function winsOver(candidate: TimestampRecord, current: TimestampRecord): boolean {
+  if (candidate.write_counter !== current.write_counter) return candidate.write_counter > current.write_counter;
+  return contentKey(candidate) > contentKey(current);
+}
+
+const contentKey = (r: TimestampRecord) => JSON.stringify([r.video_id, r.start, r.comment, r.deleted_at ?? null]);
 
 function sameContent(a: TimestampRecord, b: TimestampRecord): boolean {
   return (

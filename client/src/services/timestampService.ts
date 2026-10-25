@@ -309,24 +309,7 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
     for (const ts of timestamps) {
       const existing = existingMap.get(ts.guid);
 
-      let shouldImport = false;
-      if (!existing) {
-        // New GUID — always import (including its deleted_at state)
-        shouldImport = true;
-      } else if (
-        existing.write_counter !== undefined &&
-        ts.write_counter !== undefined &&
-        ts.write_counter > existing.write_counter
-      ) {
-        // Remote is newer — import, carrying through its deleted_at state.
-        // If the remote soft-deleted this record, deleted_at will be set and
-        // the record will be hidden on this device after the merge.
-        // If the remote has a higher counter but no deleted_at, the record
-        // is re-activated (remote edit supersedes local deletion).
-        shouldImport = true;
-      }
-      // else: local counter >= remote — keep local as-is (including any
-      // local soft-deletion; no action needed, DB is already correct).
+      const shouldImport = remoteWins(existing, video_id, ts);
 
       if (shouldImport) {
         batch.push({
@@ -359,32 +342,66 @@ export async function mergeBackupData(json: string): Promise<{ mergedVideos: num
   return { mergedVideos, mergedTimestamps };
 }
 
+/** Tie-break key for equal write_counters; must match `contentKey` in server/src/store.ts. */
+function contentKey(video_id: string, r: { start: number; comment: string; deleted_at?: number | null }): string {
+  return JSON.stringify([video_id, r.start, r.comment, r.deleted_at ?? null]);
+}
+
+/**
+ * Whether the incoming record replaces the stored one (see the rules on mergeBackupData).
+ * - No stored row: import, including its deleted_at state.
+ * - Higher incoming counter: import. A remote soft-delete hides the row here; a higher counter
+ *   without deleted_at re-activates a locally deleted row (remote edit supersedes local deletion).
+ * - Equal counters, different content (concurrent edits on two devices): the greater content key
+ *   wins. The sync server applies the identical rule, so all devices converge.
+ * - Otherwise keep local as-is, including any local soft-deletion.
+ */
+function remoteWins(
+  existing: { video_id: string; start: number; comment: string; write_counter?: number; deleted_at?: number | null } | undefined,
+  video_id: string,
+  ts: { start: number; comment: string; write_counter?: number; deleted_at?: number | null }
+): boolean {
+  if (!existing) return true;
+  if (existing.write_counter === undefined || ts.write_counter === undefined) return false;
+  if (ts.write_counter !== existing.write_counter) return ts.write_counter > existing.write_counter;
+  return contentKey(video_id, ts) > contentKey(existing.video_id, existing);
+}
+
 /**
  * Rows (including soft-deleted ones) written after the given Lamport counter, oldest first.
  * This is what the live sync pushes; device_id is storage-only and never leaves the device.
  */
 export async function getRecordsChangedSince(counter: number): Promise<Array<TimestampRecord & { video_id: string; write_counter: number }>> {
   const rows: Array<TimestampRecord & { video_id: string; write_counter: number }> = [];
-  for (const row of await TimestampRepository.getAllTimestamps()) {
+  for (const row of await TimestampRepository.getTimestampsChangedSince(counter)) {
     const parsed = TimestampRowSchema.safeParse(row);
-    if (!parsed.success || parsed.data.write_counter === undefined || parsed.data.write_counter <= counter) continue;
+    if (!parsed.success || parsed.data.write_counter === undefined) continue;
     const { guid, video_id, start, comment, write_counter, deleted_at } = parsed.data;
     rows.push({ guid, video_id, start, comment, write_counter, ...(deleted_at !== undefined ? { deleted_at } : {}) });
   }
-  return rows.sort((a, b) => a.write_counter - b.write_counter);
+  return rows; // the write_counter index already yields them oldest first
 }
 
 /**
  * Merge records received from the sync server using the same Lamport rules as a backup restore.
  */
-export function mergeRemoteRecords(
+export async function mergeRemoteRecords(
   records: Array<TimestampRecord & { video_id: string }>
 ): Promise<{ mergedVideos: number; mergedTimestamps: number }> {
-  const byVideo: Record<string, { video_id: string; timestamps: TimestampRecord[] }> = {};
-  for (const { video_id, ...timestamp } of records) {
-    (byVideo[`ytls-${video_id}`] ??= { video_id, timestamps: [] }).timestamps.push(timestamp);
+  const stored = new Map<string, Awaited<ReturnType<typeof TimestampRepository.getTimestampsByGuids>>[number]>();
+  for (const row of await TimestampRepository.getTimestampsByGuids(records.map((r) => r.guid))) stored.set(row.guid, row);
+
+  const batch: Array<TimestampRecord & { video_id: string }> = [];
+  const videos = new Set<string>();
+  for (const record of records) {
+    if (!remoteWins(stored.get(record.guid), record.video_id, record)) continue;
+    batch.push(record);
+    videos.add(record.video_id);
   }
-  return mergeBackupData(JSON.stringify(byVideo));
+
+  // Silent: these writes came from the sync server, so they must not trigger a push cycle.
+  await TimestampRepository.saveTimestampsBatch(batch, { silent: true });
+  return { mergedVideos: videos.size, mergedTimestamps: batch.length };
 }
 
 // === Settings Business Logic ===

@@ -116,6 +116,16 @@ type SyncStatus = 'signed-out' | 'connecting' | 'online' | 'offline' | 'error';
 /** Thrown when the backend no longer accepts our session; the user has to sign in again. */
 class SyncAuthError extends Error {}
 
+/** A non-2xx response; 4xx other than auth means the request itself was refused, so retrying can't help. */
+class HttpError extends Error {
+  constructor(readonly httpStatus: number, message: string) {
+    super(message);
+  }
+}
+
+const isPermanentRejection = (err: unknown): err is HttpError =>
+  err instanceof HttpError && err.httpStatus >= 400 && err.httpStatus < 500 && err.httpStatus !== 408 && err.httpStatus !== 429;
+
 interface Cursors {
   /** Rows with a write_counter above this have not been pushed yet. */
   pushCounter: number;
@@ -127,6 +137,8 @@ let status: SyncStatus = 'signed-out';
 let statusMessage = '';
 let syncing = false;
 let lastSyncedAt: number | null = null;
+/** Local rows the server refuses outright (e.g. oversized); skipped so they can't block the rest. */
+const skippedGuids = new Set<string>();
 
 let stopped = true;
 let socket: WebSocket | null = null;
@@ -225,6 +237,10 @@ export function updateSyncStatusDisplay() {
       text = syncing ? 'Syncing…' : 'Live sync on';
       if (!syncing && lastSyncedAt) text += ` · last synced ${new Date(lastSyncedAt).toLocaleTimeString()}`;
       color = syncing ? ORANGE : GREEN;
+      if (!syncing && skippedGuids.size > 0) {
+        text += ` · ${skippedGuids.size} timestamp${skippedGuids.size === 1 ? '' : 's'} could not be synced`;
+        color = ORANGE;
+      }
     }
     syncStatusDisplay.textContent = text;
     syncStatusDisplay.style.color = color;
@@ -408,7 +424,7 @@ async function apiJson<T>(
   schema: { safeParse(v: unknown): { success: boolean; data?: T } },
 ): Promise<T> {
   const res = await apiFetch(path, init);
-  if (!res.ok) throw new Error(`${init.method} ${path} failed (HTTP ${res.status})`);
+  if (!res.ok) throw new HttpError(res.status, `${init.method} ${path} failed (HTTP ${res.status})`);
   const parsed = schema.safeParse(await res.json());
   if (!parsed.success) throw new Error(`Unexpected response from ${path}`);
   return parsed.data;
@@ -547,6 +563,7 @@ export async function signOutFromSync() {
   AppState.setSyncAuthState(SIGNED_OUT_SYNC_AUTH_STATE);
   cursors = { pushCounter: 0, pullSeq: 0 };
   serverKnown.clear();
+  skippedGuids.clear();
   await saveAuthState();
   saveCursors();
   setStatus('signed-out');
@@ -620,20 +637,38 @@ async function pullAll() {
   }
 }
 
+/**
+ * Pushes one chunk. If the server refuses it outright (4xx), the chunk is split until the
+ * offending record is isolated and skipped, so one bad row can't block everyone else's sync.
+ * Skipped rows stay local and are tried again if they are edited.
+ */
+async function pushChunk(chunk: TimestampRow[]): Promise<void> {
+  try {
+    const result = await apiJson('/sync/push', { method: 'POST', body: { deviceId, records: chunk } }, PushResponseSchema);
+    // Server copies that beat ours: adopt them (the normal merge rules decide).
+    await applyRemote(result.rejected);
+    for (const row of chunk) skippedGuids.delete(row.guid);
+    if (!noteSeqRange(result.fromSeq, result.seq)) requestSync();
+  } catch (err) {
+    if (!isPermanentRejection(err)) throw err;
+    if (chunk.length > 1) {
+      const mid = chunk.length >> 1;
+      await pushChunk(chunk.slice(0, mid));
+      await pushChunk(chunk.slice(mid));
+      return;
+    }
+    skippedGuids.add(chunk[0].guid);
+    log(`Sync: server refused timestamp ${chunk[0].guid}; leaving it local-only:`, err, 'warn');
+  }
+}
+
 async function pushPending() {
   const changed = await TimestampModel.getRecordsChangedSince(cursors.pushCounter);
   if (changed.length === 0) return;
 
   const toPush = changed.filter((row) => (serverKnown.get(row.guid) ?? 0) < row.write_counter);
   for (let i = 0; i < toPush.length; i += PUSH_CHUNK_SIZE) {
-    const result = await apiJson(
-      '/sync/push',
-      { method: 'POST', body: { deviceId, records: toPush.slice(i, i + PUSH_CHUNK_SIZE) } },
-      PushResponseSchema,
-    );
-    // Server copies that beat ours: adopt them (the normal merge rules decide).
-    await applyRemote(result.rejected);
-    if (!noteSeqRange(result.fromSeq, result.seq)) requestSync();
+    await pushChunk(toPush.slice(i, i + PUSH_CHUNK_SIZE));
   }
 
   // Only after every chunk succeeded: rows can share a counter, so a partial advance could skip one.

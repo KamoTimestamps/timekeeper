@@ -48,10 +48,22 @@ describe('sync', () => {
     assert.equal(stale.fromSeq, stale.seq, 'no seq range when nothing was accepted');
 
     const tie = (await push(accessToken, [record('g', 6, { comment: 'different' })])).json();
-    assert.deepEqual([tie.accepted.length, tie.rejected[0].comment], [0, 'v6']);
+    assert.deepEqual([tie.accepted.length, tie.rejected[0].comment], [0, 'v6'], 'tie lost on content key');
 
     const replay = (await push(accessToken, [record('g', 6, { comment: 'v6' })])).json();
     assert.deepEqual([replay.accepted.length, replay.rejected.length], [0, 0], 'identical replay is a silent no-op');
+  });
+
+  it('breaks write_counter ties by content so every device converges', async () => {
+    const { accessToken } = await h.login('tie', 'tie@example.com');
+    await push(accessToken, [record('t', 3, { comment: 'bbb' })]);
+
+    const loser = (await push(accessToken, [record('t', 3, { comment: 'aaa' })], 'dev-b')).json();
+    assert.deepEqual([loser.accepted.length, loser.rejected[0].comment], [0, 'bbb']);
+
+    const winner = (await push(accessToken, [record('t', 3, { comment: 'ccc' })], 'dev-b')).json();
+    assert.deepEqual([winner.accepted.length, winner.seq - winner.fromSeq], [1, 1], 'a winning tie is accepted with a new seq');
+    assert.equal((await pull(accessToken)).json().records[0].comment, 'ccc');
   });
 
   it('propagates deletions as higher-counter records with deleted_at', async () => {

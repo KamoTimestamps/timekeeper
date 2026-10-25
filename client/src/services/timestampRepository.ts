@@ -15,7 +15,7 @@ import { log, getTimestampSuffix } from '../util';
 
 // === Database Constants ===
 export const DB_NAME = 'ytls-timestamps-db';
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 export const STORE_NAME = 'timestamps';
 export const STORE_NAME_V2 = 'timestamps_v2';
 export const SETTINGS_STORE_NAME = 'settings';
@@ -242,6 +242,14 @@ function openIndexedDB(): Promise<IDBDatabase> {
           transaction.objectStore(SETTINGS_STORE_NAME)
         );
       }
+
+      // Version 5: index on write_counter so live sync can read "rows changed since N" without
+      // scanning the whole store. The v2 store always exists by now (created above for any
+      // older version), and rows backfilled by the v4 cursor are indexed as they are updated.
+      const v2ForIndex = transaction.objectStore(STORE_NAME_V2);
+      if (!v2ForIndex.indexNames.contains('write_counter')) {
+        v2ForIndex.createIndex('write_counter', 'write_counter', { unique: false });
+      }
     };
     request.onsuccess = event => {
       resolve((event.target as IDBOpenDBRequest).result);
@@ -325,10 +333,12 @@ function notifyTimestampsWritten(): void {
  * Run `body` inside one readwrite transaction over the timestamp and settings stores.
  * Resolves when the transaction commits and rejects if it aborts. An exception thrown by
  * `body` (or by a request callback it registers) aborts the transaction, so a partial
- * write is never committed.
+ * write is never committed. `silent` skips the write notification, for writes that
+ * live sync itself applied and must not push straight back.
  */
 function runWrite(
-  body: (v2Store: IDBObjectStore, settingsStore: IDBObjectStore) => void
+  body: (v2Store: IDBObjectStore, settingsStore: IDBObjectStore) => void,
+  { silent = false }: { silent?: boolean } = {}
 ): Promise<void> {
   return getDB().then(db => new Promise<void>((resolve, reject) => {
     let tx: IDBTransaction;
@@ -341,7 +351,7 @@ function runWrite(
 
     tx.oncomplete = () => {
       resolve();
-      notifyTimestampsWritten();
+      if (!silent) notifyTimestampsWritten();
     };
     tx.onerror = () => reject(new Error(`IndexedDB write failed: ${tx.error?.message ?? 'unknown'}`));
     tx.onabort = () => reject(new Error(`IndexedDB transaction aborted: ${tx.error?.message ?? 'unknown'}`));
@@ -481,7 +491,8 @@ export function saveTimestamp(videoId: string, timestamp: TimestampRecord): Prom
  * Throws on IndexedDB errors.
  */
 export function saveTimestampsBatch(
-  records: Array<{ guid: string; video_id: string; start: number; comment: string; write_counter?: number; deleted_at?: number }>
+  records: Array<{ guid: string; video_id: string; start: number; comment: string; write_counter?: number; deleted_at?: number }>,
+  options: { silent?: boolean } = {}
 ): Promise<void> {
   if (records.length === 0) return Promise.resolve();
   return runWrite((v2Store, settingsStore) => {
@@ -507,7 +518,7 @@ export function saveTimestampsBatch(
 
       return counter + 1;
     });
-  });
+  }, options);
 }
 
 /**
@@ -631,6 +642,37 @@ export function getAllTimestamps(): Promise<TimestampRow[]> {
   }).then(result => {
     return Array.isArray(result) ? result as TimestampRow[] : [];
   });
+}
+
+/**
+ * Rows (including soft-deleted ones) with a write_counter above `counter`, in counter order.
+ * Served by the write_counter index, so the cost follows the number of changes, not the store size.
+ */
+export function getTimestampsChangedSince(counter: number): Promise<TimestampRow[]> {
+  return executeTransaction(STORE_NAME_V2, 'readonly', (store) => {
+    return store.index('write_counter').getAll(IDBKeyRange.lowerBound(counter, true));
+  }).then(result => (Array.isArray(result) ? result as TimestampRow[] : []));
+}
+
+/**
+ * The stored rows for the given GUIDs (missing GUIDs are omitted), read in one transaction.
+ */
+export function getTimestampsByGuids(guids: string[]): Promise<TimestampRow[]> {
+  if (guids.length === 0) return Promise.resolve([]);
+  return getDB().then(db => new Promise<TimestampRow[]>((resolve, reject) => {
+    const rows: TimestampRow[] = [];
+    const tx = db.transaction(STORE_NAME_V2, 'readonly');
+    const store = tx.objectStore(STORE_NAME_V2);
+    for (const guid of guids) {
+      store.get(guid).onsuccess = (evt) => {
+        const row = (evt.target as IDBRequest<TimestampRow | undefined>).result;
+        if (row) rows.push(row);
+      };
+    }
+    tx.oncomplete = () => resolve(rows);
+    tx.onerror = () => reject(tx.error ?? new Error('IndexedDB read failed'));
+    tx.onabort = () => reject(tx.error ?? new Error('IndexedDB read aborted'));
+  }));
 }
 
 // === Settings Repository ===
