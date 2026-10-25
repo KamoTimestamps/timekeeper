@@ -4,25 +4,38 @@
 
 const $ = (id) => document.getElementById(id);
 
-// Theme: theme.js (in <head>) applied the saved choice; this is the toggle. "auto" removes the
-// attribute so the stylesheet follows the OS, and is stored as no value at all.
-function setTheme(theme) {
-  if (theme === 'auto') delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = theme;
+// Theme: theme.js (in <head>) applied the saved mode. The toggle is one button that cycles
+// auto -> light -> dark; its icon shows what the page looks like now (sun or moon) and its small
+// label the mode. data-theme-mode is the choice, data-theme what it resolves to. "auto" is stored
+// as no value, and keeps following the OS.
+const THEME_MODES = ['auto', 'light', 'dark'];
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+function applyTheme(mode) {
+  const root = document.documentElement;
+  root.dataset.themeMode = mode;
+  root.dataset.theme = mode === 'auto' ? (darkQuery.matches ? 'dark' : 'light') : mode;
+  const next = THEME_MODES[(THEME_MODES.indexOf(mode) + 1) % THEME_MODES.length];
+  $('theme').setAttribute('aria-label', `Theme: ${mode}. Switch to ${next}.`);
+}
+
+function setTheme(mode) {
+  applyTheme(mode);
   try {
-    if (theme === 'auto') localStorage.removeItem('tk-theme');
-    else localStorage.setItem('tk-theme', theme);
+    if (mode === 'auto') localStorage.removeItem('tk-theme');
+    else localStorage.setItem('tk-theme', mode);
   } catch {
     // Storage blocked: the choice still applies until the page is reloaded.
   }
-  for (const button of document.querySelectorAll('[data-theme-choice]')) {
-    button.setAttribute('aria-pressed', String(button.dataset.themeChoice === theme));
-  }
 }
-for (const button of document.querySelectorAll('[data-theme-choice]')) {
-  button.addEventListener('click', () => setTheme(button.dataset.themeChoice));
-}
-setTheme(document.documentElement.dataset.theme ?? 'auto');
+$('theme').addEventListener('click', () => {
+  const mode = document.documentElement.dataset.themeMode ?? 'auto';
+  setTheme(THEME_MODES[(THEME_MODES.indexOf(mode) + 1) % THEME_MODES.length]);
+});
+darkQuery.addEventListener('change', () => {
+  if ((document.documentElement.dataset.themeMode ?? 'auto') === 'auto') applyTheme('auto');
+});
+applyTheme(document.documentElement.dataset.themeMode ?? 'auto');
 
 async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch(path, {
@@ -489,37 +502,11 @@ function addStamps(items, append) {
   }
 }
 
-// The thin bar under the search box: where the bottom of the window is in the whole matching list.
-// Only part of the list is loaded, so the rest is estimated from the average height of what is, which
-// makes a new page refine the estimate instead of moving the bar. Its text form ("Showing 100 of
-// 38,072") lives in the aria-label.
-function showProgress(loaded, total) {
-  const bar = $('list-progress');
-  bar.hidden = total === 0;
+// How many timestamps match, at the right edge of the search box (an empty result says so below it).
+function showCount(total) {
+  $('search-count').textContent = total === 0 ? '' : `${number(total)} result${total === 1 ? '' : 's'}`;
   $('results-summary').textContent = total === 0 ? 'No timestamps found.' : '';
-  bar.setAttribute('aria-label', `Showing ${number(loaded)} of ${number(total)} timestamp${total === 1 ? '' : 's'}`);
-  bar.title = bar.getAttribute('aria-label');
-  paintProgress();
 }
-
-function paintProgress() {
-  const bar = $('list-progress');
-  if (bar.hidden) return;
-  const { loaded, total } = stampList;
-  const list = $('timestamp-list').getBoundingClientRect();
-  const seen = Math.min(Math.max(window.innerHeight - list.top, 0), list.height);
-  const estimated = loaded > 0 ? list.height * (Math.max(total, loaded) / loaded) : 0;
-  const percent = estimated > 0 ? Math.min(100, (seen / estimated) * 100) : 0;
-  bar.firstElementChild.style.width = `${percent}%`;
-  bar.setAttribute('aria-valuenow', String(Math.round(percent)));
-}
-
-let progressFrame = 0;
-const schedulePaint = () => {
-  if (!progressFrame) progressFrame = requestAnimationFrame(() => ((progressFrame = 0), paintProgress()));
-};
-window.addEventListener('scroll', schedulePaint, { passive: true });
-window.addEventListener('resize', schedulePaint);
 
 // The pinned video header sits just under the pinned search bar, whatever height that has.
 new ResizeObserver(() => {
@@ -542,7 +529,7 @@ async function loadStamps({ append }) {
   if (token !== stampList.token) return;
   if (status === 401) return showSignedOut('Your session has ended. Please sign in again.');
   if (!ok) {
-    $('list-progress').hidden = true;
+    $('search-count').textContent = '';
     $('results-summary').textContent = 'Could not load timestamps. Please try again.';
     $('load-more').textContent = 'Try again';
     $('load-more').disabled = false;
@@ -553,7 +540,7 @@ async function loadStamps({ append }) {
   stampList.cursor = data.nextCursor;
   // Only the first page carries the total; rows added while scrolling can push loaded past it.
   if (!append) stampList.total = data.total;
-  showProgress(stampList.loaded, Math.max(stampList.total, stampList.loaded));
+  showCount(Math.max(stampList.total, stampList.loaded));
   $('load-more').hidden = !stampList.cursor;
   $('load-more').textContent = 'Load more';
   $('load-more').disabled = false;
