@@ -118,7 +118,7 @@ export interface VideoPrefetcher {
 export function createVideoPrefetcher(
   store: Store,
   lookup: VideoLookup,
-  log: { warn: (obj: object, msg: string) => void },
+  log: { warn: (obj: object, msg: string) => void; info?: (obj: object, msg: string) => void },
 ): VideoPrefetcher {
   const queued = new Set<string>();
   let draining: Promise<void> | null = null;
@@ -130,8 +130,9 @@ export function createVideoPrefetcher(
         try {
           const found = await lookup(batch);
           store.saveVideoInfo(batch.map((videoId) => ({ videoId, info: found.get(videoId) ?? null })), Date.now());
+          log.info?.({ looked: batch.length, found: found.size, remaining: queued.size - batch.length }, 'video info prefetch batch');
         } catch (err) {
-          log.warn({ err: (err as Error).message }, 'youtube prefetch failed');
+          log.warn({ err: (err as Error).message, dropped: queued.size }, 'youtube prefetch failed; queue dropped');
           queued.clear();
           return;
         }

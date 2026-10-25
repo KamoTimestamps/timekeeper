@@ -1,7 +1,11 @@
 import type { Store } from './store.ts';
 
-/** What an anonymous viewer is told about a video; null when YouTube gives no usable answer (private, deleted, blocked). */
-export type VideoAccessCheck = (videoId: string) => Promise<{ channelId: string; membersOnly: boolean } | null>;
+/**
+ * What an anonymous viewer is told about a video, or why there is no answer (private, deleted, age-gated).
+ * Throws when YouTube is turning this server away altogether, which says nothing about the video.
+ */
+export type VideoAccessResult = { channelId: string; membersOnly: boolean } | { unavailable: string };
+export type VideoAccessCheck = (videoId: string) => Promise<VideoAccessResult>;
 
 const WATCH_URL = 'https://www.youtube.com/watch';
 
@@ -22,7 +26,7 @@ export const VIDEO_ACCESS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CHECK_DELAY_MS = 300;
 
 interface PlayerResponse {
-  playabilityStatus?: { status?: string; errorScreen?: { playerLegacyDesktopYpcOfferRenderer?: { offerId?: string } } };
+  playabilityStatus?: { status?: string; reason?: string; errorScreen?: { playerLegacyDesktopYpcOfferRenderer?: { offerId?: string } } };
   videoDetails?: { channelId?: string };
 }
 
@@ -68,10 +72,13 @@ export function createVideoAccessCheck(fetchFn: typeof fetch = fetch): VideoAcce
     const player = extractPlayerResponse(await res.text());
     const channelId = player?.videoDetails?.channelId;
     const status = player?.playabilityStatus;
-    if (status?.errorScreen?.playerLegacyDesktopYpcOfferRenderer?.offerId === MEMBERS_ONLY_OFFER_ID) {
-      return channelId ? { channelId, membersOnly: true } : null;
+    if (status?.errorScreen?.playerLegacyDesktopYpcOfferRenderer?.offerId === MEMBERS_ONLY_OFFER_ID && channelId) {
+      return { channelId, membersOnly: true };
     }
-    return status?.status === 'OK' && channelId ? { channelId, membersOnly: false } : null;
+    if (status?.status === 'OK' && channelId) return { channelId, membersOnly: false };
+    // Datacenter IPs get this after a handful of lookups; every later answer would be the same refusal.
+    if (/not a bot/i.test(status?.reason ?? '')) throw new Error(`YouTube is challenging this server: ${status?.reason}`);
+    return { unavailable: player ? `${status?.status ?? 'no status'}${status?.reason ? `: ${status.reason}` : ''}` : 'no player data in page' };
   };
 }
 
@@ -91,7 +98,7 @@ export interface VideoAccessChecker {
 export function createVideoAccessChecker(
   store: Store,
   check: VideoAccessCheck,
-  log: { warn: (obj: object, msg: string) => void },
+  log: { warn: (obj: object, msg: string) => void; info?: (obj: object, msg: string) => void },
   delayMs = CHECK_DELAY_MS,
 ): VideoAccessChecker {
   const queued = new Set<string>();
@@ -99,21 +106,34 @@ export function createVideoAccessChecker(
   let draining: Promise<void> | null = null;
 
   const drain = async () => {
+    const tally = { checked: 0, membersOnly: 0, public: 0, unavailable: 0 };
+    const total = queued.size;
+    const startedAt = Date.now();
+    log.info?.({ queued: total }, 'video access check started');
     try {
       while (queued.size > 0) {
         const videoId = queued.values().next().value as string;
         queued.delete(videoId);
         try {
           const result = await check(videoId);
-          if (result) store.saveVideoAccess(videoId, result.channelId, result.membersOnly, Date.now(), 'server');
-          else unanswerable.add(videoId);
+          if ('unavailable' in result) {
+            unanswerable.add(videoId);
+            tally.unavailable++;
+            log.info?.({ videoId, reason: result.unavailable }, 'video access: no answer');
+          } else {
+            store.saveVideoAccess(videoId, result.channelId, result.membersOnly, Date.now(), 'server');
+            tally[result.membersOnly ? 'membersOnly' : 'public']++;
+          }
+          tally.checked++;
+          if (tally.checked % 50 === 0) log.info?.({ ...tally, remaining: queued.size }, 'video access check progress');
         } catch (err) {
-          log.warn({ err: (err as Error).message }, 'video access check failed');
+          log.warn({ err: (err as Error).message, videoId, dropped: queued.size, ...tally }, 'video access check failed; queue dropped');
           queued.clear();
           return;
         }
         if (queued.size > 0 && delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
+      log.info?.({ ...tally, ms: Date.now() - startedAt }, 'video access check finished');
     } finally {
       draining = null;
     }
@@ -125,7 +145,10 @@ export function createVideoAccessChecker(
       for (const videoId of videoIds) if (!done.has(videoId) && !unanswerable.has(videoId)) queued.add(videoId);
       if (queued.size > 0 && !draining) draining = drain();
     },
-    stop: () => queued.clear(),
+    stop: () => {
+      if (queued.size > 0) log.info?.({ dropped: queued.size }, 'video access check stopped at shutdown');
+      queued.clear();
+    },
     idle: async () => {
       while (draining) await draining;
     },

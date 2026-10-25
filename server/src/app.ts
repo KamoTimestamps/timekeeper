@@ -83,9 +83,12 @@ export async function buildApp({ config, store, verifyGoogle, youtube, subscript
   if (prefetcher) {
     app.addHook('onClose', () => prefetcher.idle()); // finish writing before the caller closes the store
     if (backfillVideoInfo) {
-      prefetcher.enqueue(store.uncachedVideoIds());
+      const uncached = store.uncachedVideoIds();
+      const stale = store.staleVideoIds(Date.now() - VIDEO_INFO_TTL_MS);
+      app.log.info({ uncached: uncached.length, stale: stale.length }, 'video info backfill');
+      prefetcher.enqueue(uncached);
       // Cached details past their TTL, which includes everything cached before video lengths were stored.
-      prefetcher.enqueue(store.staleVideoIds(Date.now() - VIDEO_INFO_TTL_MS), true);
+      prefetcher.enqueue(stale, true);
     }
   }
 
@@ -95,7 +98,11 @@ export async function buildApp({ config, store, verifyGoogle, youtube, subscript
       accessChecker.stop();
       return accessChecker.idle();
     });
-    if (backfillVideoInfo) accessChecker.enqueue(store.videoIdsNeedingAccessCheck(Date.now() - VIDEO_ACCESS_TTL_MS));
+    if (backfillVideoInfo) {
+      const needed = store.videoIdsNeedingAccessCheck(Date.now() - VIDEO_ACCESS_TTL_MS);
+      app.log.info({ videos: needed.length }, 'video access backfill');
+      accessChecker.enqueue(needed);
+    }
   }
 
   await registerWeb(app, { config, store, verifyGoogle, hub, youtube });

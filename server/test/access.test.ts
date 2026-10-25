@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import { createVideoAccessCheck } from '../src/video-access.ts';
+import { createVideoAccessCheck, createVideoAccessChecker, type VideoAccessResult } from '../src/video-access.ts';
+import { Store } from '../src/store.ts';
 import { createSubscriptionsClient, SubscriptionsAuthError } from '../src/subscriptions.ts';
 import { bearer, createHarness, type TestHarness } from './helpers.ts';
 
@@ -127,17 +128,21 @@ describe('server-side members-only check', () => {
       await createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'OK' }, videoDetails: { channelId: 'UCpub' } })))('v'),
       { channelId: 'UCpub', membersOnly: false },
     );
-    assert.equal(await createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'ERROR', reason: 'This video is unavailable' } })))('v'), null);
-    assert.equal(await createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'LOGIN_REQUIRED' }, videoDetails: { channelId: 'UC1' } })))('v'), null);
-    assert.equal(await createVideoAccessCheck(watchFetch('<html>no player here</html>'))('v'), null);
+    assert.deepEqual(await createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'ERROR', reason: 'This video is unavailable' } })))('v'), { unavailable: 'ERROR: This video is unavailable' });
+    assert.deepEqual(await createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'LOGIN_REQUIRED' }, videoDetails: { channelId: 'UC1' } })))('v'), { unavailable: 'LOGIN_REQUIRED' });
+    assert.deepEqual(await createVideoAccessCheck(watchFetch('<html>no player here</html>'))('v'), { unavailable: 'no player data in page' });
     await assert.rejects(createVideoAccessCheck(watchFetch('', 429))('v'), /429/);
+    await assert.rejects(
+      createVideoAccessCheck(watchFetch(page({ playabilityStatus: { status: 'LOGIN_REQUIRED', reason: 'Sign in to confirm you’re not a bot' } })))('v'),
+      /challenging this server/,
+    );
   });
 
   it('checks each newly pushed video once, and its answer outranks a userscript report', async () => {
     const asked: string[] = [];
     const h = await createHarness({}, undefined, undefined, async (videoId) => {
       asked.push(videoId);
-      return videoId === 'gone' ? null : { channelId: 'UCsrv', membersOnly: videoId === 'secret' };
+      return videoId === 'gone' ? { unavailable: 'ERROR' } : { channelId: 'UCsrv', membersOnly: videoId === 'secret' };
     });
     try {
       const { accessToken } = await h.login('c1', 'c1@example.com');
@@ -160,5 +165,32 @@ describe('server-side members-only check', () => {
     } finally {
       await h.app.close();
     }
+  });
+});
+
+describe('video access checker logging', () => {
+  it('logs a start, a finish with totals, and each video it got no answer for; a challenge drops the queue loudly', async () => {
+    const store = new Store(':memory:');
+    const lines: Array<[string, object, string]> = [];
+    const log = { info: (o: object, m: string) => lines.push(['info', o, m]), warn: (o: object, m: string) => lines.push(['warn', o, m]) };
+    const answers: Record<string, () => Promise<VideoAccessResult>> = {
+      a: async () => ({ channelId: 'UC1', membersOnly: true }),
+      b: async () => ({ channelId: 'UC1', membersOnly: false }),
+      c: async () => ({ unavailable: 'ERROR: gone' }),
+    };
+    const checker = createVideoAccessChecker(store, (id) => answers[id](), log, 0);
+    checker.enqueue(['a', 'b', 'c']);
+    await checker.idle();
+    assert.deepEqual(lines.map(([, , m]) => m), ['video access check started', 'video access: no answer', 'video access check finished']);
+    assert.deepEqual(lines[2][1], { checked: 3, membersOnly: 1, public: 1, unavailable: 1, ms: (lines[2][1] as { ms: number }).ms });
+
+    lines.length = 0;
+    answers.d = async () => { throw new Error('YouTube is challenging this server'); };
+    answers.e = async () => ({ channelId: 'UC1', membersOnly: false });
+    checker.enqueue(['d', 'e']);
+    await checker.idle();
+    const warn = lines.find(([level]) => level === 'warn');
+    assert.match(warn?.[2] ?? '', /queue dropped/);
+    assert.equal((warn?.[1] as { dropped: number }).dropped, 1);
   });
 });
