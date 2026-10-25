@@ -1,3 +1,12 @@
+/* Windows has no flag emoji, so country flags show as two letters there. This font draws only the
+   flag characters (unicode-range); where the system already has flags it is never downloaded. */
+@font-face {
+  font-family: "Twemoji Country Flags";
+  unicode-range: U+1F1E6-1F1FF, U+1F3F4, U+E0062-E0063, U+E0065, U+E0067, U+E006C, U+E006E, U+E0073-E0074, U+E0077, U+E007F;
+  src: url("/assets/TwemojiCountryFlags.woff2") format("woff2");
+  font-display: swap;
+}
+
 :root {
   --bg: #f6f7f9;
   --card: #ffffff;
@@ -34,8 +43,11 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.5 "Twemoji Country Flags", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
+
+.credits { max-width: 960px; margin: 24px auto; padding: 0 16px; font-size: 12px; }
+.credits a { color: inherit; }
 
 .top {
   display: flex;

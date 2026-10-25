@@ -45,6 +45,8 @@ const CSP = [
   "style-src-attr 'unsafe-inline'",
   "frame-src https://accounts.google.com/gsi/",
   "connect-src 'self' https://accounts.google.com/gsi/",
+  // The flag-emoji font for browsers whose system has none (Windows).
+  "font-src 'self'",
   // Video thumbnails come from YouTube's image host.
   "img-src 'self' data: https://i.ytimg.com",
   "base-uri 'none'",
@@ -56,7 +58,8 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/assets/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
   '/assets/style.css': { file: 'style.css', type: 'text/css; charset=utf-8' },
-  '/assets/favicon.png': { file: 'favicon.png', type: 'image/png' }, // the client's Kamo header icon
+  '/assets/TwemojiCountryFlags.woff2': { file: 'TwemojiCountryFlags.woff2', type: 'font/woff2' },
+  '/assets/favicon.png':{ file: 'favicon.png', type: 'image/png' }, // the client's Kamo header icon
 };
 
 export async function registerWeb(app: FastifyInstance, { config, store, verifyGoogle, hub, youtube }: WebDeps) {

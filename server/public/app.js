@@ -260,10 +260,9 @@ function renderStamp(item) {
   const channelLink = channelName
     ? el('a', { className: 'stamp-channel', href: `#/timestamps?channel=${encodeURIComponent(channelName)}`, title: `Only ${channelName}` }, channelName)
     : '';
-  const aired =item.info?.publishedAt ? `Aired ${dateOnly.format(new Date(item.info.publishedAt))}` : '';
-  const updated = item.updatedAt ? dateTime.format(item.updatedAt) : '';
+  const aired = item.info?.publishedAt ? dateOnly.format(new Date(item.info.publishedAt)) : '';
   const meta = el('div', { className: 'stamp-meta muted' }, videoLink);
-  for (const part of [channelLink, aired, updated]) if (part) meta.append(' · ', part);
+  for (const part of [channelLink, aired]) if (part) meta.append(' · ', part);
   return el('li', {},
     time,
     el('div', { className: 'stamp-body' },
