@@ -32,6 +32,14 @@ export interface VideoInfo {
 
 export type StoredRecord = TimestampRecord & { seq: number };
 
+/** Where a page of searchTimestamps ended: the sort key of its last row. */
+export interface TimestampPageKey {
+  publishedAt: string | null;
+  videoId: string;
+  start: number;
+  guid: string;
+}
+
 export interface PushResult {
   /** Records the server took, in seq order. */
   accepted: TimestampRecord[];
@@ -606,8 +614,14 @@ export class Store {
    */
   searchTimestamps(
     userId: string,
-    { query, videoId, channel, offset, limit }: { query: string; videoId?: string; channel?: string; offset: number; limit: number },
-  ): { total: number; items: Array<{ guid: string; videoId: string; start: number; comment: string; updatedAt: number | null }> } {
+    { query, videoId, channel, after, limit }: { query: string; videoId?: string; channel?: string; after?: TimestampPageKey; limit: number },
+  ): {
+    /** Number of matches; null when `after` is given (only the first page counts). */
+    total: number | null;
+    items: Array<{ guid: string; videoId: string; start: number; comment: string; updatedAt: number | null }>;
+    /** Pass as `after` to get the page that follows; null on the last page. */
+    next: TimestampPageKey | null;
+  } {
     const where = ['t.user_id = ?', 't.deleted_at IS NULL'];
     const params: Array<string | number> = [userId];
     if (videoId) {
@@ -627,15 +641,43 @@ export class Store {
     }
     const from = `FROM timestamps t LEFT JOIN video_info v ON v.video_id = t.video_id WHERE ${where.join(' AND ')}`;
 
-    const { total } = this.db.prepare(`SELECT COUNT(*) AS total ${from}`).get(...params) as { total: number };
+    // Only the first page counts; the page keeps that number while it scrolls, so later pages skip the COUNT.
+    const total = after
+      ? null
+      : (this.db.prepare(`SELECT COUNT(*) AS total ${from}`).get(...params) as { total: number }).total;
     // published_at is ISO 8601, so it sorts as text; NULLs (no cached YouTube details) sort last in DESC.
     const order = 'v.published_at DESC, t.video_id, t.start, t.guid';
+    // Keyset paging: resume strictly after the previous page's last row, so rows added or removed
+    // earlier in the list can't shift a page (as an OFFSET would). guid makes the key unique.
+    const rest = '(t.video_id, t.start, t.guid) > (?, ?, ?)';
+    const pageParams: Array<string | number> = [];
+    let resume = '';
+    if (after) {
+      const [publishedAt, vid, start, guid] = [after.publishedAt, after.videoId, after.start, after.guid];
+      resume =
+        publishedAt === null
+          ? ` AND v.published_at IS NULL AND ${rest}`
+          : ` AND (v.published_at < ? OR v.published_at IS NULL OR (v.published_at = ? AND ${rest}))`;
+      if (publishedAt !== null) pageParams.push(publishedAt, publishedAt);
+      pageParams.push(vid, start, guid);
+    }
     const rows = this.db
-      .prepare(`SELECT t.guid, t.video_id, t.start, t.comment, t.updated_at ${from} ORDER BY ${order} LIMIT ? OFFSET ?`)
-      .all(...params, limit, offset) as Array<{ guid: string; video_id: string; start: number; comment: string; updated_at: number | null }>;
+      .prepare(`SELECT t.guid, t.video_id, t.start, t.comment, t.updated_at, v.published_at ${from}${resume} ORDER BY ${order} LIMIT ?`)
+      .all(...params, ...pageParams, limit + 1) as Array<{
+      guid: string;
+      video_id: string;
+      start: number;
+      comment: string;
+      updated_at: number | null;
+      published_at: string | null;
+    }>;
+    const more = rows.length > limit; // the extra row only tells us whether a next page exists
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
     return {
       total,
-      items: rows.map((r) => ({ guid: r.guid, videoId: r.video_id, start: r.start, comment: r.comment, updatedAt: r.updated_at })),
+      items: page.map((r) => ({ guid: r.guid, videoId: r.video_id, start: r.start, comment: r.comment, updatedAt: r.updated_at })),
+      next: more && last ? { publishedAt: last.published_at, videoId: last.video_id, start: last.start, guid: last.guid } : null,
     };
   }
 

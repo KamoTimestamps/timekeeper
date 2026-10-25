@@ -6,7 +6,7 @@ import { clientInfo } from './client-info.ts';
 import type { Config } from './config.ts';
 import type { GoogleVerifier } from './google.ts';
 import type { Hub } from './hub.ts';
-import type { Store } from './store.ts';
+import type { Store, TimestampPageKey } from './store.ts';
 import { resolveVideoInfo, type VideoLookup } from './youtube.ts';
 
 /**
@@ -32,8 +32,23 @@ const TimestampsQuery = z.object({
   q: z.string().max(200).default(''),
   video: z.string().min(1).max(64).optional(),
   channel: z.string().min(1).max(200).optional(),
-  offset: z.coerce.number().int().min(0).default(0),
+  cursor: z.string().max(600).optional(),
 });
+
+// The cursor is opaque to the page: the sort key of the last row it has, so the next page resumes after it.
+const PageKey = z.tuple([z.string().nullable(), z.string(), z.number(), z.string()]);
+const encodeCursor = (key: TimestampPageKey) =>
+  Buffer.from(JSON.stringify([key.publishedAt, key.videoId, key.start, key.guid])).toString('base64url');
+function decodeCursor(cursor: string): TimestampPageKey | null {
+  try {
+    const parsed = PageKey.safeParse(JSON.parse(Buffer.from(cursor, 'base64url').toString()));
+    if (!parsed.success) return null;
+    const [publishedAt, videoId, start, guid] = parsed.data;
+    return { publishedAt, videoId, start, guid };
+  } catch {
+    return null;
+  }
+}
 
 // Only what Google's sign-in button needs: https://developers.google.com/identity/gsi/web/guides/client-library
 const buildCsp = (features: Config['features']) => [
@@ -162,17 +177,24 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
     const query = TimestampsQuery.safeParse(req.query);
     if (!query.success) return reply.code(400).send({ error: 'invalid_request' });
 
-    const { total, items } = store.searchTimestamps(session.userId, {
+    const after = query.data.cursor === undefined ? undefined : decodeCursor(query.data.cursor);
+    if (after === null) return reply.code(400).send({ error: 'invalid_request' });
+
+    const { total, items, next } = store.searchTimestamps(session.userId, {
       query: query.data.q,
       videoId: query.data.video,
       channel: query.data.channel,
-      offset: query.data.offset,
+      after,
       limit: TIMESTAMPS_PAGE_SIZE,
     });
     const info = youtube && items.length > 0
       ? await resolveVideoInfo(store, youtube, [...new Set(items.map((i) => i.videoId))], req.log)
       : new Map();
-    return { total, items: items.map((i) => (info.has(i.videoId) ? { ...i, info: info.get(i.videoId) } : i)) };
+    return {
+      total,
+      items: items.map((i) => (info.has(i.videoId) ? { ...i, info: info.get(i.videoId) } : i)),
+      nextCursor: next ? encodeCursor(next) : null,
+    };
   });
 
   // Server-sent events: a bare "overview" signal whenever this user's counts or sessions change.

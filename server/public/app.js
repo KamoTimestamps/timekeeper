@@ -241,7 +241,8 @@ setInterval(() => {
 
 // --- timestamps browser ---
 
-const stampList = { query: '', video: '', channel: '', offset: 0, token: 0, group: null };
+// `loaded` counts rows shown; `cursor` is the server's opaque "continue after the last row" marker.
+const stampList = { query: '', video: '', channel: '', loaded: 0, total: 0, cursor: null, token: 0, group: null };
 
 // Zero-padded to the width of `longest`, so every time in one video's list lines up: with a
 // timestamp past an hour they are all h:mm:ss ("0:57:47"), otherwise m:ss padded to its minutes.
@@ -419,8 +420,12 @@ new ResizeObserver(() => {
 
 async function loadStamps({ append }) {
   const token = ++stampList.token; // a slower, older response must not overwrite a newer search
-  if (!append) stampList.offset = 0;
-  const params = new URLSearchParams({ q: stampList.query, offset: String(stampList.offset) });
+  if (!append) {
+    stampList.loaded = 0;
+    stampList.cursor = null;
+  }
+  const params = new URLSearchParams({ q: stampList.query });
+  if (stampList.cursor) params.set('cursor', stampList.cursor);
   if (stampList.video) params.set('video', stampList.video);
   if (stampList.channel) params.set('channel', stampList.channel);
   $('load-more').disabled = true;
@@ -436,9 +441,12 @@ async function loadStamps({ append }) {
     return;
   }
   addStamps(data.items, append);
-  stampList.offset += data.items.length;
-  showProgress(stampList.offset, data.total);
-  $('load-more').hidden = stampList.offset >= data.total;
+  stampList.loaded += data.items.length;
+  stampList.cursor = data.nextCursor;
+  // Only the first page carries the total; rows added while scrolling can push loaded past it.
+  if (!append) stampList.total = data.total;
+  showProgress(stampList.loaded, Math.max(stampList.total, stampList.loaded));
+  $('load-more').hidden = !stampList.cursor;
   $('load-more').textContent = 'Load more';
   $('load-more').disabled = false;
   // An observer only fires when visibility changes, so if the button is still in view (a tall

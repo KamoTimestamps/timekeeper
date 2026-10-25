@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { WebSocket } from 'ws';
 import { bearer, createHarness, record, testConfig, type TestHarness } from './helpers.ts';
+import type { TimestampPageKey } from '../src/store.ts';
 
 const ORIGIN = testConfig.publicOrigin;
 const COOKIE = '__Host-tk_web'; // https public origin => __Host- prefix
@@ -254,6 +255,20 @@ describe('timestamp browser', () => {
     const cookie = { cookie: `${COOKIE}=${login.cookies.find((c) => c.name === COOKIE)!.value}` };
     const items = (await get('/web/timestamps', cookie)).json().items as Array<{ guid: string }>;
     assert.deepEqual(items.map((i) => i.guid), ['n2', 'n1', 'o1', 'u1']);
+
+    // Walk it one row at a time with the cursor, across dated and undated videos. A row that
+    // lands before the current position mid-walk must not repeat or skip anything.
+    const walked: string[] = [];
+    let resume: TimestampPageKey | undefined;
+    for (let step = 0; step < 10; step++) {
+      const page = h.store.searchTimestamps(script.userId, { query: '', after: resume, limit: 1 });
+      walked.push(...page.items.map((i) => i.guid));
+      if (step === 1) await send([record('n0', 5, { video_id: 'newer', start: 1 })]); // sorts before n2, already passed
+      if (!page.next) break;
+      resume = page.next;
+    }
+    assert.deepEqual(walked, ['n2', 'n1', 'o1', 'u1']);
+    assert.equal(h.store.searchTimestamps(script.userId, { query: '', limit: 10 }).items[0].guid, 'n0');
   });
 
   it('searches case-insensitively, requires every word, and treats % and _ literally', async () => {
@@ -267,13 +282,12 @@ describe('timestamp browser', () => {
     assert.deepEqual(await guids('vidB'), ['c']);
   });
 
-  it('filters to one video in playback order and pages with offset', async () => {
+  it('filters to one video in playback order', async () => {
     const one = (await get('/web/timestamps?video=vidA')).json();
     assert.deepEqual(one.items.map((i: { start: number }) => i.start), [30, 90]);
-    const second = (await get('/web/timestamps?offset=2')).json();
-    assert.equal(second.total, 3);
-    assert.equal(second.items.length, 1);
-    assert.equal((await get('/web/timestamps?offset=-1')).statusCode, 400);
+    assert.equal(one.nextCursor, null, 'a single page has no next cursor');
+    assert.equal((await get('/web/timestamps?cursor=not-a-cursor')).statusCode, 400);
+    assert.equal((await get(`/web/timestamps?cursor=${Buffer.from('[1,2]').toString('base64url')}`)).statusCode, 400);
   });
 });
 
