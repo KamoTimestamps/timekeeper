@@ -47,7 +47,7 @@ function show(view) {
   $('account').hidden = !['dashboard', 'timestamps', 'account', 'display-name'].includes(view);
   $('nav-overview').classList.toggle('active', view === 'dashboard');
   $('nav-timestamps').classList.toggle('active', view === 'timestamps');
-  $('nav-account').classList.toggle('active', view === 'account');
+  $('account-email').classList.toggle('active', view === 'account');
 }
 
 function el(tag, props = {}, ...children) {
