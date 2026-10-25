@@ -29,6 +29,8 @@ const CSP = [
   "default-src 'none'",
   "script-src 'self' https://accounts.google.com/gsi/client",
   "style-src 'self' https://accounts.google.com/gsi/style",
+  // Google's button sets inline style attributes; this allows those only, never <style> blocks.
+  "style-src-attr 'unsafe-inline'",
   "frame-src https://accounts.google.com/gsi/",
   "connect-src 'self' https://accounts.google.com/gsi/",
   "img-src 'self' data:",

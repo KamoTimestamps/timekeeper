@@ -121,7 +121,7 @@ function loadScript(src) {
   return new Promise((resolve, reject) => {
     const script = el('script', { src, async: '' });
     script.onload = resolve;
-    script.onerror = () => reject(new Error(`Could not load ${src}`));
+    script.onerror = () => reject(new Error('script-blocked'));
     document.head.append(script);
   });
 }
@@ -154,7 +154,12 @@ async function showSignedOut(notice) {
     await signInReady;
   } catch (err) {
     signInReady = null;
-    setLoginError('Could not load Google sign-in. Check your connection and reload.');
+    console.error('Google sign-in setup failed:', err);
+    setLoginError(
+      err.message === 'script-blocked'
+        ? "Google's sign-in script (accounts.google.com/gsi/client) could not be loaded. A content blocker, tracking protection or a network policy may be blocking it."
+        : `Google sign-in could not start: ${err.message}`,
+    );
   }
 }
 
