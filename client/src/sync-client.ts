@@ -69,7 +69,7 @@ interface SessionResponse {
   accessToken: string;
   accessTokenExpiresAt: number;
   refreshToken: string;
-  user: { id: string; email: string; name: string | null };
+  user: { id: string; email: string; displayName: string | null };
 }
 
 const SessionResponseSchema = object<SessionResponse>({
@@ -79,7 +79,7 @@ const SessionResponseSchema = object<SessionResponse>({
   user: object<SessionResponse['user']>({
     id: string(),
     email: string(),
-    name: nullable(string()),
+    displayName: nullable(string()),
   }),
 });
 
@@ -246,7 +246,7 @@ export function updateSyncStatusDisplay() {
     } else {
       setIconLabel(display, 'circle-check', 'Signed in');
       display.style.color = GREEN;
-      const who = auth.userName || auth.email;
+      const who = auth.userName;
       if (who) {
         display.onmouseenter = () => setIconLabel(display, 'circle-check', `Signed in as ${who}`);
         display.onmouseleave = () => setIconLabel(display, 'circle-check', 'Signed in');
@@ -389,7 +389,7 @@ function storeSession(session: SessionResponse) {
     accessTokenExpiresAt: session.accessTokenExpiresAt,
     refreshToken: session.refreshToken,
     userId: session.user.id,
-    userName: session.user.name,
+    userName: session.user.displayName,
     email: session.user.email,
   });
 }
@@ -628,7 +628,7 @@ export async function signInToSync() {
     // A fresh sign-in always starts from scratch: push everything local, pull everything remote.
     cursors = { pushCounter: 0, pullSeq: 0 };
     saveCursors();
-    log(`Signed in to Timekeeper Sync as ${session.data.user.email}`);
+    log(`Signed in to Timekeeper Sync as ${session.data.user.displayName ?? 'an account with no display name'}`);
     await startSync();
   } catch (err) {
     channel.close();

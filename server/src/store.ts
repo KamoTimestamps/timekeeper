@@ -11,6 +11,8 @@ export interface User {
   id: string;
   email: string;
   name: string | null;
+  /** The username the user chose; `name` is what Google reports. Null until they pick one. */
+  displayName: string | null;
 }
 
 /** Wire format shared with the userscript's export format (device_id is never synced). */
@@ -240,15 +242,15 @@ export class Store {
   /** Creates the account on first sight of this Google subject; refreshes email/name otherwise. */
   upsertGoogleUser(identity: { sub: string; email: string; name?: string }): { user: User; isNewUser: boolean } {
     const existing = this.db
-      .prepare('SELECT id FROM users WHERE google_sub = ?')
-      .get(identity.sub) as { id: string } | undefined;
+      .prepare('SELECT id, display_name FROM users WHERE google_sub = ?')
+      .get(identity.sub) as { id: string; display_name: string | null } | undefined;
 
     if (existing) {
       this.db
         .prepare('UPDATE users SET email = ?, name = ? WHERE id = ?')
         .run(identity.email, identity.name ?? null, existing.id);
       return {
-        user: { id: existing.id, email: identity.email, name: identity.name ?? null },
+        user: { id: existing.id, email: identity.email, name: identity.name ?? null, displayName: existing.display_name },
         isNewUser: false,
       };
     }
@@ -257,14 +259,14 @@ export class Store {
     this.db
       .prepare('INSERT INTO users (id, google_sub, email, name, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(id, identity.sub, identity.email, identity.name ?? null, Date.now());
-    return { user: { id, email: identity.email, name: identity.name ?? null }, isNewUser: true };
+    return { user: { id, email: identity.email, name: identity.name ?? null, displayName: null }, isNewUser: true };
   }
 
   getUser(id: string): User | null {
-    const row = this.db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(id) as
-      | { id: string; email: string; name: string | null }
+    const row = this.db.prepare('SELECT id, email, name, display_name FROM users WHERE id = ?').get(id) as
+      | { id: string; email: string; name: string | null; display_name: string | null }
       | undefined;
-    return row ?? null;
+    return row ? { id: row.id, email: row.email, name: row.name, displayName: row.display_name } : null;
   }
 
   /**
@@ -337,7 +339,7 @@ export class Store {
     try {
       const row = this.db
         .prepare(
-          `SELECT t.user_id, t.expires_at, t.family_id, t.family_started_at, t.used_at, u.email, u.name
+          `SELECT t.user_id, t.expires_at, t.family_id, t.family_started_at, t.used_at, u.email, u.name, u.display_name
            FROM refresh_tokens t JOIN users u ON u.id = t.user_id
            WHERE t.token_hash = ?`,
         )
@@ -350,6 +352,7 @@ export class Store {
             used_at: number | null;
             email: string;
             name: string | null;
+            display_name: string | null;
           }
         | undefined;
 
@@ -379,7 +382,7 @@ export class Store {
       this.db.exec('COMMIT');
       return {
         status: 'ok',
-        user: { id: row.user_id, email: row.email, name: row.name },
+        user: { id: row.user_id, email: row.email, name: row.name, displayName: row.display_name },
         refreshToken,
         sessionId: row.family_id,
       };
