@@ -509,7 +509,59 @@ function renderHit(item) {
     playAt(item);
   });
   time.addEventListener('auxclick', () => features.miniPlayer && pausePlayer()); // middle-click opens YouTube too
-  return el('li', {}, time, el('div', { className: 'stamp-body' }, el('div', { className: 'stamp-comment' }, item.comment || '(no comment)')));
+  const history = el('button', { className: 'link history-toggle', type: 'button', 'aria-expanded': 'false' }, 'History');
+  const body = el('div', { className: 'stamp-body' }, el('div', { className: 'stamp-comment' }, item.comment || '(no comment)'), history);
+  history.addEventListener('click', () => toggleHistory(item, body, history));
+  return el('li', {}, time, body);
+}
+
+// A timestamp's earlier versions, newest first, each with a way back to it. Restoring writes that
+// version as a new one, so every device picks it up through sync, and the restore can be undone too.
+function toggleHistory(item, body, toggle) {
+  const open = body.querySelector('.stamp-history');
+  toggle.setAttribute('aria-expanded', String(!open));
+  if (open) {
+    open.remove();
+    return;
+  }
+  const panel = el('div', { className: 'stamp-history muted' }, 'Loading…');
+  body.append(panel);
+  fillHistory(item, body, panel);
+}
+
+async function fillHistory(item, body, panel) {
+  const path = `/web/timestamps/${encodeURIComponent(item.guid)}`;
+  const { ok, data } = await api(`${path}/history`);
+  if (!ok) {
+    panel.textContent = 'Could not load the history.';
+    return;
+  }
+  const rows = data.versions.map((version) => {
+    const what = version.deletedAt ? '(deleted)' : `${clock(version.start)} · ${version.comment || '(no comment)'}`;
+    const row = el('div', { className: 'history-row' },
+      el('span', { className: 'history-when', title: dateTime.format(new Date(version.changedAt)) }, ago(version.changedAt)),
+      el('span', { className: 'history-what' }, what));
+    if (version.current) {
+      row.append(el('span', { className: 'history-state' }, 'current'));
+      return row;
+    }
+    const restore = el('button', { className: 'link history-state', type: 'button' }, 'Restore');
+    restore.addEventListener('click', async () => {
+      restore.disabled = true;
+      const result = await api(`${path}/revert`, { method: 'POST', body: { seq: version.seq } });
+      if (!result.ok) {
+        restore.disabled = false;
+        restore.textContent = 'Could not restore. Try again';
+        return;
+      }
+      // The list itself catches up through the overview signal; this row just shows the restored text.
+      body.querySelector('.stamp-comment').textContent = version.comment || '(no comment)';
+      fillHistory(item, body, panel);
+    });
+    row.append(restore);
+    return row;
+  });
+  panel.replaceChildren(...rows);
 }
 
 // The server returns rows grouped by video, so a new video row starts whenever the video changes.

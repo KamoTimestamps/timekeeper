@@ -31,6 +31,8 @@ const PUBLIC_DIR = new URL('../public/', import.meta.url);
 const LoginBody = z.object({ idToken: z.string().min(1) });
 // The rules themselves (YouTube's handle policy) live in username.ts; the cap only bounds what gets checked.
 const DisplayNameBody = z.object({ displayName: z.string().max(200) });
+const GuidParam = z.object({ guid: z.string().min(1).max(128) });
+const RevertBody = z.object({ seq: z.number().int().positive() });
 const TIMESTAMPS_PAGE_SIZE = 50; // also the most video IDs one YouTube lookup accepts
 const SuggestQuery = z.object({
   field: z.enum(['title', 'channel', 'any']).default('any'),
@@ -265,6 +267,40 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
       })),
       nextCursor: next ? encodeCursor(next) : null,
     };
+  });
+
+  // The versions a timestamp has had, newest first.
+  app.get('/web/timestamps/:guid/history', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const session = currentSession(req);
+    if (!session) {
+      clearSessionCookie(reply);
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    const params = GuidParam.safeParse(req.params);
+    if (!params.success) return reply.code(400).send({ error: 'invalid_request' });
+    return { versions: store.getTimestampHistory(session.userId, params.data.guid) };
+  });
+
+  // Makes an older version current again. It becomes a new version with a higher write_counter, so
+  // devices adopt it through the normal sync: pushed live to connected ones, pulled by the rest.
+  app.post('/web/timestamps/:guid/revert', { preHandler: requireSameOrigin }, async (req, reply) => {
+    const session = currentSession(req);
+    if (!session) {
+      clearSessionCookie(reply);
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    const params = GuidParam.safeParse(req.params);
+    const body = RevertBody.safeParse(req.body);
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_request' });
+
+    const result = store.revertTimestamp(session.userId, params.data.guid, body.data.seq);
+    if (!result.ok) return reply.code(404).send({ error: 'not_found' });
+    if (result.changed) {
+      hub.broadcast(session.userId, '', { type: 'changes', fromSeq: result.fromSeq, seq: result.seq, records: [result.record] });
+      hub.notifyOverview(session.userId);
+    }
+    return { changed: result.changed };
   });
 
   // Server-sent events: a bare "overview" signal whenever this user's counts or sessions change.

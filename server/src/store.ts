@@ -118,6 +118,21 @@ CREATE TABLE IF NOT EXISTS timestamps (
   PRIMARY KEY (user_id, guid)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS timestamps_user_seq ON timestamps(user_id, seq);
+-- Every accepted version of a timestamp (full snapshots), newest last, so edits can be reviewed and
+-- reverted. See Store.versionWriter for how rapid edits are coalesced and old ones pruned.
+CREATE TABLE IF NOT EXISTS timestamp_history (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  guid TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  video_id TEXT NOT NULL,
+  start REAL NOT NULL,
+  comment TEXT NOT NULL,
+  write_counter INTEGER NOT NULL,
+  deleted_at INTEGER,
+  device_id TEXT,
+  changed_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, guid, seq)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS video_info (
   video_id TEXT PRIMARY KEY,
   title TEXT,
@@ -162,6 +177,25 @@ const toRecord = (row: TimestampRow): TimestampRecord => ({
   write_counter: row.write_counter,
   ...(row.deleted_at !== null ? { deleted_at: row.deleted_at } : {}),
 });
+
+/** Edits from one device closer together than this replace each other in a timestamp's history. */
+const HISTORY_COALESCE_MS = 5 * 60 * 1000;
+/** Versions kept per timestamp; the oldest are dropped first. */
+const HISTORY_KEEP = 50;
+
+/** A `timestamps` row as stored, with the bookkeeping columns toRecord leaves out. */
+type StoredRow = TimestampRow & { device_id: string | null; updated_at: number | null };
+
+export interface TimestampVersion {
+  seq: number;
+  videoId: string;
+  start: number;
+  comment: string;
+  deletedAt: number | null;
+  changedAt: number;
+  /** This version is what the timestamp is now. */
+  current: boolean;
+}
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
@@ -932,18 +966,10 @@ export class Store {
    */
   applyPush(userId: string, deviceId: string, records: TimestampRecord[]): PushResult {
     const getExisting = this.db.prepare(
-      `SELECT guid, video_id, start, comment, write_counter, deleted_at, seq
+      `SELECT guid, video_id, start, comment, write_counter, deleted_at, seq, device_id, updated_at
        FROM timestamps WHERE user_id = ? AND guid = ?`,
     );
-    const nextSeq = this.db.prepare('UPDATE users SET seq = seq + 1 WHERE id = ? RETURNING seq');
-    const upsert = this.db.prepare(
-      `INSERT INTO timestamps (user_id, guid, video_id, start, comment, write_counter, deleted_at, device_id, seq, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (user_id, guid) DO UPDATE SET
-         video_id = excluded.video_id, start = excluded.start, comment = excluded.comment,
-         write_counter = excluded.write_counter, deleted_at = excluded.deleted_at,
-         device_id = excluded.device_id, seq = excluded.seq, updated_at = excluded.updated_at`,
-    );
+    const write = this.versionWriter(userId);
 
     this.db.exec('BEGIN IMMEDIATE');
     try {
@@ -953,7 +979,7 @@ export class Store {
       let seq = 0;
 
       for (const record of records) {
-        const existing = getExisting.get(userId, record.guid) as TimestampRow | undefined;
+        const existing = getExisting.get(userId, record.guid) as StoredRow | undefined;
         if (existing) {
           const server = toRecord(existing);
           if (!winsOver(record, server)) {
@@ -962,20 +988,8 @@ export class Store {
           }
         }
 
-        seq = (nextSeq.get(userId) as { seq: number }).seq;
+        seq = write(deviceId, record, existing);
         fromSeq ??= seq - 1;
-        upsert.run(
-          userId,
-          record.guid,
-          record.video_id,
-          record.start,
-          record.comment,
-          record.write_counter,
-          record.deleted_at ?? null,
-          deviceId,
-          seq,
-          Date.now(),
-        );
         accepted.push(record);
       }
 
@@ -985,6 +999,130 @@ export class Store {
       }
       this.db.exec('COMMIT');
       return { accepted, rejected, fromSeq, seq };
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  /**
+   * Returns the function that stores one accepted version: next per-user seq, upsert into
+   * `timestamps`, and a snapshot in `timestamp_history`. Must run inside a transaction.
+   *
+   * History stays light two ways: a timestamp that has no history yet is seeded with the version
+   * being replaced (so the first edit's "before" survives deploying this), and a version from the
+   * same device within HISTORY_COALESCE_MS of the previous one replaces it, since typing an edit
+   * pushes many times. The first version is never coalesced away. Only HISTORY_KEEP are kept.
+   */
+  private versionWriter(userId: string) {
+    const nextSeq = this.db.prepare('UPDATE users SET seq = seq + 1 WHERE id = ? RETURNING seq');
+    const upsert = this.db.prepare(
+      `INSERT INTO timestamps (user_id, guid, video_id, start, comment, write_counter, deleted_at, device_id, seq, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (user_id, guid) DO UPDATE SET
+         video_id = excluded.video_id, start = excluded.start, comment = excluded.comment,
+         write_counter = excluded.write_counter, deleted_at = excluded.deleted_at,
+         device_id = excluded.device_id, seq = excluded.seq, updated_at = excluded.updated_at`,
+    );
+    const newest = this.db.prepare(
+      'SELECT seq, device_id, changed_at FROM timestamp_history WHERE user_id = ? AND guid = ? ORDER BY seq DESC LIMIT 2',
+    );
+    const insertHistory = this.db.prepare(
+      `INSERT INTO timestamp_history (user_id, guid, seq, video_id, start, comment, write_counter, deleted_at, device_id, changed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const deleteHistory = this.db.prepare('DELETE FROM timestamp_history WHERE user_id = ? AND guid = ? AND seq = ?');
+    const prune = this.db.prepare(
+      `DELETE FROM timestamp_history WHERE user_id = ? AND guid = ? AND seq NOT IN
+         (SELECT seq FROM timestamp_history WHERE user_id = ? AND guid = ? ORDER BY seq DESC LIMIT ?)`,
+    );
+
+    return (deviceId: string, record: TimestampRecord, before: StoredRow | undefined, now = Date.now()): number => {
+      let recent = newest.all(userId, record.guid) as Array<{ seq: number; device_id: string | null; changed_at: number }>;
+      if (recent.length === 0 && before) {
+        const changedAt = before.updated_at ?? now;
+        insertHistory.run(userId, before.guid, before.seq, before.video_id, before.start, before.comment, before.write_counter, before.deleted_at, before.device_id, changedAt);
+        recent = [{ seq: before.seq, device_id: before.device_id, changed_at: changedAt }];
+      }
+
+      const seq = (nextSeq.get(userId) as { seq: number }).seq;
+      upsert.run(userId, record.guid, record.video_id, record.start, record.comment, record.write_counter, record.deleted_at ?? null, deviceId, seq, now);
+
+      if (recent.length > 1 && recent[0].device_id === deviceId && now - recent[0].changed_at < HISTORY_COALESCE_MS) {
+        deleteHistory.run(userId, record.guid, recent[0].seq);
+      }
+      insertHistory.run(userId, record.guid, seq, record.video_id, record.start, record.comment, record.write_counter, record.deleted_at ?? null, deviceId, now);
+      prune.run(userId, record.guid, userId, record.guid, HISTORY_KEEP);
+      return seq;
+    };
+  }
+
+  /** The versions of one timestamp, newest first. */
+  getTimestampHistory(userId: string, guid: string): TimestampVersion[] {
+    const rows = this.db
+      .prepare(
+        `SELECT h.seq, h.video_id, h.start, h.comment, h.deleted_at, h.changed_at, (h.seq = t.seq) AS current
+         FROM timestamp_history h LEFT JOIN timestamps t ON t.user_id = h.user_id AND t.guid = h.guid
+         WHERE h.user_id = ? AND h.guid = ? ORDER BY h.seq DESC`,
+      )
+      .all(userId, guid) as Array<{
+      seq: number;
+      video_id: string;
+      start: number;
+      comment: string;
+      deleted_at: number | null;
+      changed_at: number;
+      current: number | null;
+    }>;
+    return rows.map((r) => ({
+      seq: r.seq,
+      videoId: r.video_id,
+      start: r.start,
+      comment: r.comment,
+      deletedAt: r.deleted_at,
+      changedAt: r.changed_at,
+      current: r.current === 1,
+    }));
+  }
+
+  /**
+   * Makes an older version current again by writing its content as a new one, one write_counter
+   * above the present version, so every device's normal merge rules adopt it. `changed` is false
+   * when the timestamp already has that content. The new version is in the history too, so a revert
+   * can itself be reverted.
+   */
+  revertTimestamp(
+    userId: string,
+    guid: string,
+    toSeq: number,
+  ): { ok: false } | { ok: true; changed: false } | { ok: true; changed: true; record: TimestampRecord; fromSeq: number; seq: number } {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const current = this.db
+        .prepare(
+          `SELECT guid, video_id, start, comment, write_counter, deleted_at, seq, device_id, updated_at
+           FROM timestamps WHERE user_id = ? AND guid = ?`,
+        )
+        .get(userId, guid) as StoredRow | undefined;
+      const target = this.db
+        .prepare(
+          `SELECT guid, video_id, start, comment, write_counter, deleted_at, seq
+           FROM timestamp_history WHERE user_id = ? AND guid = ? AND seq = ?`,
+        )
+        .get(userId, guid, toSeq) as TimestampRow | undefined;
+      if (!current || !target) {
+        this.db.exec('COMMIT');
+        return { ok: false };
+      }
+      if (sameContent(toRecord(current), toRecord(target))) {
+        this.db.exec('COMMIT');
+        return { ok: true, changed: false };
+      }
+
+      const record: TimestampRecord = { ...toRecord(target), write_counter: current.write_counter + 1 };
+      const seq = this.versionWriter(userId)('web', record, current);
+      this.db.exec('COMMIT');
+      return { ok: true, changed: true, record, fromSeq: seq - 1, seq };
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;

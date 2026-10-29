@@ -75,6 +75,20 @@ and deletions are soft (`deleted_at`) so they propagate. Every accepted change g
 per-user `seq`, which clients use as a pull cursor. The seqs of one push are contiguous, so a
 client that receives `changes` with `fromSeq` at or below its cursor knows it missed nothing.
 
+### Timestamp history
+
+Each accepted version of a timestamp is also kept in `timestamp_history` (a full snapshot, not a
+diff), so the timestamps page can show how one changed and restore an earlier version. Pushes
+that lose, or replay what the server has, add nothing. To keep it small, an edit from the same
+device within 5 minutes of the previous one replaces it (the first version never is), and only
+the newest 50 versions per timestamp are kept. Timestamps that predate this have no history until
+their next change, which records the version it replaced.
+
+Restoring (`POST /web/timestamps/:guid/revert` `{seq}`, from the page only) writes the old content as
+a *new* version one `write_counter` above the current one, so devices adopt it through the normal
+merge rules: connected ones get it over the WebSocket, the rest on their next pull. The restore is
+itself in the history, so it can be undone. `GET /web/timestamps/:guid/history` lists the versions.
+
 ## Members-only access
 
 Whether an account can view or add to a video's timestamps is answered, not yet enforced. The YouTube
