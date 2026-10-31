@@ -217,7 +217,7 @@ describe('username migration', () => {
       legacy.close();
 
       const store = new Store(path);
-      assert.deepEqual(store.getAccount('u1'), { email: 'old@example.com', name: 'Old User', displayName: null, createdAt: 1000 });
+      assert.deepEqual(store.getAccount('u1'), { email: 'old@example.com', displayName: null, createdAt: 1000 });
       const checked = checkUsername('Returning_Fox');
       assert.ok(checked.ok);
       assert.deepEqual(store.changeDisplayName('u1', checked.name, checked.key), { ok: true });

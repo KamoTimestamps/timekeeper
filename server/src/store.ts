@@ -10,8 +10,7 @@ import { dirname } from 'node:path';
 export interface User {
   id: string;
   email: string;
-  name: string | null;
-  /** The username the user chose; `name` is what Google reports. Null until they pick one. */
+  /** The username the user chose. Null until they pick one. */
   displayName: string | null;
 }
 
@@ -284,7 +283,7 @@ export class Store {
         .prepare('UPDATE users SET email = ?, name = ? WHERE id = ?')
         .run(identity.email, identity.name ?? null, existing.id);
       return {
-        user: { id: existing.id, email: identity.email, name: identity.name ?? null, displayName: existing.display_name },
+        user: { id: existing.id, email: identity.email, displayName: existing.display_name },
         isNewUser: false,
       };
     }
@@ -293,14 +292,14 @@ export class Store {
     this.db
       .prepare('INSERT INTO users (id, google_sub, email, name, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(id, identity.sub, identity.email, identity.name ?? null, Date.now());
-    return { user: { id, email: identity.email, name: identity.name ?? null, displayName: null }, isNewUser: true };
+    return { user: { id, email: identity.email, displayName: null }, isNewUser: true };
   }
 
   getUser(id: string): User | null {
-    const row = this.db.prepare('SELECT id, email, name, display_name FROM users WHERE id = ?').get(id) as
-      | { id: string; email: string; name: string | null; display_name: string | null }
+    const row = this.db.prepare('SELECT id, email, display_name FROM users WHERE id = ?').get(id) as
+      | { id: string; email: string; display_name: string | null }
       | undefined;
-    return row ? { id: row.id, email: row.email, name: row.name, displayName: row.display_name } : null;
+    return row ? { id: row.id, email: row.email, displayName: row.display_name } : null;
   }
 
   /**
@@ -373,7 +372,7 @@ export class Store {
     try {
       const row = this.db
         .prepare(
-          `SELECT t.user_id, t.expires_at, t.family_id, t.family_started_at, t.used_at, u.email, u.name, u.display_name
+          `SELECT t.user_id, t.expires_at, t.family_id, t.family_started_at, t.used_at, u.email, u.display_name
            FROM refresh_tokens t JOIN users u ON u.id = t.user_id
            WHERE t.token_hash = ?`,
         )
@@ -385,7 +384,6 @@ export class Store {
             family_started_at: number;
             used_at: number | null;
             email: string;
-            name: string | null;
             display_name: string | null;
           }
         | undefined;
@@ -416,7 +414,7 @@ export class Store {
       this.db.exec('COMMIT');
       return {
         status: 'ok',
-        user: { id: row.user_id, email: row.email, name: row.name, displayName: row.display_name },
+        user: { id: row.user_id, email: row.email, displayName: row.display_name },
         refreshToken,
         sessionId: row.family_id,
       };
@@ -549,15 +547,15 @@ export class Store {
     return Number(this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId).changes);
   }
 
-  getAccount(userId: string): { email: string; name: string | null; displayName: string | null; createdAt: number } | null {
-    const row = this.db.prepare('SELECT email, name, display_name, created_at FROM users WHERE id = ?').get(userId) as
-      | { email: string; name: string | null; display_name: string | null; created_at: number }
+  getAccount(userId: string): { email: string; displayName: string | null; createdAt: number } | null {
+    const row = this.db.prepare('SELECT email, display_name, created_at FROM users WHERE id = ?').get(userId) as
+      | { email: string; display_name: string | null; created_at: number }
       | undefined;
-    return row ? { email: row.email, name: row.name, displayName: row.display_name, createdAt: row.created_at } : null;
+    return row ? { email: row.email, displayName: row.display_name, createdAt: row.created_at } : null;
   }
 
   /**
-   * Sets the username the user chose (`name` stays what Google reports); `key` is its case-folded form
+   * Sets the username the user chose; `key` is its case-folded form
    * from checkUsername. Choosing a first name is free. Replacing one counts against the change limit,
    * and the replaced name stays reserved for this user for the window, as on YouTube. Only
    * capitalization changing is not a change. Synchronous, so the checks and the write can't interleave.

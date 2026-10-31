@@ -18,6 +18,7 @@ describe('auth', () => {
     const first = (await loginWith(await h.idToken())).json();
     assert.equal(first.isNewUser, true);
     assert.equal(first.user.email, 'ada@example.com');
+    assert.ok(!('name' in first.user), 'the Google name is never returned');
     assert.ok(first.accessToken && first.refreshToken);
 
     const second = (await loginWith(await h.idToken({ email: 'ada.new@example.com' }))).json();

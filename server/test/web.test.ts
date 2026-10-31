@@ -111,6 +111,7 @@ describe('landing page', () => {
     assert.deepEqual(stats.topVideos[0], { videoId: 'vidA', count: 2 });
     assert.ok(Math.abs(stats.lastSyncAt - Date.now()) < 60_000, 'last sync is recent');
     assert.equal(overview.account.email, 'w3@example.com');
+    assert.ok(!('name' in overview.account), 'the Google name is never returned');
   });
 
   it('lists userscript and web sessions and marks the current one', async () => {
