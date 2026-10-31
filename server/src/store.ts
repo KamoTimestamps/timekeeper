@@ -66,7 +66,6 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   google_sub TEXT NOT NULL UNIQUE,
   email TEXT NOT NULL,
-  name TEXT,
   created_at INTEGER NOT NULL,
   seq INTEGER NOT NULL DEFAULT 0
 );
@@ -235,6 +234,11 @@ export class Store {
     if (!userColumns.some((c) => c.name === 'display_name_key')) {
       this.db.exec('ALTER TABLE users ADD COLUMN display_name_key TEXT');
     }
+    // What Google reports as the person's name. Timekeeper shows only the chosen display name,
+    // so old databases drop the now-unused column.
+    if (userColumns.some((c) => c.name === 'name')) {
+      this.db.exec('ALTER TABLE users DROP COLUMN name');
+    }
     this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_display_name_key ON users(display_name_key)');
 
     const sessionColumns = this.db.prepare("SELECT name FROM pragma_table_info('sessions')").all() as { name: string }[];
@@ -272,16 +276,16 @@ export class Store {
 
   // --- users & sessions ---
 
-  /** Creates the account on first sight of this Google subject; refreshes email/name otherwise. */
-  upsertGoogleUser(identity: { sub: string; email: string; name?: string }): { user: User; isNewUser: boolean } {
+  /** Creates the account on first sight of this Google subject; refreshes email otherwise. */
+  upsertGoogleUser(identity: { sub: string; email: string }): { user: User; isNewUser: boolean } {
     const existing = this.db
       .prepare('SELECT id, display_name FROM users WHERE google_sub = ?')
       .get(identity.sub) as { id: string; display_name: string | null } | undefined;
 
     if (existing) {
       this.db
-        .prepare('UPDATE users SET email = ?, name = ? WHERE id = ?')
-        .run(identity.email, identity.name ?? null, existing.id);
+        .prepare('UPDATE users SET email = ? WHERE id = ?')
+        .run(identity.email, existing.id);
       return {
         user: { id: existing.id, email: identity.email, displayName: existing.display_name },
         isNewUser: false,
@@ -290,8 +294,8 @@ export class Store {
 
     const id = randomUUID();
     this.db
-      .prepare('INSERT INTO users (id, google_sub, email, name, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(id, identity.sub, identity.email, identity.name ?? null, Date.now());
+      .prepare('INSERT INTO users (id, google_sub, email, created_at) VALUES (?, ?, ?, ?)')
+      .run(id, identity.sub, identity.email, Date.now());
     return { user: { id, email: identity.email, displayName: null }, isNewUser: true };
   }
 

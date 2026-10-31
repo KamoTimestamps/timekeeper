@@ -218,6 +218,8 @@ describe('username migration', () => {
 
       const store = new Store(path);
       assert.deepEqual(store.getAccount('u1'), { email: 'old@example.com', displayName: null, createdAt: 1000 });
+      const columns = store.db.prepare("SELECT name FROM pragma_table_info('users')").all() as { name: string }[];
+      assert.ok(!columns.some((c) => c.name === 'name'), 'the unused name column is dropped');
       const checked = checkUsername('Returning_Fox');
       assert.ok(checked.ok);
       assert.deepEqual(store.changeDisplayName('u1', checked.name, checked.key), { ok: true });

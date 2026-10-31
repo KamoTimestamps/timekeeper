@@ -3,7 +3,6 @@ import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
 export interface GoogleIdentity {
   sub: string;
   email: string;
-  name?: string;
 }
 
 export type GoogleVerifier = (idToken: string) => Promise<GoogleIdentity>;
@@ -30,7 +29,6 @@ export function createGoogleVerifier(
     return {
       sub: payload.sub,
       email: payload.email,
-      name: typeof payload.name === 'string' ? payload.name : undefined,
     };
   };
 }
