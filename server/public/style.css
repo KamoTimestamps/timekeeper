@@ -365,7 +365,12 @@ dd .ghost { margin-left: 8px; }
 .stamp-time:hover { text-decoration: underline; }
 .stamp-body { min-width: 0; }
 .stamp-comment { white-space: pre-wrap; overflow-wrap: anywhere; }
-.history-toggle { font-size: 13px; }
+.stamps li { position: relative; }
+.history-toggle { position: absolute; top: 8px; right: 0; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; opacity: 0; }
+.history-toggle svg { width: 18px; height: 18px; }
+.history-toggle:hover, .history-toggle[aria-expanded="true"] { color: var(--text); }
+.stamps li:hover .history-toggle, .history-toggle:focus-visible, .history-toggle[aria-expanded="true"] { opacity: 1; }
+@media (hover: none) { .history-toggle { opacity: 1; } } /* no hover on touch screens */
 .stamp-history { margin-top: 6px; font-size: 13px; }
 .history-row { display: flex; gap: 10px; padding: 3px 0; }
 .history-when { flex: none; min-width: 7em; }

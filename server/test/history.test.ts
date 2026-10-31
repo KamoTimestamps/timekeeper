@@ -161,6 +161,15 @@ describe('timestamp history', () => {
     assert.equal((await revert(owner.web, 'mine', 999)).statusCode, 404);
   });
 
+  it('tells the timestamps list which timestamps have an earlier version', async () => {
+    const { accessToken, web } = await signIn('h11');
+    await push(accessToken, 'dev-a', [record('fresh', 1, { start: 1 }), record('edited', 1, { start: 2 })]);
+    await push(accessToken, 'dev-b', [record('edited', 2, { start: 2, comment: 'changed' })]);
+
+    const list = (await h.app.inject({ method: 'GET', url: '/web/timestamps', headers: web })).json();
+    assert.deepEqual(list.items.map((i: any) => [i.guid, i.hasHistory]), [['fresh', false], ['edited', true]]);
+  });
+
   it('deletes a user\'s history with the user', async () => {
     const { accessToken, userId } = await signIn('h10');
     await push(accessToken, 'dev-a', [record('gone', 1)]);

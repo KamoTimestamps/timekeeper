@@ -835,7 +835,7 @@ export class Store {
   ): {
     /** Number of matches; null when `after` is given (only the first page counts). */
     total: number | null;
-    items: Array<{ guid: string; videoId: string; start: number; comment: string; updatedAt: number | null }>;
+    items: Array<{ guid: string; videoId: string; start: number; comment: string; updatedAt: number | null; hasHistory: boolean }>;
     /** Pass as `after` to get the page that follows; null on the last page. */
     next: TimestampPageKey | null;
   } {
@@ -939,7 +939,11 @@ export class Store {
       pageParams.push(vid, start, guid);
     }
     const rows = this.db
-      .prepare(`SELECT t.guid, t.video_id, t.start, t.comment, t.updated_at, v.published_at ${from}${resume} ORDER BY ${order} LIMIT ?`)
+      .prepare(
+        `SELECT t.guid, t.video_id, t.start, t.comment, t.updated_at, v.published_at,
+           (SELECT COUNT(*) FROM timestamp_history h WHERE h.user_id = t.user_id AND h.guid = t.guid) > 1 AS has_history
+         ${from}${resume} ORDER BY ${order} LIMIT ?`,
+      )
       .all(...params, ...pageParams, limit + 1) as Array<{
       guid: string;
       video_id: string;
@@ -947,13 +951,21 @@ export class Store {
       comment: string;
       updated_at: number | null;
       published_at: string | null;
+      has_history: number;
     }>;
     const more = rows.length > limit; // the extra row only tells us whether a next page exists
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];
     return {
       total,
-      items: page.map((r) => ({ guid: r.guid, videoId: r.video_id, start: r.start, comment: r.comment, updatedAt: r.updated_at })),
+      items: page.map((r) => ({
+        guid: r.guid,
+        videoId: r.video_id,
+        start: r.start,
+        comment: r.comment,
+        updatedAt: r.updated_at,
+        hasHistory: r.has_history === 1,
+      })),
       next: more && last ? { publishedAt: last.published_at, videoId: last.video_id, start: last.start, guid: last.guid } : null,
     };
   }

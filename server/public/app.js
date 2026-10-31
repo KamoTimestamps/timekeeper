@@ -509,11 +509,20 @@ function renderHit(item) {
     playAt(item);
   });
   time.addEventListener('auxclick', () => features.miniPlayer && pausePlayer()); // middle-click opens YouTube too
-  const history = el('button', { className: 'link history-toggle', type: 'button', 'aria-expanded': 'false' }, 'History');
-  const body = el('div', { className: 'stamp-body' }, el('div', { className: 'stamp-comment' }, item.comment || '(no comment)'), history);
-  history.addEventListener('click', () => toggleHistory(item, body, history));
+  const body = el('div', { className: 'stamp-body' }, el('div', { className: 'stamp-comment' }, item.comment || '(no comment)'));
+  // Only a timestamp with an earlier version gets the control; it shows while the row is hovered or focused.
+  if (item.hasHistory) {
+    const history = el('button', { className: 'history-toggle', type: 'button', 'aria-expanded': 'false', 'aria-label': 'Show history', title: 'History' });
+    history.innerHTML = HISTORY_ICON;
+    history.addEventListener('click', () => toggleHistory(item, body, history));
+    body.append(history);
+  }
   return el('li', {}, time, body);
 }
+
+// Tabler's "history" icon (a clock with a rewind arrow).
+const HISTORY_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 8v4l2 2"/><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5"/></svg>';
 
 // A timestamp's earlier versions, newest first, each with a way back to it. Restoring writes that
 // version as a new one, so every device picks it up through sync, and the restore can be undone too.
