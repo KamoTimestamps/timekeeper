@@ -179,7 +179,6 @@ function renderAccount(account) {
   change.addEventListener('click', () => openDisplayNameForm({ required: false }));
   const rows = [
     ['Username', [account.displayName || '—', change]],
-    ['Google name', account.name || '—'],
     ['Email', account.email],
     ['Member since', dateTime.format(account.createdAt)],
   ];
