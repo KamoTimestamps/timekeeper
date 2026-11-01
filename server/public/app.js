@@ -306,7 +306,6 @@ function renderSessions(sessions, account) {
         el('td', {}, device),
         ...(showGoogle ? [el('td', {}, session.googleEmail || '—')] : []),
         renderLocation(session),
-        el('td', {}, dateTime.format(session.createdAt)),
         el('td', {}, ago(session.lastUsedAt)),
         el('td', {}, status));
     }),
