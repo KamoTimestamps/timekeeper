@@ -25,6 +25,8 @@ devel.kamotimestamps.com {
 	reverse_proxy 127.0.0.1:8787 {
 		header_up X-Client-IP {client_ip}
 		header_up X-Client-Country {http.request.header.CF-IPCountry}
+		header_up X-Client-City {http.request.header.CF-IPCity}
+		header_up X-Client-Region {http.request.header.CF-Region-Code}
 		# While the app restarts (a deploy takes a second or two) keep retrying the connection, so a
 		# request made then waits for it and succeeds instead of being answered with a 502.
 		lb_try_duration 20s
