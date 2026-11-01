@@ -206,6 +206,9 @@ describe('username (web)', () => {
   });
 });
 
+const columns_of = (store: Store, table: string) =>
+  (store.db.prepare(`SELECT name FROM pragma_table_info('${table}')`).all() as { name: string }[]).map((c) => c.name);
+
 describe('username migration', () => {
   it('adds the columns to a database that predates them, leaving existing users without a name', () => {
     const dir = mkdtempSync(join(tmpdir(), 'tk-migrate-'));
@@ -213,11 +216,22 @@ describe('username migration', () => {
     try {
       const legacy = new DatabaseSync(path);
       legacy.exec(`CREATE TABLE users (id TEXT PRIMARY KEY, google_sub TEXT NOT NULL UNIQUE, email TEXT NOT NULL, name TEXT, created_at INTEGER NOT NULL, seq INTEGER NOT NULL DEFAULT 0);
-                   INSERT INTO users (id, google_sub, email, name, created_at) VALUES ('u1', 'sub1', 'old@example.com', 'Old User', 1000);`);
+                   INSERT INTO users (id, google_sub, email, name, created_at) VALUES ('u1', 'sub1', 'old@example.com', 'Old User', 1000);
+                   CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, created_at INTEGER NOT NULL, last_used_at INTEGER NOT NULL, user_agent TEXT, web_token_hash TEXT UNIQUE, expires_at INTEGER);
+                   INSERT INTO sessions (id, user_id, kind, created_at, last_used_at, expires_at) VALUES ('s1', 'u1', 'web', 1, 1, 100);`);
       legacy.close();
 
       const store = new Store(path);
-      assert.deepEqual(store.getAccount('u1'), { email: 'old@example.com', displayName: null, createdAt: 1000 });
+      assert.deepEqual(store.getAccount('u1'), {
+        email: 'old@example.com',
+        displayName: null,
+        createdAt: 1000,
+        googleAccounts: [{ sub: 'sub1', email: 'old@example.com', linkedAt: 1000 }],
+      });
+      assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM sessions').get()?.n, 1, 'rebuilding users does not cascade into its dependants');
+      assert.equal(store.listSessions('u1', 1)[0]?.googleEmail, 'old@example.com', 'a session from before records its Google account: the user had one');
+      assert.ok(!columns_of(store, 'users').some((c) => c === 'google_sub' || c === 'email'), 'the single-account columns are gone');
+      assert.equal(store.upsertGoogleUser({ sub: 'sub1', email: 'old@example.com' }).user.id, 'u1', 'the old Google account still signs in to the same user');
       const columns = store.db.prepare("SELECT name FROM pragma_table_info('users')").all() as { name: string }[];
       assert.ok(!columns.some((c) => c.name === 'name'), 'the unused name column is dropped');
       const checked = checkUsername('Returning_Fox');

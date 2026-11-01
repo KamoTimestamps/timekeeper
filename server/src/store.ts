@@ -66,11 +66,18 @@ export interface PullResult {
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
-  google_sub TEXT NOT NULL UNIQUE,
-  email TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   seq INTEGER NOT NULL DEFAULT 0
 );
+-- The Google accounts that sign in to a user. A Google account (sub) belongs to at most one user; a
+-- user keeps at least one. The user's email is the earliest-linked account's (see primaryEmail).
+CREATE TABLE IF NOT EXISTS google_accounts (
+  sub TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  linked_at INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS google_accounts_user ON google_accounts(user_id, linked_at);
 -- One row per time a user replaced their username: drives the change limit, and holds old_key for
 -- that user (so only they can take it back) until the window passes.
 CREATE TABLE IF NOT EXISTS name_changes (
@@ -101,7 +108,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   last_ip TEXT,
   last_country TEXT,
   web_token_hash TEXT UNIQUE,
-  expires_at INTEGER
+  expires_at INTEGER,
+  -- The Google account (google_accounts.sub) this session signed in with.
+  google_sub TEXT
 );
 CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
 CREATE TABLE IF NOT EXISTS timestamps (
@@ -200,6 +209,16 @@ const LIVE_SESSION = `(
     SELECT 1 FROM refresh_tokens WHERE refresh_tokens.family_id = sessions.id AND refresh_tokens.expires_at > ?))
 )`;
 
+/** SQL for a user's email: that of the Google account linked first. `users` is the alias of the users table. */
+const primaryEmail = (users: string) =>
+  `(SELECT email FROM google_accounts WHERE user_id = ${users}.id ORDER BY linked_at, sub LIMIT 1)`;
+
+export interface GoogleAccount {
+  sub: string;
+  email: string;
+  linkedAt: number;
+}
+
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
 export class Store {
@@ -213,7 +232,52 @@ export class Store {
     this.db.exec(SCHEMA);
     this.db.exec('CREATE INDEX IF NOT EXISTS refresh_tokens_family ON refresh_tokens(family_id)');
     this.addMissingColumns();
+    this.moveGoogleIdentityToGoogleAccounts();
     this.backfillSessions();
+    // Sessions from before they recorded their Google account: a user with a single account used that one.
+    this.db.exec(`
+      UPDATE sessions SET google_sub = (SELECT sub FROM google_accounts WHERE user_id = sessions.user_id)
+      WHERE google_sub IS NULL
+        AND (SELECT COUNT(*) FROM google_accounts WHERE user_id = sessions.user_id) = 1
+    `);
+  }
+
+  /**
+   * Databases from when a user had exactly one Google account keep it in users.google_sub and
+   * users.email. Moves those into google_accounts and rebuilds users without them (SQLite can't drop a
+   * UNIQUE column). Foreign keys are off during the rebuild so dropping users doesn't cascade.
+   */
+  private moveGoogleIdentityToGoogleAccounts(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('users')").all() as { name: string }[];
+    if (!columns.some((c) => c.name === 'google_sub')) return;
+    this.db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      this.db.exec('BEGIN IMMEDIATE');
+      try {
+        this.db.exec(`
+          INSERT OR IGNORE INTO google_accounts (sub, user_id, email, linked_at)
+            SELECT google_sub, id, email, created_at FROM users;
+          CREATE TABLE users_new (
+            id TEXT PRIMARY KEY,
+            created_at INTEGER NOT NULL,
+            seq INTEGER NOT NULL DEFAULT 0,
+            display_name TEXT,
+            display_name_key TEXT
+          );
+          INSERT INTO users_new (id, created_at, seq, display_name, display_name_key)
+            SELECT id, created_at, seq, display_name, display_name_key FROM users;
+          DROP TABLE users;
+          ALTER TABLE users_new RENAME TO users;
+          CREATE UNIQUE INDEX users_display_name_key ON users(display_name_key);
+        `);
+        this.db.exec('COMMIT');
+      } catch (err) {
+        this.db.exec('ROLLBACK');
+        throw err;
+      }
+    } finally {
+      this.db.exec('PRAGMA foreign_keys = ON');
+    }
   }
 
   private addMissingColumns(): void {
@@ -261,6 +325,9 @@ export class Store {
         this.db.exec(`ALTER TABLE sessions ADD COLUMN ${column} TEXT`);
       }
     }
+    if (!sessionColumns.some((c) => c.name === 'google_sub')) {
+      this.db.exec('ALTER TABLE sessions ADD COLUMN google_sub TEXT');
+    }
   }
 
   /** Sessions that predate the sessions table: one row per existing refresh-token family. */
@@ -290,33 +357,73 @@ export class Store {
 
   // --- users & sessions ---
 
-  /** Creates the account on first sight of this Google subject; refreshes email otherwise. */
+  /** Creates the account on first sight of this Google account; refreshes its email otherwise. */
   upsertGoogleUser(identity: { sub: string; email: string }): { user: User; isNewUser: boolean } {
-    const existing = this.db
-      .prepare('SELECT id, display_name FROM users WHERE google_sub = ?')
-      .get(identity.sub) as { id: string; display_name: string | null } | undefined;
+    const existing = this.db.prepare('SELECT user_id FROM google_accounts WHERE sub = ?').get(identity.sub) as
+      | { user_id: string }
+      | undefined;
 
     if (existing) {
-      this.db
-        .prepare('UPDATE users SET email = ? WHERE id = ?')
-        .run(identity.email, existing.id);
-      return {
-        user: { id: existing.id, email: identity.email, displayName: existing.display_name },
-        isNewUser: false,
-      };
+      this.db.prepare('UPDATE google_accounts SET email = ? WHERE sub = ?').run(identity.email, identity.sub);
+      return { user: this.getUser(existing.user_id)!, isNewUser: false };
     }
 
     const id = randomUUID();
-    this.db
-      .prepare('INSERT INTO users (id, google_sub, email, created_at) VALUES (?, ?, ?, ?)')
-      .run(id, identity.sub, identity.email, Date.now());
+    const now = Date.now();
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare('INSERT INTO users (id, created_at) VALUES (?, ?)').run(id, now);
+      this.db
+        .prepare('INSERT INTO google_accounts (sub, user_id, email, linked_at) VALUES (?, ?, ?, ?)')
+        .run(identity.sub, id, identity.email, now);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
     return { user: { id, email: identity.email, displayName: null }, isNewUser: true };
   }
 
-  getUser(id: string): User | null {
-    const row = this.db.prepare('SELECT id, email, display_name FROM users WHERE id = ?').get(id) as
-      | { id: string; email: string; display_name: string | null }
+  /**
+   * Adds a Google account to the user. The caller must have verified the account's ID token first:
+   * 'in_use' (it belongs to another user) tells whoever asked that the account is registered.
+   */
+  linkGoogleAccount(userId: string, identity: { sub: string; email: string }, now = Date.now()): 'linked' | 'already_linked' | 'in_use' {
+    const existing = this.db.prepare('SELECT user_id FROM google_accounts WHERE sub = ?').get(identity.sub) as
+      | { user_id: string }
       | undefined;
+    if (existing) {
+      if (existing.user_id !== userId) return 'in_use';
+      this.db.prepare('UPDATE google_accounts SET email = ? WHERE sub = ?').run(identity.email, identity.sub);
+      return 'already_linked';
+    }
+    this.db
+      .prepare('INSERT INTO google_accounts (sub, user_id, email, linked_at) VALUES (?, ?, ?, ?)')
+      .run(identity.sub, userId, identity.email, now);
+    return 'linked';
+  }
+
+  /** Removes a Google account from the user, unless it is their only one (then they couldn't sign in again). */
+  unlinkGoogleAccount(userId: string, sub: string): 'unlinked' | 'not_found' | 'last' {
+    const accounts = this.listGoogleAccounts(userId);
+    if (!accounts.some((a) => a.sub === sub)) return 'not_found';
+    if (accounts.length < 2) return 'last';
+    this.db.prepare('DELETE FROM google_accounts WHERE sub = ? AND user_id = ?').run(sub, userId);
+    return 'unlinked';
+  }
+
+  /** The user's Google accounts, earliest linked first. */
+  listGoogleAccounts(userId: string): GoogleAccount[] {
+    const rows = this.db
+      .prepare('SELECT sub, email, linked_at FROM google_accounts WHERE user_id = ? ORDER BY linked_at, sub')
+      .all(userId) as { sub: string; email: string; linked_at: number }[];
+    return rows.map((r) => ({ sub: r.sub, email: r.email, linkedAt: r.linked_at }));
+  }
+
+  getUser(id: string): User | null {
+    const row = this.db
+      .prepare(`SELECT id, ${primaryEmail('users')} AS email, display_name FROM users WHERE id = ?`)
+      .get(id) as { id: string; email: string; display_name: string | null } | undefined;
     return row ? { id: row.id, email: row.email, displayName: row.display_name } : null;
   }
 
@@ -327,7 +434,7 @@ export class Store {
   createRefreshToken(
     userId: string,
     ttlSeconds: number,
-    opts: { userAgent?: string | null; client?: ClientInfo; now?: number } = {},
+    opts: { userAgent?: string | null; client?: ClientInfo; googleSub?: string | null; now?: number } = {},
   ): { token: string; sessionId: string } {
     const now = opts.now ?? Date.now();
     this.db.prepare('DELETE FROM refresh_tokens WHERE expires_at < ?').run(now);
@@ -343,8 +450,8 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO sessions (id, user_id, kind, created_at, last_used_at, user_agent,
-                               created_ip, created_country, last_ip, last_country)
-         VALUES (?, ?, 'userscript', ?, ?, ?, ?, ?, ?, ?)`,
+                               created_ip, created_country, last_ip, last_country, google_sub)
+         VALUES (?, ?, 'userscript', ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         sessionId,
@@ -356,6 +463,7 @@ export class Store {
         opts.client?.country ?? null,
         opts.client?.ip ?? null,
         opts.client?.country ?? null,
+        opts.googleSub ?? null,
       );
     return { token: this.insertRefreshToken(userId, sessionId, now, now + ttlSeconds * 1000), sessionId };
   }
@@ -390,7 +498,7 @@ export class Store {
     try {
       const row = this.db
         .prepare(
-          `SELECT t.user_id, t.expires_at, t.family_id, t.family_started_at, t.used_at, u.email, u.display_name
+          `SELECT t.user_id, t.expires_at, t.family_id, t.family_started_at, t.used_at, ${primaryEmail('u')} AS email, u.display_name
            FROM refresh_tokens t JOIN users u ON u.id = t.user_id
            WHERE t.token_hash = ?`,
         )
@@ -477,7 +585,7 @@ export class Store {
   createWebSession(
     userId: string,
     ttlSeconds: number,
-    opts: { userAgent?: string | null; client?: ClientInfo; now?: number } = {},
+    opts: { userAgent?: string | null; client?: ClientInfo; googleSub?: string | null; now?: number } = {},
   ): string {
     const now = opts.now ?? Date.now();
     this.db.prepare("DELETE FROM sessions WHERE kind = 'web' AND expires_at < ?").run(now);
@@ -485,8 +593,8 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO sessions (id, user_id, kind, created_at, last_used_at, user_agent,
-                               created_ip, created_country, last_ip, last_country, web_token_hash, expires_at)
-         VALUES (?, ?, 'web', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                               created_ip, created_country, last_ip, last_country, web_token_hash, expires_at, google_sub)
+         VALUES (?, ?, 'web', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         randomUUID(),
@@ -500,6 +608,7 @@ export class Store {
         opts.client?.country ?? null,
         sha256(token),
         now + ttlSeconds * 1000,
+        opts.googleSub ?? null,
       );
     return token;
   }
@@ -507,14 +616,14 @@ export class Store {
   findWebSession(
     token: string,
     opts: { client?: ClientInfo; now?: number } = {},
-  ): { sessionId: string; userId: string } | null {
+  ): { sessionId: string; userId: string; googleSub: string | null } | null {
     const now = opts.now ?? Date.now();
     const row = this.db
-      .prepare('SELECT id, user_id FROM sessions WHERE web_token_hash = ? AND expires_at > ?')
-      .get(sha256(token), now) as { id: string; user_id: string } | undefined;
+      .prepare('SELECT id, user_id, google_sub FROM sessions WHERE web_token_hash = ? AND expires_at > ?')
+      .get(sha256(token), now) as { id: string; user_id: string; google_sub: string | null } | undefined;
     if (!row) return null;
     this.touchSession(row.id, now, opts.client);
-    return { sessionId: row.id, userId: row.user_id };
+    return { sessionId: row.id, userId: row.user_id, googleSub: row.google_sub };
   }
 
   listSessions(userId: string, now = Date.now()): Array<{
@@ -527,11 +636,15 @@ export class Store {
     country: string | null;
     createdIp: string | null;
     createdCountry: string | null;
+    /** The email of the Google account the session signed in with; null if unknown. */
+    googleEmail: string | null;
   }> {
     const rows = this.db
       .prepare(
-        `SELECT id, kind, created_at, last_used_at, user_agent, last_ip, last_country, created_ip, created_country
-         FROM sessions WHERE user_id = ? AND ${LIVE_SESSION} ORDER BY last_used_at DESC`,
+        `SELECT sessions.id, kind, created_at, last_used_at, user_agent, last_ip, last_country, created_ip, created_country,
+                g.email AS google_email
+         FROM sessions LEFT JOIN google_accounts g ON g.sub = sessions.google_sub AND g.user_id = sessions.user_id
+         WHERE sessions.user_id = ? AND ${LIVE_SESSION} ORDER BY last_used_at DESC`,
       )
       .all(userId, now, now) as Array<{
       id: string;
@@ -543,6 +656,7 @@ export class Store {
       last_country: string | null;
       created_ip: string | null;
       created_country: string | null;
+      google_email: string | null;
     }>;
     return rows.map((r) => ({
       id: r.id,
@@ -554,6 +668,7 @@ export class Store {
       country: r.last_country,
       createdIp: r.created_ip,
       createdCountry: r.created_country,
+      googleEmail: r.google_email,
     }));
   }
 
@@ -569,11 +684,15 @@ export class Store {
     return Number(this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId).changes);
   }
 
-  getAccount(userId: string): { email: string; displayName: string | null; createdAt: number } | null {
-    const row = this.db.prepare('SELECT email, display_name, created_at FROM users WHERE id = ?').get(userId) as
-      | { email: string; display_name: string | null; created_at: number }
-      | undefined;
-    return row ? { email: row.email, displayName: row.display_name, createdAt: row.created_at } : null;
+  getAccount(
+    userId: string,
+  ): { email: string; displayName: string | null; createdAt: number; googleAccounts: GoogleAccount[] } | null {
+    const row = this.db
+      .prepare(`SELECT ${primaryEmail('users')} AS email, display_name, created_at FROM users WHERE id = ?`)
+      .get(userId) as { email: string; display_name: string | null; created_at: number } | undefined;
+    return row
+      ? { email: row.email, displayName: row.display_name, createdAt: row.created_at, googleAccounts: this.listGoogleAccounts(userId) }
+      : null;
   }
 
   /**

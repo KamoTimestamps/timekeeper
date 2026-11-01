@@ -136,6 +136,7 @@ export async function buildApp({ config, store, verifyGoogle, youtube, backfillV
     const { token, sessionId } = store.createRefreshToken(user.id, config.refreshTokenTtlSeconds, {
       userAgent: req.headers['user-agent']?.slice(0, 300),
       client: clientInfo(req, config),
+      googleSub: identity.sub,
     });
     hub.notifyOverview(user.id);
     return { ...(await issueSession(user, token, sessionId)), isNewUser };

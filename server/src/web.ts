@@ -31,6 +31,7 @@ const PUBLIC_DIR = new URL('../public/', import.meta.url);
 const LoginBody = z.object({ idToken: z.string().min(1) });
 // The rules themselves (YouTube's handle policy) live in username.ts; the cap only bounds what gets checked.
 const DisplayNameBody = z.object({ displayName: z.string().max(200) });
+const GoogleSubParam = z.object({ sub: z.string().min(1).max(255) });
 const GuidParam = z.object({ guid: z.string().min(1).max(128) });
 const RevertBody = z.object({ seq: z.number().int().positive() });
 const TIMESTAMPS_PAGE_SIZE = 50; // also the most video IDs one YouTube lookup accepts
@@ -159,6 +160,7 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
     const token = store.createWebSession(user.id, config.webSessionTtlSeconds, {
       userAgent: req.headers['user-agent']?.slice(0, 300) ?? null,
       client: clientInfo(req, config),
+      googleSub: identity.sub,
     });
     hub.notifyOverview(user.id);
     reply.setCookie(cookieName, token, {
@@ -190,7 +192,8 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
     }
 
     return {
-      account,
+      // currentGoogleSub is the Google account this page signed in with; null for sessions that predate recording it.
+      account: { ...account, currentGoogleSub: session.googleSub },
       features: config.features,
       stats,
       sessions: store.listSessions(session.userId).map((s) => ({ ...s, current: s.id === session.sessionId })),
@@ -233,6 +236,55 @@ export async function registerWeb(app: FastifyInstance, { config, store, verifyG
     }
     hub.notifyOverview(session.userId); // the user's other open pages pick up the new name
     return { displayName: checked.name };
+  });
+
+  // Adds another Google account to the signed-in user. The ID token is verified before anything is looked
+  // up, so "already used by another account" is only ever said to someone who has signed in to that Google account.
+  app.post('/web/google-accounts', { preHandler: requireSameOrigin }, async (req, reply) => {
+    const session = currentSession(req);
+    if (!session) {
+      clearSessionCookie(reply);
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    const body = LoginBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid_request' });
+
+    let identity;
+    try {
+      identity = await verifyGoogle(body.data.idToken);
+    } catch (err) {
+      req.log.info({ err: (err as Error).message }, 'google token rejected (link)');
+      return reply.code(401).send({ error: 'invalid_google_token' });
+    }
+
+    const result = store.linkGoogleAccount(session.userId, identity);
+    if (result === 'in_use') return reply.code(409).send({ error: 'google_account_in_use' });
+    hub.notifyOverview(session.userId);
+    return { status: result };
+  });
+
+  app.delete('/web/google-accounts/:sub', { preHandler: requireSameOrigin }, async (req, reply) => {
+    const session = currentSession(req);
+    if (!session) {
+      clearSessionCookie(reply);
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    const param = GoogleSubParam.safeParse(req.params);
+    if (!param.success) return reply.code(400).send({ error: 'invalid_request' });
+
+    // The account in use can't be removed from under its own session: that would sign the person out of the very
+    // account they are using. (To drop it, sign in with another linked account first.)
+    if (param.data.sub === session.googleSub) return reply.code(409).send({ error: 'current_google_account' });
+
+    const result = store.unlinkGoogleAccount(session.userId, param.data.sub);
+    if (result === 'not_found') return reply.code(404).send({ error: 'not_found' });
+    if (result === 'last') return reply.code(409).send({ error: 'last_google_account' });
+    // The usual reason to unlink is that the Google account is lost or compromised, so nothing it
+    // signed in stays signed in: every session of the user ends, this page's included.
+    const revoked = store.revokeAllSessions(session.userId);
+    hub.closeSessions(session.userId);
+    clearSessionCookie(reply);
+    return { revoked };
   });
 
   app.get('/web/timestamps', async (req, reply) => {

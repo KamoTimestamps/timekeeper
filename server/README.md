@@ -129,8 +129,17 @@ page), review your sessions on the account page, and **log out all sessions**.
   newest change first. Every search word must match the comment, the video ID, or a video's
   title/channel (title and channel need `YOUTUBE_API_KEY`; see "Video details"). Clicking a video shows just that video in playback order; clicking a time opens
   YouTube at that moment. `GET /web/timestamps?q=&video=&offset=`.
+- **Google accounts** (account page): one Timekeeper account can have several Google accounts, any of which signs in
+  to it (page and userscript). `POST /web/google-accounts` `{idToken}` links the Google account whose ID token it
+  is; the token is verified first, and only then is the account checked against other users, so a `409
+  google_account_in_use` is only ever told to someone who has just proved they own that Google account.
+  `DELETE /web/google-accounts/:sub` unlinks one (`409 current_google_account` for the one this page signed
+  in with, `409 last_google_account` for the only one). The sessions table shows which Google account each session
+  used once there is more than one. Unlinking also ends every session of the
+  user, userscripts and this page included, since the usual reason is a lost or compromised Google account; it
+  answers `{revoked}` like `logout-all`. The account's email is that of its earliest-linked Google account.
 - **Routes:** `GET /web/config`, `POST /web/login`, `GET /web/overview`, `GET /web/timestamps`, `POST /web/logout`,
-  `POST /web/logout-all`, plus the static files under `/` and `/assets/`.
+  `POST /web/logout-all`, `POST /web/google-accounts`, `DELETE /web/google-accounts/:sub`, plus the static files under `/` and `/assets/`.
 
 ## Video details
 

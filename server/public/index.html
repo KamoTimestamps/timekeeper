@@ -63,15 +63,38 @@
       </section>
 
       <section class="card">
+        <h2>Google accounts</h2>
+        <p class="muted">Any of these signs in to this Timekeeper account, on this page and in the userscript. A Google account can belong to only one Timekeeper account. Unlinking one logs out all sessions, including this page and the userscript on every device.</p>
+        <ul id="google-accounts" class="plain-list"></ul>
+        <div id="unlink-confirm" class="confirm" role="alertdialog" aria-labelledby="unlink-confirm-text" hidden>
+          <p id="unlink-confirm-text"></p>
+          <div class="confirm-actions">
+            <button id="unlink-confirm-yes" class="danger" type="button">Unlink and log out all sessions</button>
+            <button id="unlink-confirm-no" class="ghost" type="button">Cancel</button>
+          </div>
+        </div>
+        <p id="google-accounts-message" class="error" role="alert" hidden></p>
+        <p class="muted">Link another Google account:</p>
+        <div id="link-google-button"></div>
+      </section>
+
+      <section class="card">
         <div class="card-head">
           <h2>Sessions</h2>
           <button id="signout-all" class="danger" type="button">Log out all sessions</button>
         </div>
         <p class="muted">Every browser and userscript currently signed in to your account. Logging out all sessions signs out the Timekeeper userscript on every device, and this page too.</p>
+        <div id="logout-all-confirm" class="confirm" role="alertdialog" aria-labelledby="logout-all-confirm-text" hidden>
+          <p id="logout-all-confirm-text">Log out of all sessions? This signs out the Timekeeper userscript on every device, and this page. You will need to sign in again everywhere.</p>
+          <div class="confirm-actions">
+            <button id="logout-all-confirm-yes" class="danger" type="button">Log out all sessions</button>
+            <button id="logout-all-confirm-no" class="ghost" type="button">Cancel</button>
+          </div>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Type</th><th>Device</th><th>Location</th><th>Signed in</th><th>Last active</th><th></th></tr>
+              <tr><th>Type</th><th>Device</th><th id="sessions-google-head" hidden>Google account</th><th>Location</th><th>Signed in</th><th>Last active</th><th></th></tr>
             </thead>
             <tbody id="sessions"></tbody>
           </table>

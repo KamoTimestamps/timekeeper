@@ -132,7 +132,92 @@ function membersBadge(video) {
   return video.membersOnly ? [' ', el('span', { className: 'badge members', title: 'Members-only stream' }, 'Members')] : [];
 }
 
+// The Google account whose unlink is waiting for confirmation (shown in #unlink-confirm), if any.
+let pendingUnlink = null;
+
+function askToUnlink(account) {
+  pendingUnlink = account;
+  setGoogleAccountsMessage('');
+  $('unlink-confirm-text').textContent =
+    `Unlink ${account.email}? It will no longer sign in to this Timekeeper account. For safety, this also logs out all sessions: the Timekeeper userscript on every device, and this page. You will need to sign in again everywhere.`;
+  $('unlink-confirm').hidden = false;
+  $('unlink-confirm-no').focus();
+}
+
+function cancelUnlink() {
+  pendingUnlink = null;
+  $('unlink-confirm').hidden = true;
+}
+
+$('unlink-confirm-no').addEventListener('click', cancelUnlink);
+$('unlink-confirm-yes').addEventListener('click', () => {
+  const account = pendingUnlink;
+  cancelUnlink();
+  if (account) unlinkGoogleAccount(account);
+});
+$('unlink-confirm').addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') cancelUnlink();
+});
+
+function renderGoogleAccounts(accounts, currentSub) {
+  if (pendingUnlink && !accounts.some((a) => a.sub === pendingUnlink.sub)) cancelUnlink(); // gone from another tab
+  $('google-accounts').replaceChildren(
+    ...accounts.map((account) => {
+      const unlink = el('button', { className: 'ghost', type: 'button' }, 'Unlink');
+      const current = account.sub === currentSub;
+      unlink.disabled = current || accounts.length < 2;
+      if (current) unlink.title = 'This session is signed in with this Google account. Sign in with another one to unlink it.';
+      else if (unlink.disabled) unlink.title = 'Your only Google account can’t be unlinked.';
+      unlink.addEventListener('click', () => askToUnlink(account));
+      return el('li', {},
+        el('span', {}, account.email),
+        ...(current ? [' ', el('span', { className: 'badge' }, 'This session')] : []),
+        el('span', { className: 'muted' }, ` · linked ${dateTime.format(account.linkedAt)}`),
+        unlink);
+    }),
+  );
+}
+
+function setGoogleAccountsMessage(message) {
+  $('google-accounts-message').textContent = message || '';
+  $('google-accounts-message').hidden = !message;
+}
+
+async function unlinkGoogleAccount(account) {
+  setGoogleAccountsMessage('');
+  const { ok, status, data } = await api(`/web/google-accounts/${encodeURIComponent(account.sub)}`, { method: 'DELETE' });
+  if (status === 401) return showSignedOut('Your session has ended. Please sign in again.');
+  if (!ok) {
+    setGoogleAccountsMessage(
+      data?.error === 'current_google_account' ? 'This session is signed in with that Google account. Sign in with another one to unlink it.'
+      : data?.error === 'last_google_account' ? 'You can’t unlink your only Google account.'
+      : 'Could not unlink the Google account. Please try again.',
+    );
+    return refreshOverview();
+  }
+  showSignedOut(`Unlinked ${account.email} and logged out of all sessions. Sign in again with a Google account that is still linked.`);
+}
+
+// Called with the ID token of the Google account chosen in Google's popup on the account page.
+async function onLinkCredential({ credential }) {
+  setGoogleAccountsMessage('');
+  const { ok, status, data } = await api('/web/google-accounts', { method: 'POST', body: { idToken: credential } });
+  if (status === 401 && data?.error === 'unauthorized') return showSignedOut('Your session has ended. Please sign in again.');
+  if (!ok) {
+    setGoogleAccountsMessage(
+      status === 401 ? 'Google sign-in was rejected. Please try again.'
+      : data?.error === 'google_account_in_use' ? 'That Google account is already used by another Timekeeper account, so it can’t be linked to this one.'
+      : 'Could not link the Google account. Please try again.',
+    );
+    return;
+  }
+  // Nothing changed: the person most likely picked the account they are already using by accident.
+  if (data?.status === 'already_linked') setGoogleAccountsMessage('That Google account is already linked to this Timekeeper account. Choose a different one to add it.');
+  await refreshOverview();
+}
+
 function renderAccount(account) {
+  renderGoogleAccounts(account.googleAccounts, account.currentGoogleSub);
   const change = el('button', { className: 'ghost', type: 'button' }, 'Change');
   change.addEventListener('click', () => openDisplayNameForm({ required: false }));
   const rows = [
@@ -198,7 +283,10 @@ $('display-name-form').addEventListener('submit', async (event) => {
   await loadOverview(); // re-reads the account, clears the requirement, and routes to the page asked for
 });
 
-function renderSessions(sessions) {
+function renderSessions(sessions, account) {
+  // Which Google account a session used only matters once there is a choice.
+  const showGoogle = account.googleAccounts.length > 1;
+  $('sessions-google-head').hidden = !showGoogle;
   $('sessions').replaceChildren(
     ...sessions.map((session) => {
       const type = session.kind === 'web' ? 'Web page' : 'Userscript';
@@ -207,6 +295,7 @@ function renderSessions(sessions) {
       return el('tr', {},
         el('td', {}, type),
         el('td', {}, device),
+        ...(showGoogle ? [el('td', {}, session.googleEmail || '—')] : []),
         renderLocation(session),
         el('td', {}, dateTime.format(session.createdAt)),
         el('td', {}, ago(session.lastUsedAt)),
@@ -221,7 +310,7 @@ async function loadOverview() {
   features = data.features ?? {};
   renderAccount(data.account);
   needsDisplayName = !data.account.displayName;
-  renderSessions(data.sessions);
+  renderSessions(data.sessions, data.account);
   overviewLive.latest = data;
   route();
   watchOverview();
@@ -235,7 +324,7 @@ const overviewLive = { source: null, retry: null, busy: false, again: false, sta
 function applyOverview(data) {
   overviewLive.latest = data;
   renderAccount(data.account); // the name may have been changed from another tab
-  renderSessions(data.sessions);
+  renderSessions(data.sessions, data.account);
 }
 
 // The overview data (account, sessions) only feeds the account page; it only needs refreshing while that is on screen.
@@ -299,7 +388,7 @@ document.addEventListener('visibilitychange', () => {
 // Relative times ("5 minutes ago") keep moving between signals.
 setInterval(() => {
   if (overviewLive.latest && overviewShowing() && !document.hidden) {
-    renderSessions(overviewLive.latest.sessions);
+    renderSessions(overviewLive.latest.sessions, overviewLive.latest.account);
   }
 }, 30_000);
 
@@ -928,6 +1017,11 @@ function route() {
   const [path, queryString = ''] = location.hash.slice(1).split('?');
   if (path === '/account') {
     show('account');
+    setGoogleAccountsMessage('');
+    showGoogleButton('link-google-button', 'continue_with', onLinkCredential).catch((err) => {
+      console.error('Google sign-in setup failed:', err);
+      setGoogleAccountsMessage(googleSetupMessage(err));
+    });
     if (overviewLive.stale) refreshOverview(); // signals arrived while another view was open
     return;
   }
@@ -951,7 +1045,10 @@ window.addEventListener('hashchange', () => {
   route();
 });
 
-let signInReady = null;
+let googleReady = null;
+// Google's script has one callback for every button; it goes to whatever the visible page is for.
+let onGoogleCredential = null;
+const renderedGoogleButtons = new Set();
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -975,6 +1072,32 @@ async function onCredential({ credential }) {
   await loadOverview();
 }
 
+// Loads Google's sign-in script once. Rejects (and retries next time) when it can't load.
+function loadGoogleSignIn() {
+  googleReady ??= (async () => {
+    const { data } = await api('/web/config');
+    await loadScript('https://accounts.google.com/gsi/client');
+    google.accounts.id.initialize({ client_id: data.googleClientId, callback: (response) => onGoogleCredential?.(response), ux_mode: 'popup' });
+  })().catch((err) => {
+    googleReady = null;
+    throw err;
+  });
+  return googleReady;
+}
+
+async function showGoogleButton(containerId, text, onCredential) {
+  await loadGoogleSignIn();
+  onGoogleCredential = onCredential;
+  if (renderedGoogleButtons.has(containerId)) return;
+  renderedGoogleButtons.add(containerId);
+  google.accounts.id.renderButton($(containerId), { type: 'standard', theme: 'outline', size: 'large', text, shape: 'pill' });
+}
+
+const googleSetupMessage = (err) =>
+  err.message === 'script-blocked'
+    ? "Google's sign-in script (accounts.google.com/gsi/client) could not be loaded. A content blocker, tracking protection or a network policy may be blocking it."
+    : `Google sign-in could not start: ${err.message}`;
+
 async function showSignedOut(notice) {
   stopWatchingOverview();
   show('signed-out');
@@ -982,21 +1105,10 @@ async function showSignedOut(notice) {
   $('notice').hidden = !notice;
   setLoginError('');
   try {
-    signInReady ??= (async () => {
-      const { data } = await api('/web/config');
-      await loadScript('https://accounts.google.com/gsi/client');
-      google.accounts.id.initialize({ client_id: data.googleClientId, callback: onCredential, ux_mode: 'popup' });
-      google.accounts.id.renderButton($('google-button'), { type: 'standard', theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' });
-    })();
-    await signInReady;
+    await showGoogleButton('google-button', 'signin_with', onCredential);
   } catch (err) {
-    signInReady = null;
     console.error('Google sign-in setup failed:', err);
-    setLoginError(
-      err.message === 'script-blocked'
-        ? "Google's sign-in script (accounts.google.com/gsi/client) could not be loaded. A content blocker, tracking protection or a network policy may be blocking it."
-        : `Google sign-in could not start: ${err.message}`,
-    );
+    setLoginError(googleSetupMessage(err));
   }
 }
 
@@ -1005,9 +1117,24 @@ $('signout').addEventListener('click', async () => {
   showSignedOut('You have been signed out of this page.');
 });
 
-$('signout-all').addEventListener('click', async () => {
-  const sure = confirm('Log out of all sessions? This signs out the Timekeeper userscript on every device, and this page. You will need to sign in again everywhere.');
-  if (!sure) return;
+const closeLogoutAllConfirm = () => ($('logout-all-confirm').hidden = true);
+
+$('signout-all').addEventListener('click', () => {
+  $('logout-all-confirm').hidden = false;
+  $('logout-all-confirm-no').focus();
+});
+$('logout-all-confirm-no').addEventListener('click', () => {
+  closeLogoutAllConfirm();
+  $('signout-all').focus();
+});
+$('logout-all-confirm').addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    closeLogoutAllConfirm();
+    $('signout-all').focus();
+  }
+});
+$('logout-all-confirm-yes').addEventListener('click', async () => {
+  closeLogoutAllConfirm();
   $('signout-all').disabled = true;
   const { ok, data } = await api('/web/logout-all', { method: 'POST' });
   $('signout-all').disabled = false;
