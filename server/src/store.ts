@@ -32,6 +32,8 @@ export interface VideoInfo {
   publishedAt: string | null;
   /** Null when unknown, including live and upcoming videos, which have no length yet. */
   durationSeconds: number | null;
+  /** Set while a stream or premiere hasn't ended: its start time and length may still change, so it is re-checked soon. */
+  liveUnfinished?: boolean;
 }
 
 export type StoredRecord = TimestampRecord & { seq: number };
@@ -138,6 +140,7 @@ CREATE TABLE IF NOT EXISTS video_info (
   thumbnail_url TEXT,
   published_at TEXT,
   duration_seconds INTEGER,
+  live_unfinished INTEGER NOT NULL DEFAULT 0,
   fetched_at INTEGER NOT NULL
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS video_access (
@@ -213,6 +216,12 @@ export class Store {
       this.db.exec('ALTER TABLE video_info ADD COLUMN duration_seconds INTEGER');
       // Rows cached before the column existed have no length; fetched_at = 0 makes them all stale,
       // so they are looked up again (at startup, and whenever a page shows them).
+      this.db.exec('UPDATE video_info SET fetched_at = 0');
+    }
+
+    if (!videoColumns.some((c) => c.name === 'live_unfinished')) {
+      this.db.exec('ALTER TABLE video_info ADD COLUMN live_unfinished INTEGER NOT NULL DEFAULT 0');
+      // Streams cached while still upcoming carry their broadcast-creation date, not when they aired.
       this.db.exec('UPDATE video_info SET fetched_at = 0');
     }
 
@@ -658,7 +667,7 @@ export class Store {
     if (videoIds.length === 0) return [];
     const rows = this.db
       .prepare(
-        `SELECT video_id, title, channel_title, thumbnail_url, published_at, duration_seconds, fetched_at
+        `SELECT video_id, title, channel_title, thumbnail_url, published_at, duration_seconds, live_unfinished, fetched_at
          FROM video_info WHERE video_id IN (${videoIds.map(() => '?').join(',')})`,
       )
       .all(...videoIds) as Array<{
@@ -668,6 +677,7 @@ export class Store {
       thumbnail_url: string | null;
       published_at: string | null;
       duration_seconds: number | null;
+      live_unfinished: number;
       fetched_at: number;
     }>;
     return rows.map((row) => ({
@@ -682,19 +692,23 @@ export class Store {
               thumbnailUrl: row.thumbnail_url,
               publishedAt: row.published_at,
               durationSeconds: row.duration_seconds,
+              ...(row.live_unfinished === 1 ? { liveUnfinished: true } : {}),
             },
     }));
   }
 
-  /** Video IDs with live timestamps (any user) whose cached details were fetched before `olderThan`. */
-  staleVideoIds(olderThan: number): string[] {
+  /**
+   * Video IDs with live timestamps (any user) whose cached details were fetched before `olderThan`,
+   * or, for streams that haven't ended, before `liveOlderThan`.
+   */
+  staleVideoIds(olderThan: number, liveOlderThan = olderThan): string[] {
     const rows = this.db
       .prepare(
         `SELECT DISTINCT t.video_id FROM timestamps t
          JOIN video_info v ON v.video_id = t.video_id
-         WHERE t.deleted_at IS NULL AND v.fetched_at < ?`,
+         WHERE t.deleted_at IS NULL AND (v.fetched_at < ? OR (v.live_unfinished = 1 AND v.fetched_at < ?))`,
       )
-      .all(olderThan) as Array<{ video_id: string }>;
+      .all(olderThan, liveOlderThan) as Array<{ video_id: string }>;
     return rows.map((r) => r.video_id);
   }
 
@@ -712,11 +726,11 @@ export class Store {
 
   saveVideoInfo(entries: Array<{ videoId: string; info: VideoInfo | null }>, now: number): void {
     const upsert = this.db.prepare(
-      `INSERT INTO video_info (video_id, title, channel_title, thumbnail_url, published_at, duration_seconds, fetched_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO video_info (video_id, title, channel_title, thumbnail_url, published_at, duration_seconds, live_unfinished, fetched_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(video_id) DO UPDATE SET title = excluded.title, channel_title = excluded.channel_title,
          thumbnail_url = excluded.thumbnail_url, published_at = excluded.published_at,
-         duration_seconds = excluded.duration_seconds, fetched_at = excluded.fetched_at`,
+         duration_seconds = excluded.duration_seconds, live_unfinished = excluded.live_unfinished, fetched_at = excluded.fetched_at`,
     );
     this.db.exec('BEGIN IMMEDIATE');
     try {
@@ -728,6 +742,7 @@ export class Store {
           info?.thumbnailUrl ?? null,
           info?.publishedAt ?? null,
           info?.durationSeconds ?? null,
+          info?.liveUnfinished ? 1 : 0,
           now,
         );
       }

@@ -8,7 +8,7 @@ import type { GoogleVerifier } from './google.ts';
 import { Hub } from './hub.ts';
 import { Store, type User } from './store.ts';
 import { signAccessToken, verifyAccessToken } from './tokens.ts';
-import { createVideoPrefetcher, VIDEO_INFO_TTL_MS, type VideoLookup } from './youtube.ts';
+import { createVideoPrefetcher, LIVE_INFO_TTL_MS, VIDEO_INFO_TTL_MS, type VideoLookup } from './youtube.ts';
 import { registerWeb } from './web.ts';
 
 export interface AppDeps {
@@ -84,7 +84,7 @@ export async function buildApp({ config, store, verifyGoogle, youtube, backfillV
     app.addHook('onClose', () => prefetcher.idle()); // finish writing before the caller closes the store
     if (backfillVideoInfo) {
       const uncached = store.uncachedVideoIds();
-      const stale = store.staleVideoIds(Date.now() - VIDEO_INFO_TTL_MS);
+      const stale = store.staleVideoIds(Date.now() - VIDEO_INFO_TTL_MS, Date.now() - LIVE_INFO_TTL_MS);
       app.log.info({ uncached: uncached.length, stale: stale.length }, 'video info backfill');
       prefetcher.enqueue(uncached);
       // Cached details past their TTL, which includes everything cached before video lengths were stored.

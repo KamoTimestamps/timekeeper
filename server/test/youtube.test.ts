@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { Store, type VideoInfo } from '../src/store.ts';
-import { createVideoPrefetcher, createYouTubeClient, parseIsoDuration, resolveVideoInfo, VIDEO_INFO_TTL_MS, type VideoLookup } from '../src/youtube.ts';
+import { createVideoPrefetcher, createYouTubeClient, parseIsoDuration, LIVE_INFO_TTL_MS, resolveVideoInfo, VIDEO_INFO_TTL_MS, type VideoLookup } from '../src/youtube.ts';
 
 const info = (title: string): VideoInfo => ({ title, channelTitle: 'Chan', thumbnailUrl: 'https://i.ytimg.com/vi/x/mqdefault.jpg', publishedAt: '2026-01-01T00:00:00Z', durationSeconds: 3600 });
 const log = { warn: () => {} };
@@ -35,6 +35,8 @@ describe('YouTube client', () => {
     assert.equal(found.get('live')?.durationSeconds, null, 'a live video has no length yet');
     assert.equal(found.get('live')?.publishedAt, '2026-10-25T17:46:02Z', 'a stream is dated by when it went live, not when it was created');
     assert.equal(found.has('gone'), false);
+    assert.equal(found.get('live')?.liveUnfinished, true, 'a stream with no end time is still moving');
+    assert.equal(found.get('a')?.liveUnfinished, undefined);
   });
 
   it('throws on an API error without leaking the key', async () => {
@@ -44,6 +46,17 @@ describe('YouTube client', () => {
 });
 
 describe('resolveVideoInfo', () => {
+  it('re-checks an unfinished stream after minutes, a finished one only after the TTL', async () => {
+    const store = new Store(':memory:');
+    const calls: string[][] = [];
+    const lookup: VideoLookup = async (ids) => (calls.push(ids), new Map(ids.map((id) => [id, id === 'live' ? { ...info('Live'), liveUnfinished: true } : info('Done')])));
+    await resolveVideoInfo(store, lookup, ['live', 'done'], log, 1000);
+    await resolveVideoInfo(store, lookup, ['live', 'done'], log, 1000 + LIVE_INFO_TTL_MS);
+    assert.deepEqual(calls, [['live', 'done'], ['live']]);
+    assert.equal(store.getCachedVideoInfo(['live'])[0].info?.liveUnfinished, true);
+    store.close();
+  });
+
   it('fetches only what is missing or stale, and caches misses too', async () => {
     const store = new Store(':memory:');
     const calls: string[][] = [];

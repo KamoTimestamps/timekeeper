@@ -11,6 +11,9 @@ const VIDEOS_URL = 'https://www.googleapis.com/youtube/v3/videos';
 /** Hits and misses are both re-checked after this long, so edited titles show up and quota use stays tiny. */
 export const VIDEO_INFO_TTL_MS = 24 * 60 * 60 * 1000;
 
+/** Upcoming and live videos are re-checked this often: their start time and length aren't known until they air. */
+export const LIVE_INFO_TTL_MS = 5 * 60 * 1000;
+
 interface VideosResponse {
   items?: Array<{
     id: string;
@@ -22,7 +25,7 @@ interface VideosResponse {
     };
     contentDetails?: { duration?: string };
     /** Present for streams and premieres, live or past. */
-    liveStreamingDetails?: { actualStartTime?: string };
+    liveStreamingDetails?: { actualStartTime?: string; actualEndTime?: string };
   }>;
 }
 
@@ -43,7 +46,7 @@ export function createYouTubeClient(apiKey: string, fetchFn: typeof fetch = fetc
     url.searchParams.set('id', videoIds.join(','));
     url.searchParams.set(
       'fields',
-      'items(id,snippet(title,channelTitle,publishedAt,thumbnails),contentDetails(duration),liveStreamingDetails(actualStartTime))',
+      'items(id,snippet(title,channelTitle,publishedAt,thumbnails),contentDetails(duration),liveStreamingDetails(actualStartTime,actualEndTime))',
     );
 
     const res = await fetchFn(url, { headers: { 'x-goog-api-key': apiKey }, signal: AbortSignal.timeout(5000) });
@@ -60,6 +63,7 @@ export function createYouTubeClient(apiKey: string, fetchFn: typeof fetch = fetc
         // A stream's publishedAt is when the broadcast was created, often days before it aired.
         publishedAt: item.liveStreamingDetails?.actualStartTime ?? item.snippet.publishedAt ?? null,
         durationSeconds: parseIsoDuration(item.contentDetails?.duration),
+        ...(item.liveStreamingDetails && !item.liveStreamingDetails.actualEndTime ? { liveUnfinished: true } : {}),
       });
     }
     return found;
@@ -80,7 +84,7 @@ export async function resolveVideoInfo(
   const cached = new Map(store.getCachedVideoInfo(videoIds).map((entry) => [entry.videoId, entry]));
   const stale = videoIds.filter((id) => {
     const entry = cached.get(id);
-    return !entry || now - entry.fetchedAt >= VIDEO_INFO_TTL_MS;
+    return !entry || now - entry.fetchedAt >= (entry.info?.liveUnfinished ? LIVE_INFO_TTL_MS : VIDEO_INFO_TTL_MS);
   });
 
   if (stale.length > 0) {
