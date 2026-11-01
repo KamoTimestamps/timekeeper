@@ -100,3 +100,25 @@ export function getTimestampSuffix(): string {
     '-' + String(now.getUTCMinutes()).padStart(2, '0') +
     '-' + String(now.getUTCSeconds()).padStart(2, '0');
 }
+
+/**
+ * Gives every record without a guid one derived from its content (video, start, comment, and
+ * which repeat of that content it is), so importing the same legacy file on several devices or
+ * more than once yields the same guids instead of fresh random ones that sync as duplicates.
+ */
+export async function deriveMissingGuids<T extends { guid?: string; start: number; comment: string }>(
+  videoId: string,
+  timestamps: T[],
+): Promise<Array<T & { guid: string }>> {
+  const seen = new Map<string, number>();
+  const encoder = new TextEncoder();
+  return Promise.all(timestamps.map(async (ts) => {
+    if (ts.guid) return ts as T & { guid: string };
+    const content = `${videoId}\0${ts.start}\0${ts.comment}`;
+    const repeat = seen.get(content) ?? 0;
+    seen.set(content, repeat + 1);
+    const digest = await crypto.subtle.digest('SHA-256', encoder.encode(`${content}\0${repeat}`));
+    const guid = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+    return { ...ts, guid };
+  }));
+}

@@ -6,6 +6,7 @@ import {
   formatTimeDisplay,
   formatTimestampLines,
   getTimestampSuffix,
+  deriveMissingGuids,
 } from "./util";
 import { BUILD_TIME, DISPLAY_VERSION } from "./build-info";
 import { PANE_STYLES } from "./styles";
@@ -4713,18 +4714,11 @@ if (!isLiveChatFrame()) {
                     typeof videoData.video_id === "string" &&
                     Array.isArray(videoData.timestamps)
                   ) {
-                    // Ensure each timestamp has a guid
-                    const timestampsWithGuids = videoData.timestamps.map(
-                      (ts) => ({
-                        ...ts,
-                        guid: ts.guid || crypto.randomUUID(),
-                      }),
-                    );
-                    // Save to IndexedDB
-                    const promise = saveToIndexedDB(
-                      videoId,
-                      timestampsWithGuids,
-                    )
+                    // Ensure each timestamp has a guid, derived so a re-import maps to the same rows
+                    const promise = deriveMissingGuids(videoId, videoData.timestamps)
+                      .then((timestampsWithGuids) =>
+                        saveToIndexedDB(videoId, timestampsWithGuids),
+                      )
                       .then(() => log(`Imported ${videoId} to IndexedDB`))
                       .catch((err) =>
                         log(
