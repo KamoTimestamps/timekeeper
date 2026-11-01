@@ -17,7 +17,7 @@ export interface Config {
   /** Lifetime of a landing-page (cookie) session. */
   webSessionTtlSeconds: number;
   /**
-   * Read the client's IP and country from X-Client-IP / X-Client-Country. Only enable behind a
+   * Read the client's IP, country and city from X-Client-IP / -Country / -City / -Region. Only enable behind a
    * reverse proxy that sets (and strips client-supplied copies of) those headers, with the app
    * reachable only through it.
    */

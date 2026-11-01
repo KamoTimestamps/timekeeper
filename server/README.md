@@ -113,18 +113,23 @@ page), review your sessions on the account page, and **log out all sessions**.
 - **Log out all sessions** ends every userscript and browser session of the account. Access tokens
   carry their session id and are checked against it on each request, so they stop working
   immediately instead of after up to 15 minutes, and open WebSockets are closed.
-- **Session location:** each session shows the IP and a country flag of where it signed in and where
-  it was last active (userscripts update this on each token refresh, the page on each request).
-  A stolen token used from somewhere else shows up as a different last-active location. Flags are
-  emoji, which Windows browsers don't draw (they show the country letters), so the country name is
-  also in the tooltip. IPs are kept only as long as the session exists.
-- **Where the IP comes from:** with `TRUST_PROXY_HEADERS=true` the app reads `X-Client-IP` and
-  `X-Client-Country`, which only the reverse proxy may set; the app must listen on loopback and be
-  reachable only through it. Without it the IP is the socket address and there is no country. The
-  dev setup's Caddy takes them from Cloudflare (`CF-Connecting-IP`, `CF-IPCountry`) and only
-  believes those headers when the connection comes from Cloudflare's published IP ranges, which
-  `deploy/remote-update.sh` refreshes into `/etc/caddy/cloudflare-*.caddy` on every deploy.
-  Other deployments need an equivalent proxy rule.
+- **Session location:** each session shows where it signed in and where it was last active, as a
+  place like "Astoria, NY, USA" (city, state or province for the US, Canada and Australia, and the
+  country), with a country flag; the IP is in the tooltip. Userscripts update this on each token
+  refresh, the page on each request. A stolen token used from somewhere else shows up as a different
+  last-active location. Flags are emoji, which Windows browsers don't draw (they show the country
+  letters), so the country name is also in the place. City is only as accurate as IP geolocation
+  (the ISP's region, often not the street). IPs and places are kept only as long as the session exists.
+- **Where the location comes from:** with `TRUST_PROXY_HEADERS=true` the app reads `X-Client-IP`,
+  `X-Client-Country`, `X-Client-City` and `X-Client-Region`, which only the reverse proxy may set; the
+  app must listen on loopback and be reachable only through it. Without it the IP is the socket
+  address and there is no country or city. The dev setup's Caddy takes them from Cloudflare
+  (`CF-Connecting-IP`, `CF-IPCountry`, `CF-IPCity`, `CF-Region-Code`) and only believes those headers
+  when the connection comes from Cloudflare's published IP ranges, which `deploy/remote-update.sh`
+  refreshes into `/etc/caddy/cloudflare-*.caddy` on every deploy. The city and region headers exist
+  only with Cloudflare's **Add visitor location headers** managed transform turned on (Rules →
+  Managed Transforms); without it sessions show just the country. Other deployments need an
+  equivalent proxy rule.
 - **Timestamps page** (`#/timestamps`): browse and search all your live timestamps, 50 per page,
   newest change first. Every search word must match the comment, the video ID, or a video's
   title/channel (title and channel need `YOUTUBE_API_KEY`; see "Video details"). Clicking a video shows just that video in playback order; clicking a time opens

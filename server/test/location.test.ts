@@ -9,8 +9,10 @@ interface SessionView {
   kind: string;
   ip: string | null;
   country: string | null;
+  place: string | null;
   createdIp: string | null;
   createdCountry: string | null;
+  createdPlace: string | null;
 }
 
 async function webLogin(h: TestHarness, sub: string, email: string, headers: Record<string, string> = {}) {
@@ -94,6 +96,57 @@ describe('session location (behind a trusted proxy)', () => {
   });
 });
 
+describe('session place (city and region)', () => {
+  let h: TestHarness;
+  before(async () => {
+    h = await createHarness();
+  });
+  after(async () => {
+    await h.app.close();
+  });
+
+  const placeOf = async (sub: string, headers: Record<string, string>) => {
+    await h.login(sub, `${sub}@example.com`, { 'x-client-ip': '203.0.113.7', ...headers });
+    const cookie = await webLogin(h, sub, `${sub}@example.com`);
+    return (await sessions(h, cookie)).find((s) => s.kind === 'userscript');
+  };
+
+  it('keeps the state for the US, Canada and Australia and only the city elsewhere', async () => {
+    const us = await placeOf('place1', { 'x-client-country': 'US', 'x-client-city': 'Astoria', 'x-client-region': 'ny' });
+    assert.deepEqual([us?.place, us?.createdPlace], ['Astoria, NY', 'Astoria, NY']);
+    const fr = await placeOf('place2', { 'x-client-country': 'FR', 'x-client-city': 'Paris', 'x-client-region': 'IDF' });
+    assert.equal(fr?.place, 'Paris');
+  });
+
+  it('decodes UTF-8 city names that arrive as latin1 header bytes', async () => {
+    const br = await placeOf('place3', {
+      'x-client-country': 'BR',
+      'x-client-city': Buffer.from('São Paulo', 'utf8').toString('latin1'),
+    });
+    assert.equal(br?.place, 'São Paulo');
+  });
+
+  it('ignores a missing or hostile city, and an unknown one never erases the last known place', async () => {
+    assert.equal((await placeOf('place4', { 'x-client-country': 'US', 'x-client-region': 'NY' }))?.place, null);
+    assert.equal((await placeOf('place5', { 'x-client-country': 'US', 'x-client-city': '<img src=x>' }))?.place, null);
+
+    const script = await h.login('place6', 'place6@example.com', {
+      ...at('203.0.113.7', 'US'),
+      'x-client-city': 'Astoria',
+      'x-client-region': 'NY',
+    });
+    const cookie = await webLogin(h, 'place6', 'place6@example.com');
+    await h.app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      headers: at('203.0.113.8', 'US'),
+      payload: { refreshToken: script.refreshToken },
+    });
+    const kept = (await sessions(h, cookie)).find((s) => s.kind === 'userscript');
+    assert.deepEqual([kept?.ip, kept?.place], ['203.0.113.8', 'Astoria, NY']);
+  });
+});
+
 describe('session location (proxy headers not trusted)', () => {
   let h: TestHarness;
   before(async () => {
@@ -104,11 +157,12 @@ describe('session location (proxy headers not trusted)', () => {
   });
 
   it('uses the socket address and never believes client-supplied headers', async () => {
-    await h.login('loc4', 'loc4@example.com', at('203.0.113.7', 'DE'));
+    await h.login('loc4', 'loc4@example.com', { ...at('203.0.113.7', 'DE'), 'x-client-city': 'Berlin' });
     const cookie = await webLogin(h, 'loc4', 'loc4@example.com', at('198.51.100.9', 'US'));
     for (const s of await sessions(h, cookie, at('192.0.2.44', 'JP'))) {
       assert.equal(s.ip, '127.0.0.1');
       assert.equal(s.country, null);
+      assert.equal(s.place, null);
     }
   });
 });

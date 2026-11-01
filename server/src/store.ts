@@ -105,8 +105,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   user_agent TEXT,
   created_ip TEXT,
   created_country TEXT,
+  created_place TEXT,
   last_ip TEXT,
   last_country TEXT,
+  last_place TEXT,
   web_token_hash TEXT UNIQUE,
   expires_at INTEGER,
   -- The Google account (google_accounts.sub) this session signed in with.
@@ -320,7 +322,7 @@ export class Store {
     this.db.exec('DROP TABLE IF EXISTS user_subscriptions; DROP TABLE IF EXISTS subscription_syncs;');
 
     const sessionColumns = this.db.prepare("SELECT name FROM pragma_table_info('sessions')").all() as { name: string }[];
-    for (const column of ['created_ip', 'created_country', 'last_ip', 'last_country']) {
+    for (const column of ['created_ip', 'created_country', 'created_place', 'last_ip', 'last_country', 'last_place']) {
       if (!sessionColumns.some((c) => c.name === column)) {
         this.db.exec(`ALTER TABLE sessions ADD COLUMN ${column} TEXT`);
       }
@@ -450,8 +452,8 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO sessions (id, user_id, kind, created_at, last_used_at, user_agent,
-                               created_ip, created_country, last_ip, last_country, google_sub)
-         VALUES (?, ?, 'userscript', ?, ?, ?, ?, ?, ?, ?, ?)`,
+                               created_ip, created_country, created_place, last_ip, last_country, last_place, google_sub)
+         VALUES (?, ?, 'userscript', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         sessionId,
@@ -461,8 +463,10 @@ export class Store {
         opts.userAgent ?? null,
         opts.client?.ip ?? null,
         opts.client?.country ?? null,
+        opts.client?.place ?? null,
         opts.client?.ip ?? null,
         opts.client?.country ?? null,
+        opts.client?.place ?? null,
         opts.googleSub ?? null,
       );
     return { token: this.insertRefreshToken(userId, sessionId, now, now + ttlSeconds * 1000), sessionId };
@@ -576,10 +580,11 @@ export class Store {
   private touchSession(sessionId: string, now: number, client?: ClientInfo): void {
     this.db
       .prepare(
-        `UPDATE sessions SET last_used_at = ?, last_ip = COALESCE(?, last_ip), last_country = COALESCE(?, last_country)
+        `UPDATE sessions SET last_used_at = ?, last_ip = COALESCE(?, last_ip), last_country = COALESCE(?, last_country),
+                             last_place = COALESCE(?, last_place)
          WHERE id = ?`,
       )
-      .run(now, client?.ip ?? null, client?.country ?? null, sessionId);
+      .run(now, client?.ip ?? null, client?.country ?? null, client?.place ?? null, sessionId);
   }
 
   createWebSession(
@@ -593,8 +598,8 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO sessions (id, user_id, kind, created_at, last_used_at, user_agent,
-                               created_ip, created_country, last_ip, last_country, web_token_hash, expires_at, google_sub)
-         VALUES (?, ?, 'web', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                               created_ip, created_country, created_place, last_ip, last_country, last_place, web_token_hash, expires_at, google_sub)
+         VALUES (?, ?, 'web', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         randomUUID(),
@@ -604,8 +609,10 @@ export class Store {
         opts.userAgent ?? null,
         opts.client?.ip ?? null,
         opts.client?.country ?? null,
+        opts.client?.place ?? null,
         opts.client?.ip ?? null,
         opts.client?.country ?? null,
+        opts.client?.place ?? null,
         sha256(token),
         now + ttlSeconds * 1000,
         opts.googleSub ?? null,
@@ -634,14 +641,16 @@ export class Store {
     userAgent: string | null;
     ip: string | null;
     country: string | null;
+    place: string | null;
     createdIp: string | null;
     createdCountry: string | null;
+    createdPlace: string | null;
     /** The email of the Google account the session signed in with; null if unknown. */
     googleEmail: string | null;
   }> {
     const rows = this.db
       .prepare(
-        `SELECT sessions.id, kind, created_at, last_used_at, user_agent, last_ip, last_country, created_ip, created_country,
+        `SELECT sessions.id, kind, created_at, last_used_at, user_agent, last_ip, last_country, last_place, created_ip, created_country, created_place,
                 g.email AS google_email
          FROM sessions LEFT JOIN google_accounts g ON g.sub = sessions.google_sub AND g.user_id = sessions.user_id
          WHERE sessions.user_id = ? AND ${LIVE_SESSION} ORDER BY last_used_at DESC`,
@@ -654,8 +663,10 @@ export class Store {
       user_agent: string | null;
       last_ip: string | null;
       last_country: string | null;
+      last_place: string | null;
       created_ip: string | null;
       created_country: string | null;
+      created_place: string | null;
       google_email: string | null;
     }>;
     return rows.map((r) => ({
@@ -666,8 +677,10 @@ export class Store {
       userAgent: r.user_agent,
       ip: r.last_ip,
       country: r.last_country,
+      place: r.last_place,
       createdIp: r.created_ip,
       createdCountry: r.created_country,
+      createdPlace: r.created_place,
       googleEmail: r.google_email,
     }));
   }

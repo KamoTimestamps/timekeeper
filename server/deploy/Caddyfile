@@ -17,9 +17,9 @@ devel.kamotimestamps.com {
 
 	# Connections that did not come through Cloudflare cannot claim a country.
 	import /etc/caddy/cloudflare-peer.caddy
-	request_header @notViaCloudflare -CF-IPCountry
+	request_header @notViaCloudflare -CF-IPCountry -CF-IPCity -CF-Region-Code
 
-	# The app trusts these two headers (TRUST_PROXY_HEADERS=true) and listens on loopback only.
+	# The app trusts these headers (TRUST_PROXY_HEADERS=true) and listens on loopback only.
 	# header_up replaces anything the client sent under the same name.
 	# WebSocket upgrades (/sync/ws) are proxied automatically.
 	reverse_proxy 127.0.0.1:8787 {

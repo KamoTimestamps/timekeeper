@@ -52,7 +52,7 @@ fi
 chmod 600 "$ENV_FILE"
 # The landing page only accepts requests from this origin (must match the Caddyfile's site address).
 grep -q '^PUBLIC_ORIGIN=' "$ENV_FILE" || echo 'PUBLIC_ORIGIN=https://devel.kamotimestamps.com' >> "$ENV_FILE"
-# Caddy (below) sets X-Client-IP / X-Client-Country and the app only listens on loopback.
+# Caddy (below) sets X-Client-IP / -Country / -City / -Region and the app only listens on loopback.
 grep -q '^TRUST_PROXY_HEADERS=' "$ENV_FILE" || echo 'TRUST_PROXY_HEADERS=true' >> "$ENV_FILE"
 
 log "Installing dependencies"
@@ -66,7 +66,7 @@ fi
 systemctl enable timekeeper-server >/dev/null 2>&1
 
 # Cloudflare proxies this site, so the connecting address is always a Cloudflare edge. Caddy may only
-# believe CF-Connecting-IP / CF-IPCountry when the peer really is in Cloudflare's published ranges,
+# believe CF-Connecting-IP / CF-IPCountry / CF-IPCity / CF-Region-Code when the peer really is in Cloudflare's published ranges,
 # otherwise anyone who reaches the origin directly could forge a location.
 caddy_changed=0
 mkdir -p "$tmp/caddy-backup"

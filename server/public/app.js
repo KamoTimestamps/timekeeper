@@ -108,7 +108,12 @@ function flag(country) {
     : '';
 }
 
-const place = (country, ip) => [flag(country), ip].filter(Boolean).join(' ') || 'Unknown';
+// "Astoria, NY, USA": city (and state, where the server kept one), then the country. Without a
+// city that is just the country; with no location at all, the IP address is the best there is.
+function place(country, city, ip) {
+  const where = [city, country && (country === 'US' ? 'USA' : countryName(country))].filter(Boolean).join(', ');
+  return [flag(country), where || ip].filter(Boolean).join(' ');
+}
 
 function countryName(code) {
   try {
@@ -118,13 +123,17 @@ function countryName(code) {
   }
 }
 
+// The IP stays in the tooltip: a stolen token used elsewhere is easier to spot with the exact address.
 function renderLocation(session) {
   const notes = [];
-  if (session.country) notes.push(countryName(session.country));
-  if (session.createdIp && (session.createdIp !== session.ip || session.createdCountry !== session.country)) {
-    notes.push(`Signed in from ${place(session.createdCountry, session.createdIp)}`);
+  if (session.ip) notes.push(session.ip);
+  const moved =
+    session.createdIp !== session.ip || session.createdCountry !== session.country || session.createdPlace !== session.place;
+  if (moved && (session.createdIp || session.createdCountry)) {
+    notes.push(`Signed in from ${place(session.createdCountry, session.createdPlace, session.createdIp)}`);
   }
-  return el('td', { title: notes.join(' · ') }, session.ip || session.country ? place(session.country, session.ip) : '—');
+  const shown = session.ip || session.country ? place(session.country, session.place, session.ip) : '—';
+  return el('td', { title: notes.join(' · ') }, shown);
 }
 
 // `membersOnly` is only present once a userscript has reported the video, so no badge means "not known to be".
