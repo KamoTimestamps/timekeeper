@@ -7,7 +7,7 @@ import {
   formatTimestampLines,
   getTimestampSuffix,
 } from "./util";
-import { DISPLAY_VERSION } from "./build-info";
+import { BUILD_TIME, DISPLAY_VERSION } from "./build-info";
 import { PANE_STYLES } from "./styles";
 import { HEADER_ICON_DEFAULT_URL, HEADER_ICON_HOVER_URL } from "./header-icons";
 import { addTooltip, hideActiveTooltip, cleanupAllTooltips } from "./tooltip";
@@ -3412,6 +3412,9 @@ if (!isLiveChatFrame()) {
 
       versionDisplay.textContent = `v${DISPLAY_VERSION}`;
       versionDisplay.classList.add("ytls-version-display"); // Add class for CSS targeting
+      if (BUILD_TIME) {
+        addTooltip(versionDisplay, `Built ${BUILD_TIME.toLocaleString()}`);
+      }
 
       // Create a wrapper for version and backup indicator
       const versionWrapper = document.createElement("span");

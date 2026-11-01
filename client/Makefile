@@ -1,4 +1,4 @@
-.PHONY: build build-devel server server-devel watch bump install release release-push
+.PHONY: build build-devel dev server server-devel watch bump install release release-push
 
 build:
 	@pnpm install --frozen-lockfile
@@ -27,6 +27,18 @@ server-devel: install
 	@pnpm dlx http-server -a 127.0.0.1 -p0 -c-1 .. &
 	@sleep 1 && open "http://127.0.0.1:8080/timekeeper.devel.user.js" 2>/dev/null || true
 	@wait
+
+# Rebuilds the local-channel userscript on every source change and serves it from ../.local so
+# Violentmonkey's "Track external edits" reloads it. Not committed; see AGENTS.md.
+DEV_PORT ?= 8765
+
+dev:
+	@pnpm install --frozen-lockfile
+	@mkdir -p ../.local
+	@trap 'kill 0' INT TERM EXIT; \
+	DEV_PORT=$(DEV_PORT) pnpm run watch:userscript & \
+	pnpm exec http-server -a 127.0.0.1 -p $(DEV_PORT) -c-1 ../.local & \
+	wait
 
 watch: install
 	@pnpm dlx watchman-make --pattern 'src/**' 'package.json' 'Makefile' --target build

@@ -18,4 +18,20 @@ module.exports = {
     syncApiUrl: 'https://devel.kamotimestamps.com',
     syncGoogleClientId: '308989572223-cdnvpn65mc51oqneu7po3og51uf5ahsb.apps.googleusercontent.com',
   },
+  // Uncommitted working-tree builds for `make dev`: written to the gitignored .local/ directory,
+  // served over localhost and tracked by Violentmonkey ("Track external edits"). Installs as a
+  // separate script from the other channels, so disable those while testing.
+  local: {
+    outputFile: 'timekeeper.local.user.js',
+    outDir: '.local',
+    scriptName: 'Timekeeper (local)',
+    selfUpdate: false, // Violentmonkey never update-checks localhost URLs; tracking replaces it
+    minify: false,
+    // The commit hash would mislead (the build includes uncommitted changes), so show a
+    // monotonic build number ("+local.42") and expose the build time as a tooltip instead.
+    buildSuffix: '+local',
+    buildStamp: true,
+    syncApiUrl: 'https://devel.kamotimestamps.com',
+    syncGoogleClientId: '308989572223-cdnvpn65mc51oqneu7po3og51uf5ahsb.apps.googleusercontent.com',
+  },
 };

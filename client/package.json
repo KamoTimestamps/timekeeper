@@ -12,6 +12,7 @@
     "build:firefox": "extension build --browser firefox",
     "build:userscript": "node build-tools/build.js",
     "build:userscript:devel": "node build-tools/build.js --channel=devel",
+    "watch:userscript": "node build-tools/build.js --channel=local --watch",
     "clean": "rm -rf dist",
     "release": "bash build-tools/release.sh",
     "release:patch": "bash build-tools/release.sh patch",

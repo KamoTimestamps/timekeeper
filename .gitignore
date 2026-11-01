@@ -1,6 +1,9 @@
 dist/
 node_modules/
 
+# Local-channel userscript build served by `make dev` (client/Makefile)
+.local/
+
 # Extension.js local session state
 .extension-js
 
