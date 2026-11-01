@@ -189,6 +189,17 @@ export interface TimestampVersion {
   current: boolean;
 }
 
+/**
+ * Whether a `sessions` row is still usable, with `now` bound twice. A browser (web) session lasts
+ * until its cookie expires; a userscript session lasts while any of its refresh tokens is unexpired.
+ * Rows that fail this are swept lazily when the next session is created, so reads must check it too.
+ */
+const LIVE_SESSION = `(
+  (sessions.kind = 'web' AND sessions.expires_at > ?)
+  OR (sessions.kind <> 'web' AND EXISTS (
+    SELECT 1 FROM refresh_tokens WHERE refresh_tokens.family_id = sessions.id AND refresh_tokens.expires_at > ?))
+)`;
+
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
 export class Store {
@@ -445,8 +456,12 @@ export class Store {
   // --- sessions (shown on the landing page; the landing page itself signs in with a cookie session) ---
 
   /** True while the session has not been revoked or expired. Access tokens are only good for live sessions. */
-  sessionExists(userId: string, sessionId: string): boolean {
-    return this.db.prepare('SELECT 1 FROM sessions WHERE id = ? AND user_id = ?').get(sessionId, userId) !== undefined;
+  sessionExists(userId: string, sessionId: string, now = Date.now()): boolean {
+    return (
+      this.db
+        .prepare(`SELECT 1 FROM sessions WHERE id = ? AND user_id = ? AND ${LIVE_SESSION}`)
+        .get(sessionId, userId, now, now) !== undefined
+    );
   }
 
   /** Bumps last activity, and where it came from when the origin is known. */
@@ -502,7 +517,7 @@ export class Store {
     return { sessionId: row.id, userId: row.user_id };
   }
 
-  listSessions(userId: string): Array<{
+  listSessions(userId: string, now = Date.now()): Array<{
     id: string;
     kind: string;
     createdAt: number;
@@ -516,9 +531,9 @@ export class Store {
     const rows = this.db
       .prepare(
         `SELECT id, kind, created_at, last_used_at, user_agent, last_ip, last_country, created_ip, created_country
-         FROM sessions WHERE user_id = ? ORDER BY last_used_at DESC`,
+         FROM sessions WHERE user_id = ? AND ${LIVE_SESSION} ORDER BY last_used_at DESC`,
       )
-      .all(userId) as Array<{
+      .all(userId, now, now) as Array<{
       id: string;
       kind: string;
       created_at: number;

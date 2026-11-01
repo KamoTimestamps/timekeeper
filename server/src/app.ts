@@ -243,17 +243,17 @@ export async function buildApp({ config, store, verifyGoogle, youtube, backfillV
   // instead of in the URL (which would end up in access logs).
   app.get('/sync/ws', { websocket: true }, (socket) => {
     const authTimer = setTimeout(() => socket.close(4401, 'auth timeout'), WS_AUTH_TIMEOUT_MS);
-    let authenticated = false;
+    let handshakeStarted = false;
 
     socket.on('close', () => clearTimeout(authTimer));
     socket.on('message', async (raw) => {
-      if (authenticated) return; // server -> client only after the handshake
+      if (handshakeStarted) return; // server -> client only after the handshake
 
       try {
         const message = WsAuthMessage.safeParse(JSON.parse(raw.toString()));
         if (!message.success) return socket.close(4400, 'bad auth message');
 
-        authenticated = true; // set before awaiting so a second message can't start a second handshake
+        handshakeStarted = true; // set before awaiting so a second message can't start a second handshake
         const claims = await authenticateToken(message.data.token);
         if (!claims) return socket.close(4401, 'unauthorized');
         if (socket.readyState !== socket.OPEN) return;

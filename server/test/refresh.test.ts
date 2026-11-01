@@ -112,3 +112,33 @@ describe('refresh token families (store)', () => {
     new Store(path).close(); // reopening an already-migrated database is a no-op
   });
 });
+
+describe('session liveness (store)', () => {
+  it('stops listing and accepting sessions whose cookie or refresh tokens have expired', () => {
+    const store = new Store(':memory:');
+    const { user } = store.upsertGoogleUser({ sub: 's', email: 'a@example.com' });
+    const t0 = 1_000_000;
+    const script = store.createRefreshToken(user.id, 3600, { now: t0 });
+    store.createWebSession(user.id, 3600, { now: t0 });
+    const kinds = (now: number) => store.listSessions(user.id, now).map((s) => s.kind).sort();
+
+    assert.deepEqual(kinds(t0 + 1800 * SECOND), ['userscript', 'web']);
+    assert.equal(store.sessionExists(user.id, script.sessionId, t0 + 1800 * SECOND), true);
+
+    assert.deepEqual(kinds(t0 + 3601 * SECOND), [], 'both lapse without anything having swept them');
+    assert.equal(store.sessionExists(user.id, script.sessionId, t0 + 3601 * SECOND), false);
+    store.close();
+  });
+
+  it('keeps a userscript session alive for as long as its newest refresh token is', () => {
+    const store = new Store(':memory:');
+    const { user } = store.upsertGoogleUser({ sub: 's', email: 'a@example.com' });
+    const t0 = 1_000_000;
+    const { token, sessionId } = store.createRefreshToken(user.id, opts.ttlSeconds, { now: t0 });
+    store.rotateRefreshToken(token, opts, t0 + 3000 * SECOND);
+
+    assert.equal(store.sessionExists(user.id, sessionId, t0 + 5000 * SECOND), true, 'the rotated token outlives the first');
+    assert.equal(store.sessionExists(user.id, sessionId, t0 + 6601 * SECOND), false);
+    store.close();
+  });
+});
