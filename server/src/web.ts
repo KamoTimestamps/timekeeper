@@ -65,9 +65,11 @@ function decodeCursor(cursor: string): TimestampPageKey | null {
 const buildCsp = (features: Config['features']) => [
   "default-src 'none'",
   "script-src 'self' https://accounts.google.com/gsi/client",
-  // The hash is the one inline stylesheet Google's button script injects.
-  "style-src 'self' https://accounts.google.com/gsi/style 'sha256-RU4sU0AaS8IBGZx8XrGt/pa9A5SLA3dQszGeqT5L3Kw='",
-  // Google's button sets inline style attributes; this allows those only, never <style> blocks.
+  "style-src 'self' https://accounts.google.com/gsi/style",
+  // Google's button script injects an inline <style> whose content differs by browser and over time, and
+  // Google documents no hash or nonce for it, so a pinned hash breaks (it did in Firefox). Scripts stay strict.
+  "style-src-elem 'self' https://accounts.google.com/gsi/style 'unsafe-inline'",
+  // Google's button also sets inline style attributes.
   "style-src-attr 'unsafe-inline'",
   // Google's sign-in button, and the mini player's YouTube embed when that feature is on.
   `frame-src https://accounts.google.com/gsi/${features.miniPlayer ? ' https://www.youtube-nocookie.com' : ''}`,

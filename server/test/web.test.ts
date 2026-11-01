@@ -34,7 +34,11 @@ describe('landing page', () => {
     const page = await h.app.inject({ method: 'GET', url: '/' });
     assert.equal(page.statusCode, 200);
     assert.match(page.headers['content-type'] as string, /text\/html/);
-    assert.match(page.headers['content-security-policy'] as string, /default-src 'none'/);
+    const csp = page.headers['content-security-policy'] as string;
+    assert.match(csp, /default-src 'none'/);
+    assert.match(csp, /script-src 'self' https:\/\/accounts\.google\.com\/gsi\/client(;|$)/, 'scripts stay strict');
+    assert.match(csp, /style-src-elem [^;]*'unsafe-inline'/, "Google's injected <style> varies by browser");
+    assert.doesNotMatch(csp, /'sha256-/, "a hash in style-src-elem makes browsers ignore 'unsafe-inline'");
     assert.match(page.body, /Timekeeper/);
     for (const asset of ['/assets/app.js', '/assets/theme.js', '/assets/style.css', '/assets/favicon.png', '/assets/TwemojiCountryFlags.woff2']) {
       assert.equal((await h.app.inject({ method: 'GET', url: asset })).statusCode, 200, asset);
