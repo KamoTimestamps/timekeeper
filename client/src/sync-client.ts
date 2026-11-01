@@ -125,7 +125,11 @@ const OAuthMessageSchema = object<{
 // State
 // ============================================================================
 
+/** The connection to the backend. Independent of SyncCycle: a cycle can run (and fail) while offline or online. */
 type SyncStatus = 'signed-out' | 'connecting' | 'online' | 'offline' | 'error';
+
+/** The latest pull/push cycle: idle -> running -> idle (ok) | failed (a retry is scheduled, running again on the next attempt). */
+type SyncCycle = 'idle' | 'running' | 'failed';
 
 /** Thrown when the backend no longer accepts our session; the user has to sign in again. */
 class SyncAuthError extends Error {}
@@ -149,7 +153,7 @@ interface Cursors {
 
 let status: SyncStatus = 'signed-out';
 let statusMessage = '';
-let syncing = false;
+let cycle: SyncCycle = 'idle';
 let lastSyncedAt: number | null = null;
 /** Local rows the server refuses outright (e.g. oversized); skipped so they can't block the rest. */
 const skippedGuids = new Set<string>();
@@ -263,6 +267,8 @@ function describeSyncStatus(auth = getSyncAuthState()): { text: string; color: s
   if (status === 'connecting') return { text: statusMessage || 'Connecting…', color: ORANGE, busy: true };
   if (auth.isSignedIn && status === 'offline') return { text: statusMessage || 'Offline. Retrying…', color: ORANGE, busy: false };
   if (auth.isSignedIn && status === 'online') {
+    if (cycle === 'failed') return { text: 'Sync failed. Retrying…', color: ORANGE, busy: false };
+    const syncing = cycle === 'running';
     let text = syncing ? 'Syncing…' : 'Live sync on';
     if (!syncing && lastSyncedAt) text += ` · last synced ${new Date(lastSyncedAt).toLocaleTimeString()}`;
     if (!syncing && skippedGuids.size > 0) {
@@ -294,6 +300,11 @@ export function setOnSyncStatusChange(fn: (() => void) | null) {
 function setStatus(next: SyncStatus, message = '') {
   status = next;
   statusMessage = message;
+  updateSyncStatusDisplay();
+}
+
+function setCycle(next: SyncCycle) {
+  cycle = next;
   updateSyncStatusDisplay();
 }
 
@@ -756,8 +767,8 @@ async function pushPending() {
 
 async function syncCycle() {
   if (stopped) return;
-  syncing = true;
-  updateSyncStatusDisplay();
+  setCycle('running');
+  let outcome: SyncCycle = 'idle';
   try {
     // Offline-to-online or gap recovery pulls first so the push sees the freshest server state;
     // otherwise the websocket has kept us current and the push goes out immediately.
@@ -775,10 +786,10 @@ async function syncCycle() {
     }
     log('Sync cycle failed:', err, 'warn');
     pullNeeded = true;
+    outcome = 'failed';
     scheduleRetry();
   } finally {
-    syncing = false;
-    updateSyncStatusDisplay();
+    setCycle(outcome);
   }
 }
 
@@ -900,6 +911,7 @@ async function startSync() {
     deviceId = typeof stored === 'string' && stored ? stored : crypto.randomUUID();
   }
   stopped = false;
+  cycle = 'idle';
   retryAttempts = 0;
   reconnectAttempts = 0;
   unsubscribeWrites = TimestampModel.onTimestampsWritten(onLocalWrite);
