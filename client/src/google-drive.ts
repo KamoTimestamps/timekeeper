@@ -1065,15 +1065,23 @@ export async function saveAutoBackupSettings() {
   }
 }
 
+/** Drops any pending retry: its timer and the count and delay the status shows for it. */
+function cancelAutoBackupRetry() {
+  if (autoBackupBackoffTimeoutId) {
+    clearTimeout(autoBackupBackoffTimeoutId);
+    autoBackupBackoffTimeoutId = null;
+  }
+  AppState.setAutoBackupRetryAttempts(0);
+  AppState.setAutoBackupBackoffMs(null);
+}
+
 function clearAutoBackupSchedule() {
   if (autoBackupIntervalId) {
     clearInterval(autoBackupIntervalId);
     autoBackupIntervalId = null;
   }
-  if (autoBackupBackoffTimeoutId) {
-    clearTimeout(autoBackupBackoffTimeoutId);
-    autoBackupBackoffTimeoutId = null;
-  }
+  // Without this the status keeps saying "Retry in Nm" after the timer is gone.
+  cancelAutoBackupRetry();
 }
 
 export function formatBackupTime(ts: number): string {
@@ -1269,9 +1277,7 @@ export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
       return;
     }
 
-    clearTimeout(autoBackupBackoffTimeoutId);
-    autoBackupBackoffTimeoutId = null;
-    AppState.setAutoBackupBackoffMs(null);
+    cancelAutoBackupRetry();
     log('Auto backup: manual run cleared backoff and will proceed immediately');
   }
 
@@ -1284,13 +1290,8 @@ export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
     if (outcome === 'uploaded') {
       AppState.setLastAutoBackupAt(Date.now());
     }
-    AppState.setAutoBackupRetryAttempts(0);
-    AppState.setAutoBackupBackoffMs(null);
+    cancelAutoBackupRetry();
     AppState.setAutoBackupFailed(false);
-    if (autoBackupBackoffTimeoutId) {
-      clearTimeout(autoBackupBackoffTimeoutId);
-      autoBackupBackoffTimeoutId = null;
-    }
     await saveAutoBackupSettings();
   } catch (err) {
     log('Auto backup failed:', err, 'error');
@@ -1306,14 +1307,8 @@ export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
       await saveGoogleAuthState();
       updateAuthStatusDisplay('error', 'Authorization expired. Please sign in again.');
       updateBackupStatusDisplay();
-      // Reset retry state
-      AppState.setAutoBackupRetryAttempts(0);
-      AppState.setAutoBackupBackoffMs(null);
+      cancelAutoBackupRetry();
       AppState.setAutoBackupFailed(false);
-      if (autoBackupBackoffTimeoutId) {
-        clearTimeout(autoBackupBackoffTimeoutId);
-        autoBackupBackoffTimeoutId = null;
-      }
     } else if (AppState.getState().auth.autoBackupRetryAttempts < AUTO_BACKUP_MAX_RETRY_ATTEMPTS) {
       // Non-auth error - retry with exponential backoff
       const nextAttempts = AppState.getState().auth.autoBackupRetryAttempts + 1;
@@ -1332,8 +1327,7 @@ export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
     } else {
       // All retries exhausted for non-auth errors. Show the failure, and start the retry count over
       // so the next scheduled run gets its full retries instead of giving up on its first error.
-      AppState.setAutoBackupBackoffMs(null);
-      AppState.setAutoBackupRetryAttempts(0);
+      cancelAutoBackupRetry();
       AppState.setAutoBackupFailed(true);
     }
   } finally {
