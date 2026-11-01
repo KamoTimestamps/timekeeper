@@ -438,7 +438,26 @@ if (!isLiveChatFrame()) {
   }
 
   let timeUpdateIntervalId: ReturnType<typeof setInterval> | null = null;
-  let isLoadingTimestamps = false; // Track if timestamps are currently loading
+  /**
+   * Where the pane is with the page: nothing loaded, fetching a video's timestamps (edits are locked),
+   * or showing them. The video is the one the pane acts on; navigating keeps the old one until the
+   * next page's load begins.
+   */
+  type PageLoad =
+    | { phase: "unloaded" }
+    | { phase: "loading"; videoId: string | null }
+    | { phase: "ready"; videoId: string | null };
+  let pageLoad: PageLoad = { phase: "unloaded" };
+  /** Bumped by every navigation, so a load that finds it changed has been superseded and must leave the UI alone. */
+  let navigationId = 0;
+
+  function isLoadingTimestamps(): boolean {
+    return pageLoad.phase === "loading";
+  }
+
+  function getCurrentVideoId(): string | null {
+    return pageLoad.phase === "unloaded" ? null : pageLoad.videoId;
+  }
   const TIMESTAMP_DELETE_CLASS = "ytls-timestamp-pending-delete";
   const TIMESTAMP_HIGHLIGHT_CLASS = "ytls-timestamp-highlight";
 
@@ -696,7 +715,7 @@ if (!isLiveChatFrame()) {
     if (event.data) {
       if (
         event.data.type === "timestamps_updated" &&
-        event.data.videoId === currentLoadedVideoId
+        event.data.videoId === getCurrentVideoId()
       ) {
         log(
           "Debouncing timestamp load due to external update for video:",
@@ -777,7 +796,6 @@ if (!isLiveChatFrame()) {
   let isMouseOverTimestamps = false; // Default to false
   let settingsModalInstance: HTMLDivElement | null = null; // To keep a reference to the settings modal
   let settingsCogButtonElement: HTMLButtonElement | null = null; // To keep a reference to the settings cog button
-  let currentLoadedVideoId: string | null = null; // Track the currently loaded video to prevent duplicate loads
   let visibilityAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let visibilitySizingTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let scrollbarHideTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -993,7 +1011,7 @@ if (!isLiveChatFrame()) {
 
   // Ensure that when there are no timestamps shown, a friendly placeholder appears
   function ensureEmptyPlaceholder() {
-    TimestampView.ensureEmptyPlaceholder(list, isLoadingTimestamps);
+    TimestampView.ensureEmptyPlaceholder(list, isLoadingTimestamps());
   }
 
   // Display a centered placeholder message inside the timestamps list
@@ -1006,9 +1024,8 @@ if (!isLiveChatFrame()) {
   }
 
   function setLoadingState(loading: boolean) {
+    pageLoad = { phase: loading ? "loading" : "ready", videoId: getCurrentVideoId() };
     if (!pane || !list) return;
-
-    isLoadingTimestamps = loading;
 
     if (loading) {
       // Show the pane and display a placeholder message while we load timestamps
@@ -1042,7 +1059,7 @@ if (!isLiveChatFrame()) {
 
     // Ensure empty placeholder is shown now that loading finished
     if (
-      !isLoadingTimestamps &&
+      !isLoadingTimestamps() &&
       list &&
       !TimestampView.hasPaneError(list)
     ) {
@@ -1260,7 +1277,7 @@ if (!isLiveChatFrame()) {
     updateIndentMarkers();
     updateSeekbarMarkers();
     syncTimestampStateFromUI();
-    saveTimestampRows(currentLoadedVideoId, changedRows);
+    saveTimestampRows(getCurrentVideoId(), changedRows);
     mostRecentlyModifiedTimestampGuid = null;
     return true;
   }
@@ -1305,7 +1322,7 @@ if (!isLiveChatFrame()) {
   }
 
   function handleClick(event: MouseEvent | TouchEvent) {
-    if (!list || isLoadingTimestamps) {
+    if (!list || isLoadingTimestamps()) {
       return;
     }
 
@@ -1401,7 +1418,7 @@ if (!isLiveChatFrame()) {
         const tsGuid = timestampLi.dataset.guid;
         if (tsCommentInput && tsGuid) {
           saveSingleTimestampDirect(
-            currentLoadedVideoId,
+            getCurrentVideoId(),
             tsGuid,
             newTime,
             tsCommentInput.value,
@@ -1419,7 +1436,7 @@ if (!isLiveChatFrame()) {
       // Drop typed-but-unsaved edits so they can't resurrect the rows we're clearing
       cancelPendingCommentSaves();
       setTimestampsInState([]);
-      clearVideoTimestamps(currentLoadedVideoId);
+      clearVideoTimestamps(getCurrentVideoId());
       mostRecentlyModifiedTimestampGuid = null;
       // Show placeholder when the list is empty after a clear
       ensureEmptyPlaceholder();
@@ -1513,7 +1530,7 @@ if (!isLiveChatFrame()) {
       updateIndentMarkers();
       const currentTime = Number.parseInt(anchor.dataset.time ?? "0", 10);
       saveSingleTimestampDirect(
-        currentLoadedVideoId,
+        getCurrentVideoId(),
         timestampGuid,
         currentTime,
         commentInput.value,
@@ -1607,7 +1624,7 @@ if (!isLiveChatFrame()) {
         clearTimeout(existing.timeoutId);
       }
 
-      const videoIdAtEdit = currentLoadedVideoId;
+      const videoIdAtEdit = getCurrentVideoId();
       const flush = () => {
         const entry = pendingCommentSaves.get(timestampGuid);
         if (entry) {
@@ -1699,7 +1716,7 @@ if (!isLiveChatFrame()) {
         updateTimeDifferences();
         updateIndentMarkers();
         saveSingleTimestampDirect(
-          currentLoadedVideoId,
+          getCurrentVideoId(),
           timestampGuid,
           currentTime,
           commentInput.value,
@@ -1784,7 +1801,7 @@ if (!isLiveChatFrame()) {
         updateIndentMarkers();
         updateSeekbarMarkers();
         updateScroll();
-        deleteSingleTimestamp(currentLoadedVideoId, guid);
+        deleteSingleTimestamp(getCurrentVideoId(), guid);
         mostRecentlyModifiedTimestampGuid = null;
         // If this was the last timestamp, show the empty placeholder
         ensureEmptyPlaceholder();
@@ -1901,7 +1918,7 @@ if (!isLiveChatFrame()) {
       updateSeekbarMarkers();
       if (!doNotSave) {
         saveSingleTimestampDirect(
-          currentLoadedVideoId,
+          getCurrentVideoId(),
           timestampGuid,
           sanitizedStart,
           comment,
@@ -2167,7 +2184,7 @@ if (!isLiveChatFrame()) {
     videoId: string | null | undefined,
     rows: TimestampRecord[],
   ) {
-    if (!videoId || rows.length === 0 || isLoadingTimestamps) return;
+    if (!videoId || rows.length === 0 || isLoadingTimestamps()) return;
     if (isEditingBlocked()) return;
 
     saveRowsToIndexedDB(videoId, rows)
@@ -2191,7 +2208,7 @@ if (!isLiveChatFrame()) {
 
   // Soft-delete every timestamp of the video ("clear all").
   function clearVideoTimestamps(videoId: string | null | undefined) {
-    if (!videoId || isLoadingTimestamps) return;
+    if (!videoId || isLoadingTimestamps()) return;
     if (isEditingBlocked()) return;
 
     removeFromIndexedDB(videoId)
@@ -2231,7 +2248,7 @@ if (!isLiveChatFrame()) {
     start: number,
     comment: string,
   ) {
-    if (!videoId || isLoadingTimestamps) return;
+    if (!videoId || isLoadingTimestamps()) return;
     if (isEditingBlocked()) return;
 
     persistTimestamp(videoId, guid, start, comment);
@@ -2272,7 +2289,7 @@ if (!isLiveChatFrame()) {
     videoId: string | null | undefined,
     guid: string,
   ) {
-    if (!videoId || isLoadingTimestamps) return;
+    if (!videoId || isLoadingTimestamps()) return;
     if (isEditingBlocked()) return;
 
     deleteSingleTimestampFromIndexedDB(videoId, guid)
@@ -2298,7 +2315,7 @@ if (!isLiveChatFrame()) {
       alert("Cannot export timestamps while an error is being displayed.");
       return;
     }
-    const videoId = currentLoadedVideoId;
+    const videoId = getCurrentVideoId();
     if (!videoId) return;
     log(`Exporting timestamps for video ID: ${videoId}`);
     const timestamps = extractTimestampRecords();
@@ -2352,7 +2369,7 @@ if (!isLiveChatFrame()) {
   function isEditingBlocked(): boolean {
     if (!list) return true;
     if (TimestampView.hasPaneError(list)) return true;
-    if (isLoadingTimestamps) return true;
+    if (isLoadingTimestamps()) return true;
     if (AppState.getTimestampsDbError() !== null) return true;
     return false;
   }
@@ -2504,7 +2521,8 @@ if (!isLiveChatFrame()) {
     settingsModalInstance = null;
     settingsCogButtonElement = null;
     isMouseOverTimestamps = false;
-    currentLoadedVideoId = null;
+    navigationId++;
+    pageLoad = { phase: "unloaded" };
 
     if (paneObserver) {
       try {
@@ -2586,6 +2604,7 @@ if (!isLiveChatFrame()) {
     if (!pane || !list) {
       return;
     }
+    const navId = navigationId;
     const previousScrollTop = list.scrollTop;
     let shouldRestoreScroll = true;
     const restoreScrollPosition = () => {
@@ -2595,6 +2614,7 @@ if (!isLiveChatFrame()) {
     };
     try {
       const validation = await validatePlayerAndVideoId();
+      if (navId !== navigationId) return;
       if (!validation.ok) {
         displayPaneError(validation.message);
         clearTimestampsDisplay();
@@ -2608,6 +2628,7 @@ if (!isLiveChatFrame()) {
 
       try {
         const dbTimestamps = await loadFromIndexedDB(videoId);
+        if (navId !== navigationId) return;
         if (dbTimestamps) {
           // Ensure all timestamps from DB have GUIDs
           finalTimestampsToDisplay = dbTimestamps.map((ts) => ({
@@ -2797,7 +2818,7 @@ if (!isLiveChatFrame()) {
       if (currentTime === lastTickSecond && index === lastTickIndex) return;
 
       // Update time display to stay in sync with video
-      const canUpdateDisplay = !!timeDisplay && !isLoadingTimestamps && !isSeeking;
+      const canUpdateDisplay = !!timeDisplay && !isLoadingTimestamps() && !isSeeking;
       if (canUpdateDisplay) {
         updateTimeDisplay(currentTime, player);
       }
@@ -3102,7 +3123,7 @@ if (!isLiveChatFrame()) {
         timestamps = parsed;
       } else if (typeof parsed === "object" && parsed !== null) {
         // Check if it's the full export format with ytls- keys
-        const currentVideoId = currentLoadedVideoId;
+        const currentVideoId = getCurrentVideoId();
         if (currentVideoId) {
           const key = `timekeeper-${currentVideoId}`;
           if (parsed[key] && Array.isArray(parsed[key].timestamps)) {
@@ -3235,7 +3256,7 @@ if (!isLiveChatFrame()) {
       log("Timestamps changed: Imported timestamps from file/clipboard");
       updateIndentMarkers();
       syncTimestampStateFromUI();
-      saveTimestampRows(currentLoadedVideoId, editedRows);
+      saveTimestampRows(getCurrentVideoId(), editedRows);
       updateSeekbarMarkers();
       updateScroll();
       // alert("Timestamps loaded and merged successfully!");
@@ -3523,7 +3544,7 @@ if (!isLiveChatFrame()) {
 
       function updateTime() {
         // Skip updates during loading or seeking
-        if (isLoadingTimestamps || isSeeking) {
+        if (isLoadingTimestamps() || isSeeking) {
           return;
         }
 
@@ -5590,6 +5611,9 @@ if (!isLiveChatFrame()) {
 
     // Track last handled URL so repeated history events don't trigger duplicate work
     setLastHandledUrl(window.location.href);
+    // A newer navigation supersedes this one at its next await: it must not touch the UI, which
+    // belongs to the newer one by then (it would unlock the pane while the new video still loads).
+    const navId = ++navigationId;
 
     // Remove any duplicate panes BEFORE initialization
     document.querySelectorAll("#ytls-pane").forEach((el, idx) => {
@@ -5598,13 +5622,14 @@ if (!isLiveChatFrame()) {
 
     await waitForYouTubeReady();
     await initializePaneIfNeeded();
+    if (navId !== navigationId) return;
 
-    currentLoadedVideoId = getVideoId(); // Update global video ID
+    pageLoad = { phase: "loading", videoId: getVideoId() };
     // yt-navigate-finish may not have fired for the page that was loaded directly; its data is in globals.
-    if (currentWatchPage?.videoId !== currentLoadedVideoId) noteWatchPage(null);
+    if (currentWatchPage?.videoId !== getCurrentVideoId()) noteWatchPage(null);
     const pageTitle = document.title;
     log("Page Title:", pageTitle);
-    log("Video ID:", currentLoadedVideoId);
+    log("Video ID:", getCurrentVideoId());
     log("Current URL:", window.location.href);
 
     // Ensure the UI is locked and shows the loading placeholder while we fetch data for the new video
@@ -5615,16 +5640,18 @@ if (!isLiveChatFrame()) {
 
     // loadTimestamps will get the videoId itself, load data from IndexedDB (migrating from localStorage if needed),
     await loadTimestamps();
+    if (navId !== navigationId) return;
 
     // Ensure seekbar markers are updated after timestamps are loaded
     updateSeekbarMarkers();
 
     // Set loading state to false after timestamps are loaded
     setLoadingState(false);
-    log("Timestamps loaded and UI unlocked for video:", currentLoadedVideoId);
+    log("Timestamps loaded and UI unlocked for video:", getCurrentVideoId());
 
     // Display the pane after loading timestamps (with correct visibility state)
     await displayPane();
+    if (navId !== navigationId) return;
 
     try {
       autoHighlightNearest(true);
@@ -5767,7 +5794,7 @@ if (!isLiveChatFrame()) {
     for (const videoId of videoIds) {
       safePostMessage({ type: "timestamps_updated", videoId, action: "synced" });
     }
-    if (currentLoadedVideoId && videoIds.includes(currentLoadedVideoId)) {
+    if (getCurrentVideoId() && videoIds.includes(getCurrentVideoId())) {
       loadTimestamps();
     }
   });
