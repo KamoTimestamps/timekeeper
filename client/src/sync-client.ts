@@ -125,8 +125,18 @@ const OAuthMessageSchema = object<{
 // State
 // ============================================================================
 
-/** The connection to the backend. Independent of SyncCycle: a cycle can run (and fail) while offline or online. */
-type SyncStatus = 'signed-out' | 'connecting' | 'online' | 'offline' | 'error';
+/**
+ * Where sync is. Syncing runs only in the last three states, which are the connection to the backend
+ * and independent of SyncCycle: a cycle can run (and fail) while offline or online. `error` is signed
+ * out, with the reason; `signing-in` says which step of the sign-in it is on.
+ */
+type SyncState =
+  | { kind: 'signed-out' }
+  | { kind: 'error'; message: string }
+  | { kind: 'signing-in'; step: string }
+  | { kind: 'connecting' }
+  | { kind: 'online' }
+  | { kind: 'offline' };
 
 /** The latest pull/push cycle: idle -> running -> idle (ok) | failed (a retry is scheduled, running again on the next attempt). */
 type SyncCycle = 'idle' | 'running' | 'failed';
@@ -151,8 +161,7 @@ interface Cursors {
   pullSeq: number;
 }
 
-let status: SyncStatus = 'signed-out';
-let statusMessage = '';
+let syncState: SyncState = { kind: 'signed-out' };
 let cycle: SyncCycle = 'idle';
 let lastSyncedAt: number | null = null;
 /** Local rows the server refuses outright (e.g. oversized); skipped so they can't block the rest. */
@@ -162,7 +171,6 @@ const watchPages = new Map<string, WatchPageAccess>();
 /** The watch-page status the server last accepted for each video, so an unchanged one isn't sent again. */
 const reportedWatchPages = new Map<string, string>();
 
-let stopped = true;
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
@@ -188,7 +196,6 @@ let queue: Promise<void> = Promise.resolve();
 let cyclePending = false;
 let refreshInFlight: Promise<string> | null = null;
 let deviceId = '';
-let signInInFlight = false;
 /** An access token the server refused although it looked valid; never reused, forces a refresh. */
 let rejectedAccessToken: string | null = null;
 
@@ -263,10 +270,12 @@ export function updateSyncStatusDisplay() {
 
 /** What the sync status says and what color it shows; `busy` while connecting or exchanging changes. */
 function describeSyncStatus(auth = getSyncAuthState()): { text: string; color: string; busy: boolean } {
-  if (status === 'error') return { text: statusMessage || 'Sync error', color: RED, busy: false };
-  if (status === 'connecting') return { text: statusMessage || 'Connecting…', color: ORANGE, busy: true };
-  if (auth.isSignedIn && status === 'offline') return { text: statusMessage || 'Offline. Retrying…', color: ORANGE, busy: false };
-  if (auth.isSignedIn && status === 'online') {
+  const state = syncState;
+  if (state.kind === 'error') return { text: state.message || 'Sync error', color: RED, busy: false };
+  if (state.kind === 'signing-in') return { text: state.step, color: ORANGE, busy: true };
+  if (state.kind === 'connecting') return { text: 'Connecting…', color: ORANGE, busy: true };
+  if (auth.isSignedIn && state.kind === 'offline') return { text: 'Offline. Retrying…', color: ORANGE, busy: false };
+  if (auth.isSignedIn && state.kind === 'online') {
     if (cycle === 'failed') return { text: 'Sync failed. Retrying…', color: ORANGE, busy: false };
     const syncing = cycle === 'running';
     let text = syncing ? 'Syncing…' : 'Live sync on';
@@ -297,10 +306,19 @@ export function setOnSyncStatusChange(fn: (() => void) | null) {
   onStatusChange = fn;
 }
 
-function setStatus(next: SyncStatus, message = '') {
-  status = next;
-  statusMessage = message;
+function setSyncState(next: SyncState) {
+  syncState = next;
   updateSyncStatusDisplay();
+}
+
+/** Whether sync is running (signed in, with an engine to push and pull), as opposed to signed out or signing in. */
+function isRunning(): boolean {
+  return syncState.kind === 'connecting' || syncState.kind === 'online' || syncState.kind === 'offline';
+}
+
+/** Moves between the connection states. Ignored once sync has stopped, so a late result can't revive it. */
+function setConnection(kind: 'connecting' | 'online' | 'offline') {
+  if (isRunning()) setSyncState({ kind });
 }
 
 function setCycle(next: SyncCycle) {
@@ -561,13 +579,12 @@ export function handleSyncOAuthRedirect(): boolean {
 
 export async function signInToSync() {
   if (!isSyncConfigured()) {
-    setStatus('error', 'Sync backend is not configured in this build');
+    setSyncState({ kind: 'error', message: 'Sync backend is not configured in this build' });
     return;
   }
-  if (getSyncAuthState().isSignedIn || signInInFlight) return;
-  signInInFlight = true;
+  if (getSyncAuthState().isSignedIn || syncState.kind === 'signing-in') return;
 
-  setStatus('connecting', 'Opening Google sign-in…');
+  setSyncState({ kind: 'signing-in', step: 'Opening Google sign-in…' });
   const nonce = crypto.randomUUID();
   // Listening before the popup opens guarantees we can't miss its message.
   const channel = new BroadcastChannel(OAUTH_CHANNEL);
@@ -585,10 +602,10 @@ export async function signInToSync() {
     const popup = window.open(authUrl.toString(), 'TimekeeperSyncAuth', 'width=500,height=600,menubar=no,toolbar=no,location=no');
     if (!popup) throw new Error('Popup blocked. Please enable popups for YouTube.');
 
-    setStatus('connecting', 'Waiting for Google sign-in…');
+    setSyncState({ kind: 'signing-in', step: 'Waiting for Google sign-in…' });
     const idToken = await waitForIdToken(channel, popup, nonce);
 
-    setStatus('connecting', 'Signing in to Timekeeper Sync…');
+    setSyncState({ kind: 'signing-in', step: 'Signing in to Timekeeper Sync…' });
     const res = await postJson('/auth/google', { idToken });
     if (!res.ok) throw new Error(res.status === 401 ? 'Google sign-in was rejected by the server' : `Sign-in failed (HTTP ${res.status})`);
     const session = SessionResponseSchema.safeParse(await res.json());
@@ -604,9 +621,7 @@ export async function signInToSync() {
   } catch (err) {
     channel.close();
     log('Sync sign-in failed:', err, 'error');
-    setStatus('error', err instanceof Error ? err.message : 'Sign-in failed');
-  } finally {
-    signInInFlight = false;
+    setSyncState({ kind: 'error', message: err instanceof Error ? err.message : 'Sign-in failed' });
   }
 }
 
@@ -615,7 +630,7 @@ const watchPageKey = (page: WatchPageAccess) => `${page.channelId}:${page.member
 /** Remembers what a watch page showed, to be reported with the next push of timestamps for that video. */
 export function noteWatchPage(page: WatchPageAccess) {
   watchPages.set(page.videoId, page);
-  if (!stopped) void reportWatchPage(page);
+  if (isRunning()) void reportWatchPage(page);
 }
 
 /**
@@ -640,7 +655,7 @@ async function reportWatchPage(page: WatchPageAccess) {
 
 export async function signOutFromSync() {
   const { refreshToken } = getSyncAuthState();
-  stopSync();
+  stopSync({ kind: 'signed-out' });
   AppState.setSyncAuthState(SIGNED_OUT_SYNC_AUTH_STATE);
   cursors = { pushCounter: 0, pullSeq: 0 };
   serverKnown.clear();
@@ -648,7 +663,6 @@ export async function signOutFromSync() {
   reportedWatchPages.clear();
   await saveAuthState();
   saveCursors();
-  setStatus('signed-out');
 
   // Revoke server-side so the stored refresh token is useless; a failure just leaves it to expire.
   if (refreshToken && isSyncConfigured()) {
@@ -661,10 +675,9 @@ export async function signOutFromSync() {
 }
 
 function handleSessionExpired() {
-  stopSync();
+  stopSync({ kind: 'error', message: 'Session expired. Please sign in again.' });
   AppState.setSyncAuthState(SIGNED_OUT_SYNC_AUTH_STATE);
   void saveAuthState();
-  setStatus('error', 'Session expired. Please sign in again.');
 }
 
 // ============================================================================
@@ -679,7 +692,7 @@ function enqueue(fn: () => Promise<void>): Promise<void> {
 }
 
 function requestSync() {
-  if (stopped || cyclePending) return;
+  if (!isRunning() || cyclePending) return;
   cyclePending = true;
   enqueue(async () => {
     cyclePending = false;
@@ -766,7 +779,7 @@ async function pushPending() {
 }
 
 async function syncCycle() {
-  if (stopped) return;
+  if (!isRunning()) return;
   setCycle('running');
   let outcome: SyncCycle = 'idle';
   try {
@@ -798,7 +811,7 @@ function backoffDelay(attempts: number): number {
 }
 
 function scheduleRetry() {
-  if (stopped || retryTimer) return;
+  if (!isRunning() || retryTimer) return;
   retryTimer = setTimeout(() => {
     retryTimer = null;
     requestSync();
@@ -806,7 +819,7 @@ function scheduleRetry() {
 }
 
 function onLocalWrite() {
-  if (stopped) return;
+  if (!isRunning()) return;
   const now = Date.now();
   if (pushTimer) clearTimeout(pushTimer);
   else firstPendingWriteAt = now;
@@ -819,7 +832,7 @@ function onLocalWrite() {
 
 /** Manual "Sync Now": reconnects immediately if offline and runs a cycle. */
 export function syncNow() {
-  if (stopped) return;
+  if (!isRunning()) return;
   pullNeeded = true; // an explicit sync (or the browser coming back online) always checks the server
   if (!socket) {
     reconnectAttempts = 0;
@@ -835,7 +848,7 @@ export function syncNow() {
 // ============================================================================
 
 function scheduleReconnect() {
-  if (stopped || reconnectTimer) return;
+  if (!isRunning() || reconnectTimer) return;
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     void connect();
@@ -843,8 +856,8 @@ function scheduleReconnect() {
 }
 
 async function connect() {
-  if (stopped || socket) return;
-  setStatus('connecting');
+  if (!isRunning() || socket) return;
+  setConnection('connecting');
 
   let token: string;
   try {
@@ -852,10 +865,10 @@ async function connect() {
   } catch (err) {
     if (err instanceof SyncAuthError) return handleSessionExpired();
     log('Sync: could not get an access token:', err, 'warn');
-    setStatus('offline');
+    setConnection('offline');
     return scheduleReconnect();
   }
-  if (stopped || socket) return;
+  if (!isRunning() || socket) return;
 
   const ws = new WebSocket(`${SYNC_API_URL.replace(/^http/, 'ws')}/sync/ws`);
   socket = ws;
@@ -873,7 +886,7 @@ async function connect() {
 
     if (message.data.type === 'ready') {
       reconnectAttempts = 0;
-      setStatus('online');
+      setConnection('online');
       // Catch up on anything missed while disconnected; the server's seq tells us if there is any.
       if (message.data.seq === undefined || message.data.seq !== cursors.pullSeq) pullNeeded = true;
       requestSync();
@@ -889,10 +902,10 @@ async function connect() {
   ws.onclose = (event) => {
     if (socket === ws) socket = null;
     pullNeeded = true;
-    if (stopped) return;
+    if (!isRunning()) return;
     // 4401: the server rejected our access token; force a refresh before reconnecting.
     if (event.code === 4401) rejectedAccessToken = token;
-    setStatus('offline');
+    setConnection('offline');
     scheduleReconnect();
   };
   ws.onerror = () => {
@@ -905,13 +918,13 @@ async function connect() {
 // ============================================================================
 
 async function startSync() {
-  if (!stopped) return;
+  if (isRunning()) return;
   if (!deviceId) {
     const stored = await TimestampModel.loadGlobalSettings('device_id');
     deviceId = typeof stored === 'string' && stored ? stored : crypto.randomUUID();
   }
-  stopped = false;
   cycle = 'idle';
+  setSyncState({ kind: 'connecting' });
   retryAttempts = 0;
   reconnectAttempts = 0;
   unsubscribeWrites = TimestampModel.onTimestampsWritten(onLocalWrite);
@@ -923,8 +936,9 @@ async function startSync() {
   await connect();
 }
 
-function stopSync() {
-  stopped = true;
+/** Stops syncing and goes to `next`, the signed-out state to show. */
+function stopSync(next: Extract<SyncState, { kind: 'signed-out' | 'error' }>) {
+  setSyncState(next);
   unsubscribeWrites?.();
   unsubscribeWrites = null;
   for (const timer of [pushTimer, retryTimer, reconnectTimer]) if (timer) clearTimeout(timer);
@@ -949,7 +963,7 @@ export async function loadSyncAuthState() {
       await loadCursors();
       await startSync();
     } else {
-      setStatus('signed-out');
+      setSyncState({ kind: 'signed-out' });
     }
   } catch (err) {
     log('Failed to load sync auth state:', err, 'error');
