@@ -1096,21 +1096,44 @@ function getDestinationSummaryText(): string {
   return 'No backup destination configured';
 }
 
-function getBackupStatusColor(): string {
+/**
+ * Where auto backup is right now. The one place the scattered flags in AppState.auth are read
+ * together; the settings label, header light and tooltip all present this, so they can't disagree.
+ * Earlier states win: e.g. a run in progress hides a pending retry.
+ */
+type BackupState =
+  | { kind: 'off' }
+  | { kind: 'running' }
+  | { kind: 'retrying'; backoffMs: number }
+  | { kind: 'no-destination' }
+  | { kind: 'failed' }
+  | { kind: 'healthy'; lastAt: number }
+  | { kind: 'never' };
+
+function getBackupState(): BackupState {
   const auth = AppState.getState().auth;
-  // Determine color consistent with updateBackupStatusIndicator logic
-  if (!auth.autoBackupEnabled) {
-    return '#ff4d4f'; // Red - off
-  } else if (auth.isAutoBackupRunning) {
-    return '#4285f4'; // Blue - in progress
-  } else if (auth.autoBackupBackoffMs && auth.autoBackupBackoffMs > 0) {
-    return '#ffa500'; // Yellow - retrying
-  } else if (hasAnyBackupDestination() && auth.lastAutoBackupAt) {
-    return '#52c41a'; // Green - healthy
-  } else if (hasAnyBackupDestination()) {
-    return '#ffa500'; // Yellow - no backup yet
-  } else {
-    return '#ff4d4f'; // Red - not signed in
+  if (!auth.autoBackupEnabled) return { kind: 'off' };
+  if (auth.isAutoBackupRunning) return { kind: 'running' };
+  if (auth.autoBackupBackoffMs && auth.autoBackupBackoffMs > 0) return { kind: 'retrying', backoffMs: auth.autoBackupBackoffMs };
+  if (!hasAnyBackupDestination()) return { kind: 'no-destination' };
+  if (auth.autoBackupFailed) return { kind: 'failed' };
+  if (auth.lastAutoBackupAt) return { kind: 'healthy', lastAt: auth.lastAutoBackupAt };
+  return { kind: 'never' };
+}
+
+function getBackupStatusColor(): string {
+  switch (getBackupState().kind) {
+    case 'running':
+      return '#4285f4'; // Blue - in progress
+    case 'retrying':
+    case 'never':
+      return '#ffa500'; // Yellow - retrying / no backup yet
+    case 'healthy':
+      return '#52c41a'; // Green - healthy
+    case 'off':
+    case 'no-destination':
+    case 'failed':
+      return '#ff4d4f'; // Red - off, not signed in, or retries ran out
   }
 }
 
@@ -1120,48 +1143,41 @@ export function updateBackupStatusDisplay() {
 
   if (!backupStatusDisplay) return;
 
-  const auth = AppState.getState().auth;
+  const state = getBackupState();
+  backupStatusDisplay.onmouseenter = null;
+  backupStatusDisplay.onmouseleave = null;
 
-  if (!auth.autoBackupEnabled) {
-    setIconLabel(backupStatusDisplay, 'refresh', 'Backup: Off');
-    backupStatusDisplay.onmouseenter = null;
-    backupStatusDisplay.onmouseleave = null;
-  } else if (auth.isAutoBackupRunning) {
-    setIconLabel(backupStatusDisplay, 'refresh', 'Backing up…');
-    backupStatusDisplay.onmouseenter = null;
-    backupStatusDisplay.onmouseleave = null;
-  } else if (auth.autoBackupBackoffMs && auth.autoBackupBackoffMs > 0) {
-    const mins = Math.ceil(auth.autoBackupBackoffMs / 60000);
-    setIconLabel(backupStatusDisplay, 'alert-triangle', `Retry in ${mins}m`);
-    backupStatusDisplay.onmouseenter = null;
-    backupStatusDisplay.onmouseleave = null;
-  } else if (!hasAnyBackupDestination()) {
-    setIconLabel(backupStatusDisplay, 'alert-triangle', 'Backup target missing');
-    backupStatusDisplay.onmouseenter = null;
-    backupStatusDisplay.onmouseleave = null;
-  } else if (auth.lastAutoBackupAt) {
-    const lastAt = auth.lastAutoBackupAt;
-    const nextBackupAt = lastAt + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
-    const nextBackupTime = formatBackupTime(nextBackupAt);
+  switch (state.kind) {
+    case 'off':
+      setIconLabel(backupStatusDisplay, 'refresh', 'Backup: Off');
+      break;
+    case 'running':
+      setIconLabel(backupStatusDisplay, 'refresh', 'Backing up…');
+      break;
+    case 'retrying':
+      setIconLabel(backupStatusDisplay, 'alert-triangle', `Retry in ${Math.ceil(state.backoffMs / 60000)}m`);
+      break;
+    case 'no-destination':
+      setIconLabel(backupStatusDisplay, 'alert-triangle', 'Backup target missing');
+      break;
+    case 'failed':
+      setIconLabel(backupStatusDisplay, 'alert-triangle', 'Backup failed');
+      break;
+    case 'healthy':
+    case 'never': {
+      const lastText = state.kind === 'healthy' ? `Last backup: ${formatBackupTime(state.lastAt)}` : 'Last backup: never';
+      const nextBackupAt = (state.kind === 'healthy' ? state.lastAt : Date.now()) + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
+      const nextText = `Next backup: ${formatBackupTime(nextBackupAt)}`;
 
-    backupStatusDisplay.onmouseenter = () => {
-      setIconLabel(backupStatusDisplay, 'database', `Next backup: ${nextBackupTime}`);
-    };
-    backupStatusDisplay.onmouseleave = () => {
-      setIconLabel(backupStatusDisplay, 'database', `Last backup: ${formatBackupTime(lastAt)}`);
-    };
-    setIconLabel(backupStatusDisplay, 'database', `Last backup: ${formatBackupTime(lastAt)}`);
-  } else {
-    const nextBackupAt = Date.now() + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
-    const nextBackupTime = formatBackupTime(nextBackupAt);
-
-    backupStatusDisplay.onmouseenter = () => {
-      setIconLabel(backupStatusDisplay, 'database', `Next backup: ${nextBackupTime}`);
-    };
-    backupStatusDisplay.onmouseleave = () => {
-      setIconLabel(backupStatusDisplay, 'database', 'Last backup: never');
-    };
-    setIconLabel(backupStatusDisplay, 'database', 'Last backup: never');
+      backupStatusDisplay.onmouseenter = () => {
+        setIconLabel(backupStatusDisplay, 'database', nextText);
+      };
+      backupStatusDisplay.onmouseleave = () => {
+        setIconLabel(backupStatusDisplay, 'database', lastText);
+      };
+      setIconLabel(backupStatusDisplay, 'database', lastText);
+      break;
+    }
   }
 
   backupStatusDisplay.style.display = 'inline';
@@ -1210,27 +1226,24 @@ export function updateBackupStatusIndicator() {
     // Recalculate tooltip text dynamically
     const sync = getSyncIndicator();
     if (sync) return sync.tooltip;
-    const auth = AppState.getState().auth;
-    let tooltipText = '';
-    if (!auth.autoBackupEnabled) {
-      tooltipText = 'Auto backup is disabled';
-    } else if (auth.isAutoBackupRunning) {
-      tooltipText = 'Backup in progress';
-    } else if (auth.autoBackupBackoffMs && auth.autoBackupBackoffMs > 0) {
-      const mins = Math.ceil(auth.autoBackupBackoffMs / 60000);
-      tooltipText = `Retrying backup in ${mins}m`;
-    } else if (!hasAnyBackupDestination()) {
-      tooltipText = getDestinationSummaryText();
-    } else if (auth.lastAutoBackupAt) {
-      const nextBackupAt = auth.lastAutoBackupAt + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
-      const nextBackupTime = formatBackupTime(nextBackupAt);
-      tooltipText = `Last backup: ${formatBackupTime(auth.lastAutoBackupAt)}\nNext backup: ${nextBackupTime}\n${getDestinationSummaryText()}`;
-    } else {
-      const nextBackupAt = Date.now() + (Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000);
-      const nextBackupTime = formatBackupTime(nextBackupAt);
-      tooltipText = `No backup yet\nNext backup: ${nextBackupTime}\n${getDestinationSummaryText()}`;
+    const state = getBackupState();
+    const intervalMs = Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000;
+    switch (state.kind) {
+      case 'off':
+        return 'Auto backup is disabled';
+      case 'running':
+        return 'Backup in progress';
+      case 'retrying':
+        return `Retrying backup in ${Math.ceil(state.backoffMs / 60000)}m`;
+      case 'no-destination':
+        return getDestinationSummaryText();
+      case 'failed':
+        return `Backup failed. Will try again at the next scheduled backup\n${getDestinationSummaryText()}`;
+      case 'healthy':
+        return `Last backup: ${formatBackupTime(state.lastAt)}\nNext backup: ${formatBackupTime(state.lastAt + intervalMs)}\n${getDestinationSummaryText()}`;
+      case 'never':
+        return `No backup yet\nNext backup: ${formatBackupTime(Date.now() + intervalMs)}\n${getDestinationSummaryText()}`;
     }
-    return tooltipText;
   });
 }
 
@@ -1271,6 +1284,7 @@ export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
     }
     AppState.setAutoBackupRetryAttempts(0);
     AppState.setAutoBackupBackoffMs(null);
+    AppState.setAutoBackupFailed(false);
     if (autoBackupBackoffTimeoutId) {
       clearTimeout(autoBackupBackoffTimeoutId);
       autoBackupBackoffTimeoutId = null;
@@ -1293,6 +1307,7 @@ export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
       // Reset retry state
       AppState.setAutoBackupRetryAttempts(0);
       AppState.setAutoBackupBackoffMs(null);
+      AppState.setAutoBackupFailed(false);
       if (autoBackupBackoffTimeoutId) {
         clearTimeout(autoBackupBackoffTimeoutId);
         autoBackupBackoffTimeoutId = null;
@@ -1306,13 +1321,18 @@ export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
       AppState.setAutoBackupBackoffMs(next);
       if (autoBackupBackoffTimeoutId) clearTimeout(autoBackupBackoffTimeoutId);
       autoBackupBackoffTimeoutId = setTimeout(() => {
+        // Fired: no longer waiting, or the run below would skip itself as "backoff in progress".
+        autoBackupBackoffTimeoutId = null;
         runAutoBackupOnce({ silent: true });
       }, next);
       log(`Scheduling backup retry ${nextAttempts}/${AUTO_BACKUP_MAX_RETRY_ATTEMPTS} in ${Math.round(next/1000)}s`);
       updateBackupStatusDisplay(); // Update backup status indicator to show retry state
     } else {
-      // All retries exhausted for non-auth errors
+      // All retries exhausted for non-auth errors. Show the failure, and start the retry count over
+      // so the next scheduled run gets its full retries instead of giving up on its first error.
       AppState.setAutoBackupBackoffMs(null);
+      AppState.setAutoBackupRetryAttempts(0);
+      AppState.setAutoBackupFailed(true);
     }
   } finally {
     AppState.setAutoBackupRunning(false);

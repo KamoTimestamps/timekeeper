@@ -25,6 +25,8 @@ export interface AppState {
     autoBackupBackoffMs: number | null;
     lastAutoBackupAt: number | null;
     isAutoBackupRunning: boolean;
+    /** The last backup run failed and its retries ran out; cleared by the next success. Not persisted. */
+    autoBackupFailed: boolean;
   };
 
   // UI state
@@ -62,6 +64,7 @@ const DEFAULT_STATE: AppState = {
     autoBackupBackoffMs: null,
     lastAutoBackupAt: null,
     isAutoBackupRunning: false,
+    autoBackupFailed: false,
   },
   ui: {
     panePosition: null,
@@ -147,6 +150,10 @@ export function setAutoBackupIntervalMinutes(minutes: number): void {
 
 export function setAutoBackupRunning(running: boolean): void {
   setAuth('isAutoBackupRunning', running);
+}
+
+export function setAutoBackupFailed(failed: boolean): void {
+  setAuth('autoBackupFailed', failed);
 }
 
 export function setAutoBackupRetryAttempts(attempts: number): void {
