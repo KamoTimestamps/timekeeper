@@ -825,13 +825,11 @@ if (!isLiveChatFrame()) {
    * playback tick doesn't re-query and re-parse the DOM for every row.
    *  - items:    the row elements, in DOM order
    *  - starts:   parseInt(data-time) per row, NaN when missing/invalid (used for highlighting)
-   *  - rawTimes: parseFloat(data-time) per row, 0 when missing (used for per-minute stats)
    * Callers must treat the arrays as read-only.
    */
   type TimestampIndex = {
     items: HTMLLIElement[];
     starts: number[];
-    rawTimes: number[];
   };
   let timestampIndex: TimestampIndex | null = null;
   let timestampIndexList: HTMLUListElement | null = null;
@@ -839,7 +837,7 @@ if (!isLiveChatFrame()) {
 
   function getTimestampIndex(): TimestampIndex {
     if (!list) {
-      return { items: [], starts: [], rawTimes: [] };
+      return { items: [], starts: [] };
     }
     if (timestampIndexList !== list || !timestampIndexObserver) {
       timestampIndexObserver?.disconnect();
@@ -861,14 +859,12 @@ if (!isLiveChatFrame()) {
     if (!timestampIndex) {
       const items = TimestampView.getTimestampItems(list);
       const starts: number[] = new Array(items.length);
-      const rawTimes: number[] = new Array(items.length);
       for (let i = 0; i < items.length; i++) {
         const timeValue = items[i].querySelector<HTMLElement>("[data-time]")
           ?.dataset.time;
         starts[i] = timeValue ? Number.parseInt(timeValue, 10) : NaN;
-        rawTimes[i] = timeValue ? parseFloat(timeValue) : 0;
       }
-      timestampIndex = { items, starts, rawTimes };
+      timestampIndex = { items, starts };
     }
     return timestampIndex;
   }
@@ -1036,11 +1032,8 @@ if (!isLiveChatFrame()) {
             ? Math.max(0, Math.floor(rawTime))
             : Math.max(0, getLatestTimestampValue());
 
-          const timestamps = list ? getTimestampIndex().rawTimes : [];
-
           timeDisplay.textContent = formatTimeDisplay(
             currentSeconds,
-            timestamps,
             getVideoDuration(playerInstance),
           );
         }
@@ -2777,11 +2770,8 @@ if (!isLiveChatFrame()) {
       : { isLive: false };
     const behindLive = player ? isBehindLiveEdge(player, !!isLive) : false;
 
-    const timestamps = list ? getTimestampIndex().rawTimes : [];
-
     timeDisplay.textContent = formatTimeDisplay(
       seconds,
-      timestamps,
       getVideoDuration(player, video),
     );
     timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
@@ -3517,11 +3507,8 @@ if (!isLiveChatFrame()) {
           : { isLive: false };
         const behindLive = player ? isBehindLiveEdge(player, !!isLive) : false;
 
-        const timestamps = list ? getTimestampIndex().rawTimes : [];
-
         timeDisplay.textContent = formatTimeDisplay(
           seconds,
-          timestamps,
           getVideoDuration(player, video),
         );
         timeDisplay.style.color = behindLive ? "#ff4d4f" : "";
@@ -4307,18 +4294,6 @@ if (!isLiveChatFrame()) {
           () => SyncClient.syncNow(),
           "refresh",
         );
-        const shareSubscriptionsButton = createButton(
-          "Share Subscriptions",
-          "Let Timekeeper Sync read which channels you subscribe to (read-only), to work out which members-only videos you can access",
-          async () => {
-            try {
-              await SyncClient.shareSubscriptions();
-            } catch {
-              // Already logged; the popup being closed or denied is not worth an alert.
-            }
-          },
-          "users",
-        );
         const refreshSyncButtons = () => {
           const signedIn = SyncClient.getSyncAuthState().isSignedIn;
           setIconLabel(
@@ -4334,13 +4309,11 @@ if (!isLiveChatFrame()) {
           );
           syncSignButton.disabled = !signedIn && !SyncClient.isSyncConfigured();
           syncNowButton.disabled = !signedIn;
-          shareSubscriptionsButton.disabled = !signedIn;
         };
         SyncClient.setSyncUiRefresher(refreshSyncButtons);
 
         syncSection.appendChild(syncSignButton);
         syncSection.appendChild(syncNowButton);
-        syncSection.appendChild(shareSubscriptionsButton);
 
         const syncInfoContainer = document.createElement("div");
         syncInfoContainer.style.marginTop = "15px";

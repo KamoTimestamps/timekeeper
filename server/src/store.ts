@@ -146,15 +146,6 @@ CREATE TABLE IF NOT EXISTS video_access (
   members_only INTEGER NOT NULL,
   reported_at INTEGER NOT NULL
 ) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS user_subscriptions (
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  channel_id TEXT NOT NULL,
-  PRIMARY KEY (user_id, channel_id)
-) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS subscription_syncs (
-  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  synced_at INTEGER NOT NULL
-) WITHOUT ROWID;
 `;
 
 interface TimestampRow {
@@ -240,6 +231,9 @@ export class Store {
       this.db.exec('ALTER TABLE users DROP COLUMN name');
     }
     this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_display_name_key ON users(display_name_key)');
+
+    // Channel subscriptions are no longer collected; old databases drop what was stored.
+    this.db.exec('DROP TABLE IF EXISTS user_subscriptions; DROP TABLE IF EXISTS subscription_syncs;');
 
     const sessionColumns = this.db.prepare("SELECT name FROM pragma_table_info('sessions')").all() as { name: string }[];
     for (const column of ['created_ip', 'created_country', 'last_ip', 'last_country']) {
@@ -785,35 +779,6 @@ export class Store {
       | { channel_id: string; members_only: number }
       | undefined;
     return row ? { channelId: row.channel_id, membersOnly: row.members_only === 1 } : null;
-  }
-
-  /** Replaces the user's subscribed-channel list wholesale, so unsubscribing is picked up on the next sync. */
-  replaceSubscriptions(userId: string, channelIds: string[], now: number): void {
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
-      this.db.prepare('DELETE FROM user_subscriptions WHERE user_id = ?').run(userId);
-      const insert = this.db.prepare('INSERT OR IGNORE INTO user_subscriptions (user_id, channel_id) VALUES (?, ?)');
-      for (const channelId of channelIds) insert.run(userId, channelId);
-      this.db
-        .prepare(
-          `INSERT INTO subscription_syncs (user_id, synced_at) VALUES (?, ?)
-           ON CONFLICT(user_id) DO UPDATE SET synced_at = excluded.synced_at`,
-        )
-        .run(userId, now);
-      this.db.exec('COMMIT');
-    } catch (err) {
-      this.db.exec('ROLLBACK');
-      throw err;
-    }
-  }
-
-  /** Null `syncedAt` means the user never shared their subscriptions, so `subscribed` is unknown, not false. */
-  getSubscriptionState(userId: string, channelId: string): { syncedAt: number | null; subscribed: boolean } {
-    const sync = this.db.prepare('SELECT synced_at FROM subscription_syncs WHERE user_id = ?').get(userId) as
-      | { synced_at: number }
-      | undefined;
-    const hit = this.db.prepare('SELECT 1 AS x FROM user_subscriptions WHERE user_id = ? AND channel_id = ?').get(userId, channelId);
-    return { syncedAt: sync?.synced_at ?? null, subscribed: hit !== undefined };
   }
 
   // --- timestamps ---

@@ -38,24 +38,12 @@ export function formatTimeString(seconds: number, maxTime: number = seconds): st
 }
 
 /**
- * Format the current-time display (padded to the video length): "M:SS" plus a " (x/min)"
- * timestamp rate when applicable. The rate spans the first to last timestamp (at least 1 minute),
- * independent of playback position.
+ * Format the current-time display, padded to the video length.
  * @param seconds - Current playback time in seconds
- * @param timestamps - Raw timestamp start times in seconds
  * @param durationSeconds - Video duration in seconds (determines format width)
  */
-export function formatTimeDisplay(
-  seconds: number,
-  timestamps: number[],
-  durationSeconds: number,
-): string {
-  const time = formatTimeString(seconds, Math.max(seconds, durationSeconds));
-  if (timestamps.length === 0) return time;
-
-  const spanMinutes = (Math.max(...timestamps) - Math.min(...timestamps)) / 60;
-  const rate = (timestamps.length / Math.max(1, spanMinutes)).toFixed(2);
-  return parseFloat(rate) > 0 ? `${time} (${rate}/min)` : time;
+export function formatTimeDisplay(seconds: number, durationSeconds: number): string {
+  return formatTimeString(seconds, Math.max(seconds, durationSeconds));
 }
 
 /**
