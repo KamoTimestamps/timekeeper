@@ -108,8 +108,8 @@ v3** enabled in the same project.
 
 ## Landing page
 
-`GET /` serves a small dashboard (`public/`): sign in with Google, see how many timestamps, videos
-and devices you have synced, review your sessions, and **log out all sessions**.
+`GET /` serves a small web app (`public/`): sign in with Google, browse your timestamps (the default
+page), review your sessions on the account page, and **log out all sessions**.
 
 - **Google setup:** add the server's own origin (e.g. `https://devel.kamotimestamps.com`) under
   *Authorized JavaScript origins* of the same OAuth client. The page uses Google's "Sign in with
@@ -142,11 +142,11 @@ and devices you have synced, review your sessions, and **log out all sessions**.
 
 ## Video details
 
-With `YOUTUBE_API_KEY` set, the landing page's "Most-annotated videos" shows each video's thumbnail,
+With `YOUTUBE_API_KEY` set, the Timestamps page shows each video's thumbnail,
 title and channel (from the YouTube Data API's `videos.list`) instead of the bare ID. Create the key
 in Google Cloud Console, enable **YouTube Data API v3** and restrict the key to that API. Results are
 cached in the `video_info` table for 24 hours, including "not found" for private or deleted videos,
-so a dashboard load costs at most one quota unit. New video IDs are looked up in the background as
+so a page load costs at most one quota unit. New video IDs are looked up in the background as
 soon as a push brings them in (50 per call), and at startup the server fills in any synced videos
 that were never cached, so titles are searchable without anyone having to view them first. If YouTube can't be reached the page falls back to
 the cached copy, or to the bare ID. Without a key nothing calls YouTube.

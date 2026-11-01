@@ -60,11 +60,9 @@ function show(view) {
   $('loading').hidden = view !== 'loading';
   $('signed-out').hidden = view !== 'signed-out';
   $('display-name').hidden = view !== 'display-name';
-  $('dashboard').hidden = view !== 'dashboard';
   $('timestamps').hidden = view !== 'timestamps';
   $('account-page').hidden = view !== 'account';
-  $('account').hidden = !['dashboard', 'timestamps', 'account', 'display-name'].includes(view);
-  $('nav-overview').classList.toggle('active', view === 'dashboard');
+  $('account').hidden = !['timestamps', 'account', 'display-name'].includes(view);
   $('nav-timestamps').classList.toggle('active', view === 'timestamps');
   $('account-email').classList.toggle('active', view === 'account');
 }
@@ -129,49 +127,9 @@ function renderLocation(session) {
   return el('td', { title: notes.join(' · ') }, session.ip || session.country ? place(session.country, session.ip) : '—');
 }
 
-function renderTiles(stats) {
-  const tiles = [
-    [number(stats.active), 'Timestamps'],
-    [number(stats.videos), 'Videos'],
-    [number(stats.devices), 'Devices synced'],
-    [number(stats.deleted), 'Deleted (kept so deletions sync)'],
-  ];
-  const nodes = tiles.map(([value, label]) =>
-    el('div', { className: 'tile' }, el('div', { className: 'value' }, value), el('div', { className: 'label' }, label)),
-  );
-  nodes.push(
-    el('div', { className: 'tile' },
-      el('div', { className: 'value small' }, stats.lastSyncAt ? ago(stats.lastSyncAt) : '—'),
-      el('div', { className: 'label' }, 'Last change synced')),
-  );
-  $('tiles').replaceChildren(...nodes);
-}
-
 // `membersOnly` is only present once a userscript has reported the video, so no badge means "not known to be".
 function membersBadge(video) {
   return video.membersOnly ? [' ', el('span', { className: 'badge members', title: 'Members-only stream' }, 'Members')] : [];
-}
-
-function renderTopVideos(videos) {
-  $('no-videos').hidden = videos.length > 0;
-  $('top-videos').replaceChildren(
-    ...videos.map((video) => {
-      const url = new URL('https://www.youtube.com/watch');
-      url.searchParams.set('v', video.videoId);
-      const href = { href: url.toString(), target: '_blank', rel: 'noopener noreferrer' };
-      const count = el('span', { className: 'count' }, `${number(video.count)} timestamp${video.count === 1 ? '' : 's'}`);
-      // `info` is only present when the server has a YouTube API key and the video is public.
-      if (!video.info) return el('li', {}, el('a', href, video.videoId), ...membersBadge(video), count);
-
-      const thumb = video.info.thumbnailUrl
-        ? el('img', { className: 'thumb', src: video.info.thumbnailUrl, alt: '', loading: 'lazy', width: '80', height: '45' })
-        : el('span', { className: 'thumb' });
-      const text = el('div', { className: 'video-text' },
-        el('a', { ...href, className: 'video-title', title: video.info.title }, video.info.title),
-        el('div', { className: 'muted', title: video.info.channelTitle }, video.info.channelTitle, ...membersBadge(video)));
-      return el('li', { className: 'rich' }, thumb, text, count);
-    }),
-  );
 }
 
 function renderAccount(account) {
@@ -263,11 +221,8 @@ async function loadOverview() {
   features = data.features ?? {};
   renderAccount(data.account);
   needsDisplayName = !data.account.displayName;
-  renderTiles(data.stats);
-  renderTopVideos(data.stats.topVideos);
   renderSessions(data.sessions);
   overviewLive.latest = data;
-  overviewLive.topVideos = JSON.stringify(data.stats.topVideos);
   route();
   watchOverview();
 }
@@ -275,23 +230,16 @@ async function loadOverview() {
 // Live updates: the server keeps an event stream open and sends a bare "overview" signal when this
 // account's counts or sessions change. The data itself is re-fetched, so the stream carries nothing
 // private. A failed fetch keeps what is shown; only a 401 signs out.
-const overviewLive = { source: null, retry: null, busy: false, again: false, stale: false, latest: null, topVideos: '' };
+const overviewLive = { source: null, retry: null, busy: false, again: false, stale: false, latest: null };
 
 function applyOverview(data) {
   overviewLive.latest = data;
   renderAccount(data.account); // the name may have been changed from another tab
-  renderTiles(data.stats);
   renderSessions(data.sessions);
-  // Re-rendering would reload every thumbnail, so only touch the list when it changed.
-  const topVideos = JSON.stringify(data.stats.topVideos);
-  if (topVideos !== overviewLive.topVideos) {
-    overviewLive.topVideos = topVideos;
-    renderTopVideos(data.stats.topVideos);
-  }
 }
 
-// The overview data (counts, account, sessions) feeds two pages; it only needs refreshing while one is on screen.
-const overviewShowing = () => !$('dashboard').hidden || !$('account-page').hidden;
+// The overview data (account, sessions) only feeds the account page; it only needs refreshing while that is on screen.
+const overviewShowing = () => !$('account-page').hidden;
 
 async function refreshOverview() {
   // Not on screen: remember to catch up when it is.
@@ -351,7 +299,6 @@ document.addEventListener('visibilitychange', () => {
 // Relative times ("5 minutes ago") keep moving between signals.
 setInterval(() => {
   if (overviewLive.latest && overviewShowing() && !document.hidden) {
-    renderTiles(overviewLive.latest.stats);
     renderSessions(overviewLive.latest.sessions);
   }
 }, 30_000);
@@ -974,17 +921,12 @@ $('load-more').addEventListener('click', () => loadStamps({ append: true }));
 
 // "#/timestamps?video=ID" and "#/timestamps?channel=NAME" are the timestamps view filtered to one
 // video or channel, and "&q=..." adds a search to any of them; "#/account" is the account page;
-// anything else is the overview.
+// anything else is the timestamps view.
 function route() {
   if (needsDisplayName) return openDisplayNameForm({ required: true });
   const [path, queryString = ''] = location.hash.slice(1).split('?');
   if (path === '/account') {
     show('account');
-    if (overviewLive.stale) refreshOverview(); // signals arrived while another view was open
-    return;
-  }
-  if (path !== '/timestamps') {
-    show('dashboard');
     if (overviewLive.stale) refreshOverview(); // signals arrived while another view was open
     return;
   }
