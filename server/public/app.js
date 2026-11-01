@@ -455,13 +455,14 @@ function renderHit(item) {
     playAt(item);
   });
   time.addEventListener('auxclick', () => features.miniPlayer && pausePlayer()); // middle-click opens YouTube too
-  const body = el('div', { className: 'stamp-body' }, el('div', { className: 'stamp-comment' }, item.comment || '(no comment)'));
-  // Only a timestamp with an earlier version gets the control; it shows while the row is hovered or focused.
+  const comment = el('div', { className: 'stamp-comment' }, item.comment || '(no comment)');
+  const body = el('div', { className: 'stamp-body' }, comment);
+  // Only a timestamp with an earlier version gets the control, right after the comment text; it shows while the row is hovered or focused.
   if (item.hasHistory) {
     const history = el('button', { className: 'history-toggle', type: 'button', 'aria-expanded': 'false', 'aria-label': 'Show history', title: 'History' });
     history.innerHTML = HISTORY_ICON;
     history.addEventListener('click', () => toggleHistory(item, body, history));
-    body.append(history);
+    comment.append(history);
   }
   return el('li', {}, time, body);
 }

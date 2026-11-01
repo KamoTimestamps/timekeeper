@@ -330,7 +330,7 @@ dd .ghost { margin-left: 8px; }
 .stamp-body { min-width: 0; }
 .stamp-comment { white-space: pre-wrap; overflow-wrap: anywhere; }
 .stamps li { position: relative; }
-.history-toggle { position: absolute; top: 8px; right: 0; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; opacity: 0; }
+.history-toggle { display: inline-grid; vertical-align: middle; place-items: center; width: 28px; height: 28px; margin: -6px 0 -6px 4px; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; opacity: 0; }
 .history-toggle svg { width: 18px; height: 18px; }
 .history-toggle:hover, .history-toggle[aria-expanded="true"] { color: var(--text); }
 .stamps li:hover .history-toggle, .history-toggle:focus-visible, .history-toggle[aria-expanded="true"] { opacity: 1; }
