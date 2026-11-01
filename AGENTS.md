@@ -21,11 +21,20 @@ Paths in the rest of this file are relative to `client/` unless noted.
 ```
 make build          # Install deps, build for chromium + firefox + userscript (main channel)
 make build-devel    # Build only the devel-channel userscript (../timekeeper.devel.user.js)
+make dev            # Watch + serve the local-channel userscript for live testing (see below)
 npm run build:userscript  # Build userscript output only (writes ../timekeeper.user.js)
 npm run clean       # Remove dist/
 ```
 
 Release channels (`client/build-tools/channels.js`): `npm run build:userscript` builds the `main` channel (`../timekeeper.user.js` + `../ts.user.js`, sync backend unconfigured). `npm run build:userscript:devel` builds `../timekeeper.devel.user.js`, whose `@updateURL`/`@downloadURL` point at the `devel` branch, whose version gets a 4th component (commit count) so every push is seen as an update, and which has the dev sync backend URL and Google client ID injected. Rebuild and commit the devel bundle with each push to `devel`; do not commit it to `main`, and do not commit the `main` bundles on feature branches.
+
+### Local iteration loop
+
+`make dev` runs `build.js --channel=local --watch` (esbuild rebuilds in milliseconds on any `src/` change, and resyncs the generated files when `styles.css`, `assets/`, the header template or `package.json` change) and serves `../.local/` on `http://localhost:8765` (`DEV_PORT` overrides). The `local` channel is unminified, installs as its own script ("Timekeeper (local)", so disable the devel/main copies while testing), has the dev sync backend injected, and writes the gitignored `.local/timekeeper.local.user.js`, never a committed bundle.
+
+The user installs that URL once in Violentmonkey, clicks "Track external edits", ticks "Reload tab", and keeps the installer tab open; every rebuild then reloads their YouTube tab. Violentmonkey compares file content, so no version bump is needed. Each build that changes the output gets the next number from `.local/build-number` and the pane shows it as `v5.3.8+local.42` (also in the `[Timekeeper v…]` log prefix); hovering the version shows the build time. A rebuild that produces identical output is skipped (`Output unchanged; skipped`), so the number only advances when the page actually reloads with something new. Only the `local` channel is stamped; `devel`/`main` bundles stay reproducible.
+
+Agents: if `make dev` is not already running (check `lsof -iTCP:8765 -sTCP:LISTEN`), start it as a background process once and let it rebuild on its own; do not run `build:userscript*` by hand while testing. esbuild does not typecheck, so run `pnpm exec tsc --noEmit` (about 1s) before reporting a change done. Only the build-and-commit steps for `devel`/`main` above touch the committed bundles.
 
 The build pipeline: `build-tools/sync-generated.js` regenerates `src/styles.ts` (from `src/styles.css`) and `src/header-icons.ts` (from `assets/`), esbuild bundles `src/timekeeper.ts` -> `dist/`, then a userscript header is prepended to produce `../timekeeper.user.js`.
 
