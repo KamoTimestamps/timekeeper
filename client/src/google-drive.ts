@@ -1215,36 +1215,38 @@ function applyIndicatorColor(el: HTMLElement, color: string) {
   }
 }
 
+function getBackupTooltip(): string {
+  const state = getBackupState();
+  const intervalMs = Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000;
+  switch (state.kind) {
+    case 'off':
+      return 'Auto backup is disabled';
+    case 'running':
+      return 'Backup in progress';
+    case 'retrying':
+      return `Retrying backup in ${Math.ceil(state.backoffMs / 60000)}m`;
+    case 'no-destination':
+      return getDestinationSummaryText();
+    case 'failed':
+      return `Backup failed. Will try again at the next scheduled backup\n${getDestinationSummaryText()}`;
+    case 'healthy':
+      return `Last backup: ${formatBackupTime(state.lastAt)}\nNext backup: ${formatBackupTime(state.lastAt + intervalMs)}\n${getDestinationSummaryText()}`;
+    case 'never':
+      return `No backup yet\nNext backup: ${formatBackupTime(Date.now() + intervalMs)}\n${getDestinationSummaryText()}`;
+  }
+}
+
+/** What the header light shows: sync status while signed in to Timekeeper sync, backup status otherwise. */
+function getHeaderIndicator(): { color: string; tooltip: string } {
+  return getSyncIndicator() ?? { color: getBackupStatusColor(), tooltip: getBackupTooltip() };
+}
+
 export function updateBackupStatusIndicator() {
   if (!backupStatusIndicator) return;
 
-  // While signed in to Timekeeper sync, the light shows sync status instead of backup status.
-  const color = getSyncIndicator()?.color ?? getBackupStatusColor();
-
-  applyIndicatorColor(backupStatusIndicator, color);
-  addTooltip(backupStatusIndicator, () => {
-    // Recalculate tooltip text dynamically
-    const sync = getSyncIndicator();
-    if (sync) return sync.tooltip;
-    const state = getBackupState();
-    const intervalMs = Math.max(1, getAutoBackupIntervalMinutes()) * 60 * 1000;
-    switch (state.kind) {
-      case 'off':
-        return 'Auto backup is disabled';
-      case 'running':
-        return 'Backup in progress';
-      case 'retrying':
-        return `Retrying backup in ${Math.ceil(state.backoffMs / 60000)}m`;
-      case 'no-destination':
-        return getDestinationSummaryText();
-      case 'failed':
-        return `Backup failed. Will try again at the next scheduled backup\n${getDestinationSummaryText()}`;
-      case 'healthy':
-        return `Last backup: ${formatBackupTime(state.lastAt)}\nNext backup: ${formatBackupTime(state.lastAt + intervalMs)}\n${getDestinationSummaryText()}`;
-      case 'never':
-        return `No backup yet\nNext backup: ${formatBackupTime(Date.now() + intervalMs)}\n${getDestinationSummaryText()}`;
-    }
-  });
+  applyIndicatorColor(backupStatusIndicator, getHeaderIndicator().color);
+  // The tooltip is recomputed each time it is shown
+  addTooltip(backupStatusIndicator, () => getHeaderIndicator().tooltip);
 }
 
 export async function runAutoBackupOnce(options: RunAutoBackupOptions = {}) {
