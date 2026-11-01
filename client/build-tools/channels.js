@@ -25,7 +25,7 @@ module.exports = {
     outputFile: 'timekeeper.local.user.js',
     outDir: '.local',
     scriptName: 'Timekeeper (local)',
-    selfUpdate: false, // Violentmonkey never update-checks localhost URLs; tracking replaces it
+    selfUpdate: false, // no @updateURL/@downloadURL, so it can never be pointed at a GitHub branch
     minify: false,
     // The commit hash would mislead (the build includes uncommitted changes), so show a
     // monotonic build number ("+local.42") and expose the build time as a tooltip instead.
