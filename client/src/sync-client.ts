@@ -343,18 +343,45 @@ function gmStorage(): GMStorage | null {
   return typeof GM !== 'undefined' && GM && typeof GM.getValue === 'function' && typeof GM.setValue === 'function' ? GM : null;
 }
 
+const INSTALL_ID_KEY = 'ytls-install-id';
+
+/**
+ * Identifies this browser context. The userscript manager's storage is shared by every Firefox
+ * container, but page localStorage (like IndexedDB, where the timestamps live) is per container, so
+ * keying the session by this id gives each container its own sign-in, and its own session on the server.
+ */
+function installId(): string {
+  try {
+    let id = localStorage.getItem(INSTALL_ID_KEY);
+    if (!id) localStorage.setItem(INSTALL_ID_KEY, (id = crypto.randomUUID()));
+    return id;
+  } catch {
+    return 'default'; // localStorage blocked: share one session, as before
+  }
+}
+
+const authStorageKey = () => `${SETTINGS_AUTH_KEY}:${installId()}`;
+
 /** The stored session, or undefined when nothing could be read (which is not the same as signed out). */
 async function readStoredAuth(): Promise<unknown> {
   const gm = gmStorage();
   if (!gm) return TimestampModel.loadGlobalSettings(SETTINGS_AUTH_KEY);
 
-  const value = await gm.getValue(SETTINGS_AUTH_KEY);
+  const key = authStorageKey();
+  const value = await gm.getValue(key);
   if (value !== undefined && value !== null) return value;
 
-  // One-time move of a session saved by earlier builds in page-readable IndexedDB.
-  const legacy = await TimestampModel.loadGlobalSettings(SETTINGS_AUTH_KEY);
+  // One-time move of a session saved by earlier builds: first the single shared GM entry, then
+  // page-readable IndexedDB. The first context to load claims it; any other starts signed out.
+  let legacy = await gm.getValue(SETTINGS_AUTH_KEY);
+  if (legacy !== undefined && legacy !== null) {
+    await gm.setValue(key, legacy);
+    await gm.setValue(SETTINGS_AUTH_KEY, null);
+    return legacy;
+  }
+  legacy = await TimestampModel.loadGlobalSettings(SETTINGS_AUTH_KEY);
   if (legacy) {
-    await gm.setValue(SETTINGS_AUTH_KEY, legacy);
+    await gm.setValue(key, legacy);
     await TimestampModel.saveGlobalSettings(SETTINGS_AUTH_KEY, null);
   }
   return legacy ?? undefined;
@@ -364,7 +391,7 @@ async function readStoredAuth(): Promise<unknown> {
 async function saveAuthState(): Promise<void> {
   try {
     const gm = gmStorage();
-    if (gm) await gm.setValue(SETTINGS_AUTH_KEY, getSyncAuthState());
+    if (gm) await gm.setValue(authStorageKey(), getSyncAuthState());
     else await TimestampModel.saveGlobalSettings(SETTINGS_AUTH_KEY, getSyncAuthState());
   } catch (err) {
     log('Failed to save sync auth state:', err, 'error');
