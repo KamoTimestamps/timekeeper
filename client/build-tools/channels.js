@@ -15,7 +15,7 @@ module.exports = {
     versionFromCommitCount: true,
     // Show the short commit hash next to the version in the UI and logs, e.g. v5.3.1+a1b2c3d.
     displayCommitHash: true,
-    syncApiUrl: 'https://devel.kamotimestamps.com',
+    syncApiUrl: 'https://ash.kamotimestamps.com',
     syncGoogleClientId: '308989572223-cdnvpn65mc51oqneu7po3og51uf5ahsb.apps.googleusercontent.com',
   },
   // Uncommitted working-tree builds for `make dev`: written to the gitignored .local/ directory,
@@ -31,7 +31,7 @@ module.exports = {
     // monotonic build number ("+local.42") and expose the build time as a tooltip instead.
     buildSuffix: '+local',
     buildStamp: true,
-    syncApiUrl: 'https://devel.kamotimestamps.com',
+    syncApiUrl: 'https://ash.kamotimestamps.com',
     syncGoogleClientId: '308989572223-cdnvpn65mc51oqneu7po3og51uf5ahsb.apps.googleusercontent.com',
   },
 };
