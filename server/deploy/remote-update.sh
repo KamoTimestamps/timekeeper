@@ -8,6 +8,10 @@ CADDY_VERSION=2.11.7
 APP_DIR=/opt/timekeeper/server
 ENV_FILE=/etc/timekeeper/server.env
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+: "${TK_ENV:?set TK_ENV to ash or oak (deploy.sh does this)}"
+TK_HOSTNAME="$TK_ENV.kamotimestamps.com"
+SETTINGS="$SRC/$TK_ENV.env"
+[[ -f $SETTINGS ]] || { echo "Missing $SETTINGS" >&2; exit 1; }
 
 log() { printf '==> %s\n' "$*"; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -36,22 +40,43 @@ id timekeeper >/dev/null 2>&1 || useradd --system --home-dir /var/lib/timekeeper
 
 mkdir -p /etc/timekeeper
 if [[ ! -f $ENV_FILE ]]; then
-  log "Creating $ENV_FILE (set GOOGLE_CLIENT_ID in it)"
+  log "Creating $ENV_FILE"
   (
     umask 077
     cat > "$ENV_FILE" <<ENV
-# Replace with the Google OAuth client ID used by the userscript (see server/README.md).
-GOOGLE_CLIENT_ID=unset.apps.googleusercontent.com
 JWT_SECRET=$(head -c 48 /dev/urandom | base64 | tr -d '\n=+/')
-ALLOWED_ORIGINS=https://www.youtube.com
 HOST=127.0.0.1
 PORT=8787
 ENV
   )
 fi
 chmod 600 "$ENV_FILE"
+
+# Sets KEY=value in $ENV_FILE: replaces the existing line, or appends. Other lines are untouched.
+set_env() { # key value
+  if grep -q "^$1=" "$ENV_FILE"; then
+    K="$1" V="$2" awk 'BEGIN { FS = "=" } $1 == ENVIRON["K"] { print ENVIRON["K"] "=" ENVIRON["V"]; next } { print }' \
+      "$ENV_FILE" > "$tmp/server.env"
+    cat "$tmp/server.env" > "$ENV_FILE"
+  else
+    echo "$1=$2" >> "$ENV_FILE"
+  fi
+}
+# Apply the non-secret settings committed in deploy/<env>.env. Keys that are not listed there
+# (JWT_SECRET, API keys, anything set by hand) are left alone.
+while IFS= read -r line || [[ -n $line ]]; do
+  [[ $line =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
+  set_env "${line%%=*}" "${line#*=}"
+done < "$SETTINGS"
+# Secrets arrive on stdin as KEY=value lines (deploy.sh reads them from 1Password).
+if [[ ! -t 0 ]]; then
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
+    set_env "${line%%=*}" "${line#*=}"
+  done
+fi
 # The landing page only accepts requests from this origin (must match the Caddyfile's site address).
-grep -q '^PUBLIC_ORIGIN=' "$ENV_FILE" || echo 'PUBLIC_ORIGIN=https://devel.kamotimestamps.com' >> "$ENV_FILE"
+set_env PUBLIC_ORIGIN "https://$TK_HOSTNAME"
 # Caddy (below) sets X-Client-IP / -Country / -City / -Region and the app only listens on loopback.
 grep -q '^TRUST_PROXY_HEADERS=' "$ENV_FILE" || echo 'TRUST_PROXY_HEADERS=true' >> "$ENV_FILE"
 
@@ -93,8 +118,9 @@ else
   exit 1
 fi
 
-if ! cmp -s "$SRC/Caddyfile" /etc/caddy/Caddyfile; then
-  install -m 644 "$SRC/Caddyfile" /etc/caddy/Caddyfile
+sed "s/__TK_HOSTNAME__/$TK_HOSTNAME/g" "$SRC/Caddyfile" > "$tmp/Caddyfile"
+if ! cmp -s "$tmp/Caddyfile" /etc/caddy/Caddyfile; then
+  install -m 644 "$tmp/Caddyfile" /etc/caddy/Caddyfile
   caddy_changed=1
 fi
 if (( caddy_changed )); then

@@ -25,19 +25,29 @@ docker run -p 8787:8787 -v tk-data:/data --env-file .env timekeeper-server
 
 Put it behind TLS (the userscript runs on https, so it needs `https://` / `wss://`).
 
-## Dev server (devel.kamotimestamps.com)
+## Deployed servers (ash.kamotimestamps.com, oak.kamotimestamps.com)
 
-`./deploy.sh` (from `server/`) rsyncs this directory to `timekeeper-devel` and runs
-`deploy/remote-update.sh` there. That script is idempotent: it installs Node and Caddy if missing,
-runs `npm ci`, installs the systemd unit and Caddyfile when they changed, restarts the app and
-waits for `/healthz`. Re-run it for every update. Set `DEPLOY_HOST` to deploy elsewhere.
+`ash` is staging and `oak` is production; the droplets are defined in `../infra`. Deploy to ash
+first, check it, then promote to oak.
+
+`./deploy.sh ash|oak` (from `server/`) rsyncs this directory to `timekeeper-<env>` and runs
+`deploy/remote-update.sh` there with `TK_HOSTNAME=<env>.kamotimestamps.com`. That script is
+idempotent: it installs Node and Caddy if missing, runs `npm ci`, installs the systemd unit and
+Caddyfile (with the hostname filled in) when they changed, restarts the app and waits for
+`/healthz`. Re-run it for every update. SSH goes to `root@timekeeper-<env>`, the droplet's Tailscale name (port 22 is
+closed to the internet; see `../infra/README.md`). Set `DEPLOY_HOST` to use another address.
 
 - App: `timekeeper-server.service`, listening on `127.0.0.1:8787` as user `timekeeper`; the
   SQLite database is `/var/lib/timekeeper/timekeeper.db`.
-- Config: `/etc/timekeeper/server.env` (created on first deploy, never overwritten). Set
-  `GOOGLE_CLIENT_ID` there, then `systemctl restart timekeeper-server`.
-  Optional feature switches live there too (off unless set to `true`): `FEATURE_MINI_PLAYER`
-  turns on the floating YouTube player on the timestamps page.
+- Config: `/etc/timekeeper/server.env`. The first deploy creates it with a generated `JWT_SECRET`.
+  Every deploy then applies the non-secret settings committed in `deploy/<env>.env`
+  (`GOOGLE_CLIENT_ID`, `ALLOWED_ORIGINS`, feature switches such as `FEATURE_MINI_PLAYER=true`) and
+  sets `PUBLIC_ORIGIN` from the environment name. Keys not listed there (`JWT_SECRET`, `YOUTUBE_API_KEY`,
+  anything set by hand) are left alone, so change settings in `deploy/<env>.env`, not on the server.
+  Secrets never go in those files: `deploy.sh` reads `YOUTUBE_API_KEY` from the 1Password item
+  `timekeeper-server-youtube-api-key` (Automation vault) and sends it over SSH on stdin
+  (`remote-update.sh` applies any `KEY=value` lines it receives there). Feature switches go into `ash.env` first and into `oak.env`
+  after they have been checked on ash.
 - TLS: Caddy terminates HTTPS with Let's Encrypt's `shortlived` profile (about 6-day
   certificates, renewed automatically) and proxies to the app, WebSockets included.
 - Logs: `journalctl -u timekeeper-server -f` and `journalctl -u caddy -f`.
@@ -103,7 +113,7 @@ Any signed-in user can report a video's status, so treat it as a hint.
 `GET /` serves a small web app (`public/`): sign in with Google, browse your timestamps (the default
 page), review your sessions on the account page, and **log out all sessions**.
 
-- **Google setup:** add the server's own origin (e.g. `https://devel.kamotimestamps.com`) under
+- **Google setup:** add the server's own origin (e.g. `https://ash.kamotimestamps.com`) under
   *Authorized JavaScript origins* of the same OAuth client. The page uses Google's "Sign in with
   Google" button, which refuses to load from an origin that isn't listed. The userscript's
   `https://www.youtube.com/` redirect URI is unchanged.
