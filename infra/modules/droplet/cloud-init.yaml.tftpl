@@ -1,0 +1,12 @@
+#cloud-config
+# First boot only: join the tailnet so SSH (Tailscale SSH) works with port 22 closed to the internet.
+runcmd:
+  - install -d -m 0755 /usr/share/keyrings
+  - curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg
+  - curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list -o /etc/apt/sources.list.d/tailscale.list
+  - apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y tailscale
+  - systemctl enable --now tailscaled
+%{ if auth_key != "" ~}
+  - tailscale up --auth-key=${auth_key} --hostname=${hostname} --ssh --advertise-tags=tag:timekeeper
+%{ endif ~}

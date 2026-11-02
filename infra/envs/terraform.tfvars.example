@@ -1,0 +1,8 @@
+# Copy to envs/ash/terraform.tfvars and envs/oak/terraform.tfvars (gitignored).
+ssh_key_names = ["my-key-name-in-digitalocean"]
+
+# Port 22 stays closed; SSH goes over Tailscale. List CIDRs here only as a break-glass fallback.
+# ssh_allowed_cidrs = ["203.0.113.7/32"]
+
+# Do not put the Tailscale auth key in this file; pass it for the first apply only:
+#   export TF_VAR_tailscale_auth_key=tskey-auth-...

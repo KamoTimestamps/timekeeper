@@ -1,0 +1,6 @@
+# tenv reads .opentofu-version and installs/dispatches the matching `tofu`; mise pins tenv itself.
+[tools]
+"aqua:tofuutils/tenv" = "4.15.1"
+
+[env]
+TENV_AUTO_INSTALL = "true"
