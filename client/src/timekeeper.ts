@@ -259,6 +259,16 @@ if (!isLiveChatFrame()) {
   }
 
   // --- Pane sizing helpers (available across module) ---
+
+  /**
+   * Height left for the timestamp list. Uses layout sizes (offsetHeight): getBoundingClientRect
+   * includes the pane's transform, so during the zoom-in animation it reports a scaled-down height,
+   * and the ResizeObserver never fires again once the animation ends (the layout box didn't change).
+   */
+  function getListAreaHeight(pane: HTMLElement, header: HTMLElement, btns: HTMLElement): number {
+    return Math.max(0, pane.offsetHeight - (header.offsetHeight + btns.offsetHeight));
+  }
+
   function getPaneRect() {
     if (!pane) return null;
     return pane.getBoundingClientRect();
@@ -2094,13 +2104,7 @@ if (!isLiveChatFrame()) {
     recalculateTimestampsAreaFn?.();
 
     // Decide whether to show a scrollbar based on content height vs available height
-    const paneRect = pane.getBoundingClientRect();
-    const headerRect = header.getBoundingClientRect();
-    const btnsRect = btns.getBoundingClientRect();
-    const available = Math.max(
-      0,
-      paneRect.height - (headerRect.height + btnsRect.height),
-    );
+    const available = getListAreaHeight(pane, header, btns);
 
     if (tsCount === 0) {
       // If empty, show the placeholder message and hide overflow
@@ -5330,13 +5334,8 @@ if (!isLiveChatFrame()) {
       // Dynamically set min-height: header + buttons + 1 li row
       function recalculateTimestampsArea() {
         if (pane && header && btns && list) {
-          // Get bounding rectangles
-          const paneRect = pane.getBoundingClientRect();
-          const headerRect = header.getBoundingClientRect();
-          const btnsRect = btns.getBoundingClientRect();
           // Calculate available height for the list
-          const available =
-            paneRect.height - (headerRect.height + btnsRect.height);
+          const available = getListAreaHeight(pane, header, btns);
           list.style.maxHeight = available > 0 ? available + "px" : "0px";
           list.style.overflowY = available > 0 ? "auto" : "hidden";
         }
