@@ -48,8 +48,14 @@ closed to the internet; see `../infra/README.md`). Set `DEPLOY_HOST` to use anot
   `timekeeper-server-youtube-api-key` (Automation vault) and sends it over SSH on stdin
   (`remote-update.sh` applies any `KEY=value` lines it receives there). Feature switches go into `ash.env` first and into `oak.env`
   after they have been checked on ash.
-- TLS: Caddy terminates HTTPS with Let's Encrypt's `shortlived` profile (about 6-day
-  certificates, renewed automatically) and proxies to the app, WebSockets included.
+- TLS: Caddy terminates HTTPS on TCP 443 only (no port 80, no HTTP/3) with a Cloudflare Origin CA
+  certificate and proxies to the app, WebSockets included. Only Cloudflare can connect: the droplet
+  firewall allows Cloudflare's IP ranges on 443 (`../infra`), and Caddy requires Cloudflare's
+  Authenticated Origin Pulls client certificate (mTLS), so a request that did not come from our
+  Cloudflare zone is refused during the TLS handshake. The origin certificate, its key and the client
+  certificate are OpenTofu outputs of `../infra/envs/<env>`; `deploy.sh` reads them and
+  `remote-update.sh` installs them in `/etc/caddy/origin/`. Apply the infra first, then deploy. The
+  zone's SSL/TLS mode must be **Full (strict)**.
 - Logs: `journalctl -u timekeeper-server -f` and `journalctl -u caddy -f`.
 
 ## Google setup

@@ -68,13 +68,34 @@ while IFS= read -r line || [[ -n $line ]]; do
   [[ $line =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
   set_env "${line%%=*}" "${line#*=}"
 done < "$SETTINGS"
-# Secrets arrive on stdin as KEY=value lines (deploy.sh reads them from 1Password).
+# Secrets arrive on stdin as KEY=value lines (deploy.sh reads them from 1Password). The *_B64 lines
+# are Caddy's certificate files (deploy.sh reads them from the tofu outputs), not settings.
+ORIGIN_DIR=/etc/caddy/origin
+origin_changed=0
+write_origin_file() { # name base64 mode
+  local f="$ORIGIN_DIR/$1" new="$tmp/$1"
+  ( umask 077; printf '%s' "$2" | base64 -d > "$new" )
+  if ! cmp -s "$new" "$f"; then
+    install -o root -g caddy -m "$3" "$new" "$f"
+    origin_changed=1
+  fi
+}
+mkdir -p "$ORIGIN_DIR"
+chown root:caddy "$ORIGIN_DIR"; chmod 750 "$ORIGIN_DIR"
 if [[ ! -t 0 ]]; then
   while IFS= read -r line || [[ -n $line ]]; do
     [[ $line =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
-    set_env "${line%%=*}" "${line#*=}"
+    case "${line%%=*}" in
+      ORIGIN_CERT_B64) write_origin_file origin.pem "${line#*=}" 640 ;;
+      ORIGIN_KEY_B64) write_origin_file origin.key "${line#*=}" 640 ;;
+      AOP_CLIENT_CERT_B64) write_origin_file aop-client.pem "${line#*=}" 644 ;;
+      *) set_env "${line%%=*}" "${line#*=}" ;;
+    esac
   done
 fi
+for f in origin.pem origin.key aop-client.pem; do
+  [[ -s $ORIGIN_DIR/$f ]] || { echo "Missing $ORIGIN_DIR/$f; deploy with ./deploy.sh so the tofu outputs are sent" >&2; exit 1; }
+done
 # The landing page only accepts requests from this origin (must match the Caddyfile's site address).
 set_env PUBLIC_ORIGIN "https://$TK_HOSTNAME"
 # Caddy (below) sets X-Client-IP / -Country / -City / -Region and the app only listens on loopback.
@@ -93,7 +114,7 @@ systemctl enable timekeeper-server >/dev/null 2>&1
 # Cloudflare proxies this site, so the connecting address is always a Cloudflare edge. Caddy may only
 # believe CF-Connecting-IP / CF-IPCountry / CF-IPCity / CF-Region-Code when the peer really is in Cloudflare's published ranges,
 # otherwise anyone who reaches the origin directly could forge a location.
-caddy_changed=0
+caddy_changed=$origin_changed
 mkdir -p "$tmp/caddy-backup"
 cp -a /etc/caddy/. "$tmp/caddy-backup/"
 

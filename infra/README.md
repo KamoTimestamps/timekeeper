@@ -42,7 +42,8 @@ op item create --vault Automation --category "API Credential" \
 ```
 
 Create the Cloudflare token item the same way. In the Cloudflare dashboard (My Profile > API Tokens >
-Create Token > Custom token) grant **Zone: Zone: Read** and **Zone: DNS: Edit**, limited to the
+Create Token > Custom token) grant **Zone: Zone: Read**, **Zone: DNS: Edit** and **Zone: SSL and
+Certificates: Edit** (Origin CA certificate and Authenticated Origin Pulls), limited to the
 `kamotimestamps.com` zone, copy it, then:
 
 ```
@@ -51,6 +52,24 @@ op item create --vault Automation --category "API Credential" \
 ```
 
 The Tailscale auth key is single-use, so it is not stored; see below.
+
+## Only Cloudflare can connect
+
+Each droplet accepts TCP 443 from Cloudflare's published IP ranges and nothing else; port 80 is closed.
+On top of the firewall, Caddy requires a client certificate (Authenticated Origin Pulls), so even another
+Cloudflare customer pointing their zone at the droplet's IP is refused. `modules/droplet` creates:
+
+- an Origin CA certificate for `<env>.kamotimestamps.com` (15 years; Let's Encrypt can no longer reach the
+  origin), served by Caddy. The zone's SSL/TLS mode must be **Full (strict)**.
+- our own client certificate, uploaded to Cloudflare for that hostname only and enabled through
+  `cloudflare_authenticated_origin_pulls`. Caddy trusts exactly that certificate.
+
+The private keys are in the state (the private bucket) and are never written to git.
+`server/deploy.sh` reads the outputs and installs them on the droplet, so **apply infra before
+deploying**. Cloudflare's IP ranges are read when you apply; if they change, `tofu plan` shows the new
+firewall rule. Rotate the client certificate with
+`tofu apply -replace=module.droplet.tls_private_key.aop` (then redeploy), the origin certificate with
+`-replace=module.droplet.cloudflare_origin_ca_certificate.origin`.
 
 ## SSH over Tailscale
 

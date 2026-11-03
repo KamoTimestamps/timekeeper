@@ -10,6 +10,10 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 5.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 
   # Spaces is S3-compatible. Credentials: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (Spaces keys).
@@ -60,4 +64,17 @@ module "droplet" {
 
 output "ip" {
   value = module.droplet.ip
+}
+
+output "origin_certificate_pem" {
+  value = module.droplet.origin_certificate_pem
+}
+
+output "origin_private_key_pem" {
+  value     = module.droplet.origin_private_key_pem
+  sensitive = true
+}
+
+output "aop_client_certificate_pem" {
+  value = module.droplet.aop_client_certificate_pem
 }
