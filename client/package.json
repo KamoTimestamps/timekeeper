@@ -10,6 +10,7 @@
     "build": "extension build --browser chromium",
     "prebuild:firefox": "node build-tools/sync-version.js && node build-tools/sync-generated.js",
     "build:firefox": "extension build --browser firefox",
+    "build:firefox:devel": "TK_CHANNEL=devel pnpm run build:firefox",
     "build:userscript": "node build-tools/build.js",
     "build:userscript:devel": "node build-tools/build.js --channel=devel",
     "watch:userscript": "node build-tools/build.js --channel=local --watch",

@@ -22,6 +22,7 @@ Paths in the rest of this file are relative to `client/` unless noted.
 make build          # Install deps, build for chromium + firefox + userscript (main channel)
 make build-devel    # Build only the devel-channel userscript (../timekeeper.devel.user.js)
 make dev            # Watch + serve the local-channel userscript for live testing (see below)
+TK_CHANNEL=devel pnpm run build:firefox   # Extension build with the devel sync backend (also: build:firefox:devel); same TK_CHANNEL works for the chromium build
 npm run build:userscript  # Build userscript output only (writes ../timekeeper.user.js)
 npm run clean       # Remove dist/
 ```
