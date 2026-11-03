@@ -23,10 +23,11 @@
   },
   "devDependencies": {
     "@types/chrome": "^0.3.6",
+    "addons-linter": "^10.15.0",
     "clean-css-cli": "^5.6.3",
     "commit-and-tag-version": "^13.3.0",
     "esbuild": "^0.28.2",
-    "extension": "^4.1.35",
+    "extension": "^4.1.38",
     "http-server": "^14.1.1",
     "typescript": "^7.0.2"
   },
