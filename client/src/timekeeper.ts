@@ -10,7 +10,8 @@ import {
 } from "./util";
 import { BUILD_TIME, DISPLAY_VERSION } from "./build-info";
 import { PANE_STYLES } from "./styles";
-import { HEADER_ICON_DEFAULT_URL, HEADER_ICON_HOVER_URL } from "./header-icons";
+import { HEADER_ICON_DEFAULT_FILE, HEADER_ICON_DEFAULT_URL, HEADER_ICON_HOVER_FILE, HEADER_ICON_HOVER_URL } from "./header-icons";
+import { extensionAssetUrl } from "./extension-assets";
 import { addTooltip, hideActiveTooltip, cleanupAllTooltips } from "./tooltip";
 import * as TimestampModel from "./timestamp-model";
 import * as TimestampView from "./timestamp-view";
@@ -20,6 +21,10 @@ import { readWatchPageAccess, type WatchPageAccess } from "./members-only";
 
 declare const unsafeWindow: Window | undefined;
 import { initializeChatHandleCleanup, isLiveChatFrame } from "./chat-handles";
+
+// Extension builds load the icons from the package; userscripts use the inlined data URIs.
+const headerIconDefaultUrl = () => extensionAssetUrl(HEADER_ICON_DEFAULT_FILE) ?? HEADER_ICON_DEFAULT_URL;
+const headerIconHoverUrl = () => extensionAssetUrl(HEADER_ICON_HOVER_FILE) ?? HEADER_ICON_HOVER_URL;
 
 function getExtensionStorageValue<T = unknown>(
   key: string,
@@ -2965,8 +2970,9 @@ if (!isLiveChatFrame()) {
     }
 
     if (headerButtonImage && !isHeaderButtonHovered) {
-      if (headerButtonImage.src !== HEADER_ICON_DEFAULT_URL) {
-        headerButtonImage.src = HEADER_ICON_DEFAULT_URL;
+      const defaultUrl = headerIconDefaultUrl();
+      if (headerButtonImage.src !== defaultUrl) {
+        headerButtonImage.src = defaultUrl;
       }
     }
   }
@@ -5527,7 +5533,7 @@ if (!isLiveChatFrame()) {
     headerButton.setAttribute("aria-label", "Toggle Timekeeper UI");
 
     const headerIcon = document.createElement("img");
-    headerIcon.src = HEADER_ICON_DEFAULT_URL;
+    headerIcon.src = headerIconDefaultUrl();
     headerIcon.alt = "";
     headerIcon.decoding = "async";
 
@@ -5536,7 +5542,7 @@ if (!isLiveChatFrame()) {
     headerButton.addEventListener("mouseenter", () => {
       if (!headerButtonImage) return;
       isHeaderButtonHovered = true;
-      headerButtonImage.src = HEADER_ICON_HOVER_URL;
+      headerButtonImage.src = headerIconHoverUrl();
     });
     headerButton.addEventListener("mouseleave", () => {
       if (!headerButtonImage) return;

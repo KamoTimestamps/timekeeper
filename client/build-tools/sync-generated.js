@@ -33,7 +33,9 @@ function syncStyles() {
 }
 
 // Header icons are inlined as data URIs so the page never fetches them from GitHub
-// (no network request, no cross-origin preload failures inside userscript sandboxes).
+// (no network request, no cross-origin preload failures inside userscript sandboxes). The
+// extension builds load the same files from the package instead (see extension-assets.ts), because
+// YouTube's img-src policy has no data: entry; the *_FILE exports are their paths in the package.
 function syncHeaderIcons() {
   const lines = [
     '// Generated from assets/*.png by build-tools/sync-generated.js — do not edit by hand',
@@ -41,6 +43,7 @@ function syncHeaderIcons() {
   for (const [name, fileName] of Object.entries(HEADER_ICONS)) {
     const base64 = fs.readFileSync(path.join(assetsDir, fileName)).toString('base64');
     lines.push(`export const ${name} = "data:image/png;base64,${base64}";`);
+    lines.push(`export const ${name.replace(/_URL$/, '_FILE')} = "assets/${fileName}";`);
   }
   const changed = writeIfChanged(headerIconsTsFile, lines.join('\n') + '\n');
   console.log(`✓ ${changed ? 'Synced' : 'Verified'} src/header-icons.ts from assets/`);

@@ -66,6 +66,7 @@ The codebase follows a repository-service-model pattern:
 | `src/google-drive.ts` | OAuth2 auth flow, backup scheduling, Drive file upload (uses fflate for zip) |
 | `src/sync-client.ts` | Sync backend sign-in (Google ID token via popup) and live sync: write-counter push, seq-cursor pull, WebSocket for other devices' changes |
 | `src/icons.ts` | Tabler icon imports and DOM creation helpers |
+| `src/extension-assets.ts`, `src/extension-bridge.ts` | Extension builds only: the isolated-world bridge publishes `runtime.getURL("/")` on `<html>` so the page-world script can load packaged files (header icons, web-accessible to youtube.com). Userscripts fall back to inlined data URIs, since YouTube's `img-src` has no `data:` entry |
 | `src/tooltip.ts` | Custom tooltip system with mouse-following positioning |
 | `src/util.ts` | Shared utilities: logging, time formatting, URL building |
 | `src/styles.css` | All CSS (copied into generated `src/styles.ts` at build time) |
