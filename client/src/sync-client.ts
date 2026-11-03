@@ -596,7 +596,7 @@ export function handleSyncOAuthRedirect(): boolean {
     );
     channel.close();
   } catch (err) {
-    console.error('[Timekeeper] Failed to hand sync sign-in result to the opener:', err);
+    log('Failed to hand sync sign-in result to the opener:', err, 'error');
   }
 
   if (history.replaceState) history.replaceState(null, '', window.location.pathname + window.location.search);
