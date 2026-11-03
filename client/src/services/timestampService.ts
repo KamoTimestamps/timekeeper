@@ -8,7 +8,6 @@ import {
   TimestampRecord,
   TimestampRow,
   TimestampRowSchema,
-  ExportDataSchema,
 } from '../schema';
 import { log, formatTimeString, getTimestampSuffix, buildYouTubeUrlWithTimestamp } from '../util';
 import * as TimestampRepository from './timestampRepository';
@@ -64,7 +63,7 @@ export async function buildExportPayload({ includeDeleted = false }: { includeDe
       start: ts.start,
       comment: ts.comment,
       write_counter: ts.write_counter,
-      deleted_at: ts.deleted_at, // soft-deletion state for backup/restore sync
+      deleted_at: ts.deleted_at, // soft-deletion state, synced to other devices
       // device_id is storage-only; excluded from export
     });
   }
@@ -254,101 +253,13 @@ export async function getVideoTimestamps(videoId: string): Promise<TimestampReco
 
 // === Import/Merge Business Logic ===
 
-/**
- * Merge remote backup data into local DB using Lamport counter conflict resolution.
- *
- * Rules:
- *   - New GUID (no local record)              → always import (with its deleted_at state)
- *   - Same GUID, higher remote counter        → remote wins, including its deleted_at state:
- *       - remote deleted_at set   → record is soft-deleted on this device after merge
- *       - remote deleted_at unset → record is live (re-activates any local soft-deletion)
- *   - Same GUID, equal/lower remote counter   → keep local as-is (local deletion preserved)
- *   - Same GUID, no counter in remote         → keep local (old backup format)
- *
- * write_counter is a monotonic global sequence stamped on every create, edit, and
- * soft-delete.  Because soft-deletes increment the counter, a deletion on one device
- * will have a higher counter than the pre-deletion record on other devices, so the
- * Lamport comparison naturally propagates deletions without extra bookkeeping.
- */
-export async function mergeBackupData(json: string): Promise<{ mergedVideos: number; mergedTimestamps: number }> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    log('mergeBackupData: failed to parse JSON', null, 'warn');
-    return { mergedVideos: 0, mergedTimestamps: 0 };
-  }
-
-  const result = ExportDataSchema.safeParse(parsed);
-  if (!result.success) {
-    log('mergeBackupData: data failed validation', result.error.message, 'warn');
-    return { mergedVideos: 0, mergedTimestamps: 0 };
-  }
-
-  // Map: guid → row (for lookup + comparison)
-  const existingRows = await TimestampRepository.getAllTimestamps();
-  const existingMap = new Map<string, typeof existingRows[number]>();
-  for (const row of existingRows) {
-    existingMap.set(row.guid, row);
-  }
-
-  let mergedVideos = 0;
-  let mergedTimestamps = 0;
-  const batch: Array<{
-    guid: string;
-    video_id: string;
-    start: number;
-    comment: string;
-    write_counter?: number;
-    deleted_at?: number;
-  }> = [];
-
-  for (const [, videoEntry] of Object.entries(result.data)) {
-    const { video_id, timestamps } = videoEntry;
-    let videoMerged = 0;
-    for (const ts of timestamps) {
-      const existing = existingMap.get(ts.guid);
-
-      const shouldImport = remoteWins(existing, video_id, ts);
-
-      if (shouldImport) {
-        batch.push({
-          guid: ts.guid,
-          video_id,
-          start: ts.start,
-          comment: ts.comment,
-          write_counter: ts.write_counter,
-          deleted_at: ts.deleted_at,
-        });
-        existingMap.set(ts.guid, {
-          ...(existing ?? {}),
-          guid: ts.guid,
-          video_id,
-          start: ts.start,
-          comment: ts.comment,
-          write_counter: ts.write_counter,
-          deleted_at: ts.deleted_at,
-        } as typeof existingRows[number]);
-        videoMerged++;
-        mergedTimestamps++;
-      }
-    }
-    if (videoMerged > 0) mergedVideos++;
-  }
-
-  await TimestampRepository.saveTimestampsBatch(batch);
-  // saveTimestampsBatch already advances the local counter to max(local, remoteMax)+1
-  // so no additional setWriteCounter call is needed here.
-  return { mergedVideos, mergedTimestamps };
-}
-
 /** Tie-break key for equal write_counters; must match `contentKey` in server/src/store.ts. */
 function contentKey(video_id: string, r: { start: number; comment: string; deleted_at?: number | null }): string {
   return JSON.stringify([video_id, r.start, r.comment, r.deleted_at ?? null]);
 }
 
 /**
- * Whether the incoming record replaces the stored one (see the rules on mergeBackupData).
+ * Whether the incoming record replaces the stored one.
  * - No stored row: import, including its deleted_at state.
  * - Higher incoming counter: import. A remote soft-delete hides the row here; a higher counter
  *   without deleted_at re-activates a locally deleted row (remote edit supersedes local deletion).
@@ -383,7 +294,7 @@ export async function getRecordsChangedSince(counter: number): Promise<Array<Tim
 }
 
 /**
- * Merge records received from the sync server using the same Lamport rules as a backup restore.
+ * Merge records received from the sync server using Lamport counter conflict resolution (see `remoteWins`).
  */
 export async function mergeRemoteRecords(
   records: Array<TimestampRecord & { video_id: string }>

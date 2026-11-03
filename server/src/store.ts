@@ -1101,7 +1101,7 @@ export class Store {
 
   /**
    * Last-writer-wins by Lamport write_counter, the same rule the userscript uses when merging
-   * backups. Equal counters with different content are decided by `winsOver`, so every device
+   * remote records. Equal counters with different content are decided by `winsOver`, so every device
    * and the server converge on the same version. Each accepted record gets the next per-user seq; the whole push is one transaction,
    * so the accepted seqs are contiguous.
    */

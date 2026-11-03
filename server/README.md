@@ -79,7 +79,7 @@ The Sync tab stays disabled until both client constants are set.
 ## Sync model
 
 Records use the userscript's own shape (`guid`, `video_id`, `start`, `comment`, `write_counter`,
-`deleted_at`). Conflicts resolve like a backup restore: the higher Lamport `write_counter` wins,
+`deleted_at`). Conflicts resolve by Lamport counter: the higher Lamport `write_counter` wins,
 and deletions are soft (`deleted_at`) so they propagate. Every accepted change gets the next
 per-user `seq`, which clients use as a pull cursor. The seqs of one push are contiguous, so a
 client that receives `changes` with `fromSeq` at or below its cursor knows it missed nothing.

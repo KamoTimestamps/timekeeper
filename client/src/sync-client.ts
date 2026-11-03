@@ -23,6 +23,7 @@ import {
   string,
 } from './schema';
 import { setIconLabel } from './icons';
+import { addTooltip } from './tooltip';
 import * as AppState from './services/state';
 import * as TimestampModel from './timestamp-model';
 import type { WatchPageAccess } from './members-only';
@@ -265,7 +266,7 @@ export function updateSyncStatusDisplay() {
   }
 
   uiRefresher?.();
-  onStatusChange?.();
+  updateHeaderIndicator();
 }
 
 /** What the sync status says and what color it shows; `busy` while connecting or exchanging changes. */
@@ -289,21 +290,54 @@ function describeSyncStatus(auth = getSyncAuthState()): { text: string; color: s
   return { text: '', color: '#aaa', busy: false };
 }
 
-const BUSY_BLUE = '#4285f4'; // the header light pulses for this color (see google-drive.ts)
+const BUSY_BLUE = '#4285f4'; // the header light pulses for this color
+const IDLE_GRAY = '#666';
+const PULSING_CLASS = 'ytls-sync-indicator--pulsing';
 
-/** The header light's state while signed in to sync; null otherwise, when the light shows backup status. */
-export function getSyncIndicator(): { color: string; tooltip: string } | null {
-  if (!isSyncConfigured() || !getSyncAuthState().isSignedIn) return null;
+/** The header light's state: sync status while signed in, gray otherwise. */
+function getSyncIndicator(): { color: string; tooltip: string } {
+  if (!isSyncConfigured()) return { color: IDLE_GRAY, tooltip: 'Sync is not available in this build' };
+  if (!getSyncAuthState().isSignedIn) return { color: IDLE_GRAY, tooltip: 'Sync: signed out' };
   const { text, color, busy } = describeSyncStatus();
   if (!text) return { color: ORANGE, tooltip: 'Sync: starting…' };
   return { color: busy ? BUSY_BLUE : color, tooltip: `Sync: ${text}` };
 }
 
-let onStatusChange: (() => void) | null = null;
+let headerIndicator: HTMLElement | null = null;
+let pendingColorChange: (() => void) | null = null;
 
-/** Called whenever sign-in state or sync status changes, so the header light can follow. */
-export function setOnSyncStatusChange(fn: (() => void) | null) {
-  onStatusChange = fn;
+/** Sets the header light element that follows sync status. */
+export function setHeaderIndicator(el: HTMLElement | null) {
+  headerIndicator = el;
+  updateHeaderIndicator();
+}
+
+function updateHeaderIndicator() {
+  const el = headerIndicator;
+  if (!el) return;
+  const { color, tooltip } = getSyncIndicator();
+
+  // Cancel any previously scheduled deferred color change
+  if (pendingColorChange) {
+    el.removeEventListener('animationiteration', pendingColorChange);
+    pendingColorChange = null;
+  }
+  if (color === BUSY_BLUE) {
+    el.style.backgroundColor = color;
+    el.classList.add(PULSING_CLASS);
+  } else if (el.classList.contains(PULSING_CLASS)) {
+    // Let the current pulse cycle finish before switching color
+    pendingColorChange = () => {
+      el.classList.remove(PULSING_CLASS);
+      el.style.backgroundColor = color;
+      pendingColorChange = null;
+    };
+    el.addEventListener('animationiteration', pendingColorChange, { once: true });
+  } else {
+    el.style.backgroundColor = color;
+  }
+  // The tooltip is recomputed each time it is shown
+  addTooltip(el, () => getSyncIndicator().tooltip);
 }
 
 function setSyncState(next: SyncState) {

@@ -202,38 +202,6 @@ export const VideoEntrySchema = object<{ video_id: string; timestamps: Timestamp
 });
 export const ExportDataSchema = record(VideoEntrySchema);
 
-export interface GoogleAuthStateParsed {
-  isSignedIn: boolean;
-  accessToken: string | null;
-  userName: string | null;
-  email: string | null;
-}
-
-const GoogleAuthStateObjectSchema = object<GoogleAuthStateParsed>({
-  isSignedIn: catchWith(boolean(), false),
-  accessToken: catchWith(nullable(string()), null),
-  userName: catchWith(nullable(string()), null),
-  email: catchWith(nullable(string()), null),
-});
-
-// Accepts either the state object or its JSON-encoded string; anything else
-// (or malformed JSON) falls back to a signed-out state, so parsing never fails.
-export const GoogleAuthStateSchema = catchWith(
-  define<GoogleAuthStateParsed>((v, p) => {
-    if (typeof v === 'string') {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(v);
-      } catch {
-        return fail(p, 'valid JSON string for auth state');
-      }
-      return GoogleAuthStateObjectSchema.run(parsed, p);
-    }
-    return GoogleAuthStateObjectSchema.run(v, p);
-  }),
-  { isSignedIn: false, accessToken: null, userName: null, email: null },
-);
-
 export interface SyncAuthStateParsed {
   isSignedIn: boolean;
   accessToken: string | null;
@@ -267,17 +235,3 @@ export const SyncAuthStateSchema = catchWith(
   }),
   SIGNED_OUT_SYNC_AUTH_STATE,
 );
-
-export interface AutoBackupSettings {
-  autoBackupEnabled: boolean;
-  autoBackupIntervalMinutes: number;
-  lastAutoBackupAt?: number | null;
-}
-
-export const AutoBackupSettingsSchema = object<AutoBackupSettings>({
-  autoBackupEnabled: boolean(),
-  autoBackupIntervalMinutes: number({ int: true, min: 5, max: 1440 }),
-  lastAutoBackupAt: optional(nullable(number({ int: true, positive: true }))),
-});
-
-export const BackupSettingsSchema = AutoBackupSettingsSchema;

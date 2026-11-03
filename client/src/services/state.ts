@@ -4,7 +4,6 @@
  */
 
 import {
-  GoogleAuthStateParsed,
   SIGNED_OUT_SYNC_AUTH_STATE,
   SyncAuthStateParsed,
   TimestampRecord,
@@ -15,18 +14,9 @@ import {
  * Complete application state structure
  */
 export interface AppState {
-  // Authentication & Backup state
+  // Authentication state
   auth: {
-    googleAuthState: GoogleAuthStateParsed;
     syncAuthState: SyncAuthStateParsed;
-    autoBackupEnabled: boolean;
-    autoBackupIntervalMinutes: number;
-    autoBackupRetryAttempts: number;
-    autoBackupBackoffMs: number | null;
-    lastAutoBackupAt: number | null;
-    isAutoBackupRunning: boolean;
-    /** The last backup run failed and its retries ran out; cleared by the next success. Not persisted. */
-    autoBackupFailed: boolean;
   };
 
   // UI state
@@ -51,20 +41,7 @@ export interface AppState {
  */
 const DEFAULT_STATE: AppState = {
   auth: {
-    googleAuthState: {
-      isSignedIn: false,
-      accessToken: null,
-      userName: null,
-      email: null,
-    },
     syncAuthState: SIGNED_OUT_SYNC_AUTH_STATE,
-    autoBackupEnabled: true,
-    autoBackupIntervalMinutes: 30,
-    autoBackupRetryAttempts: 0,
-    autoBackupBackoffMs: null,
-    lastAutoBackupAt: null,
-    isAutoBackupRunning: false,
-    autoBackupFailed: false,
   },
   ui: {
     panePosition: null,
@@ -124,48 +101,12 @@ function setUi<K extends keyof AppState['ui']>(key: K, value: AppState['ui'][K])
 /**
  * Auth State Getters/Setters
  */
-export function getGoogleAuthState(): GoogleAuthStateParsed {
-  return appState.auth.googleAuthState;
-}
-
-export function setGoogleAuthState(authState: GoogleAuthStateParsed): void {
-  setAuth('googleAuthState', authState);
-}
-
 export function getSyncAuthState(): SyncAuthStateParsed {
   return appState.auth.syncAuthState;
 }
 
 export function setSyncAuthState(authState: SyncAuthStateParsed): void {
   setAuth('syncAuthState', authState);
-}
-
-export function setAutoBackupEnabled(enabled: boolean): void {
-  setAuth('autoBackupEnabled', enabled);
-}
-
-export function setAutoBackupIntervalMinutes(minutes: number): void {
-  setAuth('autoBackupIntervalMinutes', minutes);
-}
-
-export function setAutoBackupRunning(running: boolean): void {
-  setAuth('isAutoBackupRunning', running);
-}
-
-export function setAutoBackupFailed(failed: boolean): void {
-  setAuth('autoBackupFailed', failed);
-}
-
-export function setAutoBackupRetryAttempts(attempts: number): void {
-  setAuth('autoBackupRetryAttempts', attempts);
-}
-
-export function setAutoBackupBackoffMs(backoff: number | null): void {
-  setAuth('autoBackupBackoffMs', backoff);
-}
-
-export function setLastAutoBackupAt(timestamp: number | null): void {
-  setAuth('lastAutoBackupAt', timestamp);
 }
 
 export function setMinPaneHeight(height: number): void {

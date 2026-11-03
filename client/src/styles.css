@@ -373,27 +373,6 @@
   cursor: default;
 }
 
-#ytls-pane .ytls-google-user-display {
-  font-size: 12px;
-  color: #4285f4;
-  margin-left: 8px;
-  padding: 2px 6px;
-  cursor: default;
-  background: rgba(66, 133, 244, 0.1);
-  border-radius: 4px;
-}
-
-#ytls-pane .ytls-backup-status-display {
-  font-size: 12px;
-  color: #9acd32;
-  /* yellowgreen */
-  margin-left: 8px;
-  padding: 2px 6px;
-  cursor: default;
-  background: rgba(154, 205, 50, 0.12);
-  border-radius: 4px;
-}
-
 #ytls-members-badge {
   display: none;
   align-items: center;
@@ -441,8 +420,8 @@
   align-self: center;
 }
 
-/* Backup status indicator (colored dot) */
-.ytls-backup-indicator {
+/* Sync status indicator (colored dot) */
+.ytls-sync-indicator {
   display: inline-block;
   width: 8px;
   height: 8px;
@@ -464,7 +443,7 @@
   }
 }
 
-.ytls-backup-indicator--pulsing {
+.ytls-sync-indicator--pulsing {
   animation: ytls-pulse 1.6s ease-in-out infinite;
 }
 

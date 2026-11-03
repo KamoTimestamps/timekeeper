@@ -5,7 +5,6 @@
 //   - UI edits are row-level: a pane that hasn't seen a row yet can't tombstone it
 //   - "clear all" can't be undone by a pending comment save
 //   - one corrupt stored row doesn't hide the rest of the video's timestamps
-//   - a failed Drive listing aborts the backup instead of uploading a duplicate remote file
 //   - a DB upgrade requested by another tab isn't blocked by this tab's open connection
 // Run it against an older bundle to confirm each check can fail.
 const { chromium } = require('playwright-core');
@@ -136,49 +135,7 @@ const typeIntoFirstRow = (page, text) => page.locator('#ytls-pane li input').fir
     await context.close();
   }
 
-  // 7) Drive sync fails closed: a failed listing must not upload a second remote file
-  const driveSettings = [
-    { key: 'googleAuthState', value: { isSignedIn: true, accessToken: 'tok', userName: 'tester', email: 'tester@example.com' } },
-    { key: 'autoBackupEnabled', value: true },
-    { key: 'autoBackupIntervalMinutes', value: 5 },
-  ];
-  for (const mode of ['listing-fails', 'no-remote-file']) {
-    const calls = [];
-    const { context, page } = await newSession(browser, {
-      settings: driveSettings,
-      prepare: async (ctx) => {
-        await ctx.route(/googleapis\.com/, (route) => {
-          const req = route.request();
-          const u = new globalThis.URL(req.url());
-          const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };
-          const json = (status, body) => route.fulfill({ status, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(body) });
-          if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
-          calls.push(`${req.method()} ${u.pathname}`);
-          const q = u.searchParams.get('q') || '';
-          if (u.pathname.startsWith('/upload/')) return json(200, { id: 'up1', name: 'timekeeper-data.zip' });
-          if (u.pathname === '/oauth2/v2/userinfo') return json(200, {});
-          if (u.pathname === '/drive/v3/files' && q.includes('vnd.google-apps.folder')) return json(200, { files: [{ id: 'folder1', name: 'Timekeeper' }] });
-          if (u.pathname === '/drive/v3/files' && q.includes('timekeeper-data.zip')) {
-            return mode === 'listing-fails' ? json(500, { error: 'boom' }) : json(200, { files: [] });
-          }
-          return json(404, {});
-        });
-      },
-    });
-    await page.waitForTimeout(6000);
-    const uploads = calls.filter((c) => c.includes('/upload/'));
-    const last = await dbGet(page, 'settings', 'lastAutoBackupAt');
-    if (mode === 'listing-fails') {
-      check('failed Drive listing: no upload is attempted', uploads.length === 0, { calls });
-      check('failed Drive listing: backup is not recorded as done', !last?.value, last);
-    } else {
-      check('no remote file yet: exactly one upload is made', uploads.length === 1, { calls });
-      check('successful upload is recorded as a backup', typeof last?.value === 'number', last);
-    }
-    await context.close();
-  }
-
-  // 8) A DB upgrade requested by another tab isn't blocked by this tab (run last: it bumps the version)
+  // 7) A DB upgrade requested by another tab isn't blocked by this tab (run last: it bumps the version)
   {
     const { context, page } = await newSession(browser);
     const result = await page.evaluate(() => new Promise((res) => {

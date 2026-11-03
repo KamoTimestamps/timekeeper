@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Timekeeper is a userscript browser extension for YouTube that lets viewers add, manage, and share timestamps on video content. It also enables DVR/rewind on live streams and supports Google Drive backup. Built with TypeScript + esbuild, targeting Tampermonkey/Violentmonkey.
+Timekeeper is a userscript browser extension for YouTube that lets viewers add, manage, and share timestamps on video content. It also enables DVR/rewind on live streams and syncs timestamps live across devices. Built with TypeScript + esbuild, targeting Tampermonkey/Violentmonkey.
 
 ## Repository Layout
 
@@ -51,7 +51,7 @@ The codebase follows a repository-service-model pattern:
 
 | Layer | Files | Responsibility |
 |-------|-------|----------------|
-| **Schema** | `src/schema.ts` | All Zod schemas (TimestampRecord, AppState, BackupSettings, etc.) — single source of truth for data shapes |
+| **Schema** | `src/schema.ts` | All Zod schemas (TimestampRecord, AppState, SyncAuthState, etc.) — single source of truth for data shapes |
 | **Repository** | `src/services/timestampRepository.ts` | Raw IndexedDB operations (open, CRUD, migrations) |
 | **Service** | `src/services/timestampService.ts` | Business logic: export/import, merge, validation |
 | **Model (facade)** | `src/timestamp-model.ts` | Public API exports that delegate to service + repository |
@@ -63,7 +63,6 @@ The codebase follows a repository-service-model pattern:
 | File | Purpose |
 |------|---------|
 | `src/dvr-enablement.ts` | Intercepts YouTube's `playerResponse` getter/setter to enable DVR/rewind on live streams |
-| `src/google-drive.ts` | OAuth2 auth flow, backup scheduling, Drive file upload (uses fflate for zip) |
 | `src/sync-client.ts` | Sync backend sign-in (Google ID token via popup) and live sync: write-counter push, seq-cursor pull, WebSocket for other devices' changes |
 | `src/icons.ts` | Tabler icon imports and DOM creation helpers |
 | `src/extension-assets.ts`, `src/extension-bridge.ts` | Extension builds only: the isolated-world bridge publishes `runtime.getURL("/")` on `<html>` so the page-world script can load packaged files (header icons, web-accessible to youtube.com). Userscripts fall back to inlined data URIs, since YouTube's `img-src` has no `data:` entry |

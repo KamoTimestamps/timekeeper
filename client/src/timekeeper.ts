@@ -40,72 +40,11 @@ function setExtensionStorageValue(key: string, value: unknown): Promise<void> {
   return Promise.resolve();
 }
 
-import * as GoogleDrive from "./google-drive";
 import * as SyncClient from "./sync-client";
 import {
   PanePositionSchema,
   TimestampRecord,
 } from "./schema";
-
-// OAuth detection - always check URL for auth token, runs synchronously before any async operations
-const hash = window.location.hash;
-if (hash && hash.length > 1) {
-  const params = new URLSearchParams(hash.substring(1));
-  const state = params.get("state");
-
-  if (state === "timekeeper_auth") {
-    const token = params.get("access_token");
-    if (token) {
-      log("Auth token detected in URL, broadcasting token");
-      log("Token length:", token.length, "characters");
-
-      // Broadcast via BroadcastChannel (primary method)
-      try {
-        const channel = new BroadcastChannel("timekeeper_oauth");
-        const message = { type: "timekeeper_oauth_token", token: token };
-        log("Sending auth message via BroadcastChannel:", {
-          type: message.type,
-          tokenLength: token.length,
-        });
-        channel.postMessage(message);
-        channel.close();
-        log("Token broadcast via BroadcastChannel completed");
-      } catch (e) {
-        log("BroadcastChannel failed, using IndexedDB fallback:", e, "warn");
-        // Fallback to IndexedDB for cross-tab communication
-        const message = {
-          type: "timekeeper_oauth_token",
-          token: token,
-          timestamp: Date.now(),
-        };
-        // Direct IndexedDB write (can't use async helper here as it's not defined yet)
-        const openReq = indexedDB.open("ytls-timestamps-db", 4);
-        openReq.onsuccess = () => {
-          const db = openReq.result;
-          const tx = db.transaction("settings", "readwrite");
-          const store = tx.objectStore("settings");
-          store.put({ key: "oauth_message", value: message });
-          tx.oncomplete = () => {
-            log("Token broadcast via IndexedDB completed, timestamp:", message.timestamp);
-            db.close();
-          };
-        };
-      }
-
-      // Clean up the hash from the URL
-      if (history.replaceState) {
-        const cleanUrl = window.location.pathname + window.location.search;
-        history.replaceState(null, "", cleanUrl);
-      }
-
-      // Close window after broadcasting auth token
-      log("Closing window after broadcasting auth token");
-      window.close();
-      // Exit the module by throwing - this prevents the IIFE from running
-      throw new Error("OAuth window closed");
-    }
-  }
-}
 
 // Timekeeper Sync sign-in popup: hand the Google ID token to the opener tab, then stop here.
 if (SyncClient.handleSyncOAuthRedirect()) {
@@ -126,19 +65,6 @@ if (!isLiveChatFrame()) {
     return; // Don't run the main app in iframes (live chat only needs handle cleanup)
   }
 
-  // Setup minimal logging and storage functions early for OAuth handling
-  function earlyLoadGlobalSettings(key: string): Promise<unknown> {
-    return getExtensionStorageValue(key, undefined);
-  }
-
-  function earlySaveGlobalSettings(key: string, value: unknown): Promise<void> {
-    return setExtensionStorageValue(key, value);
-  }
-
-  // Initialize GoogleDrive callbacks early for OAuth handling
-  (GoogleDrive as any).setLoadGlobalSettings(earlyLoadGlobalSettings);
-  (GoogleDrive as any).setSaveGlobalSettings(earlySaveGlobalSettings);
-
   // Initialize Lamport device_id so all write operations have a stable identifier
   try {
     const deviceId = await TimestampModel.loadGlobalSettings('device_id');
@@ -150,16 +76,6 @@ if (!isLiveChatFrame()) {
   } catch (err) {
     log('Lamport: failed to initialize device_id:', err, 'warn');
   }
-
-  // Check if we're in an OAuth popup and handle it
-  const isOAuthPopup = await GoogleDrive.handleOAuthPopup();
-  if (isOAuthPopup) {
-    log("OAuth popup detected, broadcasting token and closing");
-    return; // Exit script, popup will close
-  }
-
-  // Load auth state early so user remains signed in
-  await GoogleDrive.loadGoogleAuthState();
 
   const SUPPORTED_PATH_PREFIXES = ["/watch", "/live"] as const;
 
@@ -203,7 +119,7 @@ if (!isLiveChatFrame()) {
   let isTogglingPlaybackSpeed = false;
 
   let versionDisplay: HTMLSpanElement | null = null;
-  let backupStatusIndicator: HTMLSpanElement | null = null;
+  let syncIndicator: HTMLSpanElement | null = null;
   // Used for dynamic min-height calculation
   let minPaneHeight = 250;
 
@@ -2940,7 +2856,6 @@ if (!isLiveChatFrame()) {
     saveGlobalSettings,
     loadGlobalSettings,
     buildExportPayload,
-    mergeBackupData,
     exportAllTimestamps,
     exportAllTimestampsCsv,
   } = TimestampModel;
@@ -3299,14 +3214,14 @@ if (!isLiveChatFrame()) {
       btns = document.createElement("div");
       timeDisplay = document.createElement("span");
       versionDisplay = document.createElement("span");
-      backupStatusIndicator = document.createElement("span");
-      backupStatusIndicator.classList.add("ytls-backup-indicator");
-      backupStatusIndicator.style.cursor = "pointer";
-      backupStatusIndicator.style.backgroundColor = "#666"; // Default gray color
-      backupStatusIndicator.onclick = (e) => {
+      syncIndicator = document.createElement("span");
+      syncIndicator.classList.add("ytls-sync-indicator");
+      syncIndicator.style.cursor = "pointer";
+      syncIndicator.style.backgroundColor = "#666"; // Default gray color
+      syncIndicator.onclick = (e) => {
         e.stopPropagation();
-        // The light shows sync status while signed in to sync (see updateBackupStatusIndicator), so open the matching tab.
-        toggleSettingsModal(SyncClient.getSyncIndicator() ? "sync" : "drive");
+        // The light shows sync status, so open the Sync tab.
+        toggleSettingsModal("sync");
       };
 
       // Add event listeners to `list` after it is initialized
@@ -3428,13 +3343,13 @@ if (!isLiveChatFrame()) {
         addTooltip(versionDisplay, `Built ${BUILD_TIME.toLocaleString()}`);
       }
 
-      // Create a wrapper for version and backup indicator
+      // Create a wrapper for version and sync indicator
       const versionWrapper = document.createElement("span");
       versionWrapper.style.display = "inline-flex";
       versionWrapper.style.alignItems = "center";
       versionWrapper.style.gap = "6px";
       versionWrapper.appendChild(versionDisplay);
-      versionWrapper.appendChild(backupStatusIndicator);
+      versionWrapper.appendChild(syncIndicator);
 
       membersBadge = document.createElement("span");
       membersBadge.id = "ytls-members-badge";
@@ -3952,7 +3867,7 @@ if (!isLiveChatFrame()) {
 
       // Function to create and toggle the settings modal
       function toggleSettingsModal(
-        initialTab: "general" | "google" | "sync" | "drive" = "general",
+        initialTab: "general" | "sync" = "general",
       ) {
         if (
           settingsModalInstance &&
@@ -4056,25 +3971,17 @@ if (!isLiveChatFrame()) {
         sectionHeading.style.display = "none";
 
         const generalSection = document.createElement("div");
-        const googleSection = document.createElement("div");
-        googleSection.className = "ytls-button-grid";
         const syncSection = document.createElement("div");
         syncSection.className = "ytls-button-grid";
 
-        function showSection(section: "general" | "google" | "sync") {
+        function showSection(section: "general" | "sync") {
           generalSection.style.display =
             section === "general" ? "block" : "none";
-          googleSection.style.display = section === "google" ? "block" : "none";
           syncSection.style.display = section === "sync" ? "block" : "none";
           generalTab.classList.toggle("active", section === "general");
-          googleTab.classList.toggle("active", section === "google");
           syncTab.classList.toggle("active", section === "sync");
           sectionHeading.textContent =
-            section === "general"
-              ? "General"
-              : section === "google"
-                ? "Google"
-                : "Sync";
+            section === "general" ? "General" : "Sync";
         }
 
         const generalTab = document.createElement("button");
@@ -4087,21 +3994,6 @@ if (!isLiveChatFrame()) {
         generalTab.classList.add("ytls-settings-modal-button");
         generalTab.onclick = () => showSection("general");
 
-        const googleTab = document.createElement("button");
-        googleTab.appendChild(createIcon("cloud", 16));
-        const googleTabText = document.createElement("span");
-        googleTabText.className = "ytls-tab-text";
-        googleTabText.textContent = " Google";
-        googleTab.appendChild(googleTabText);
-        addTooltip(googleTab, "Google Drive backup settings");
-        googleTab.classList.add("ytls-settings-modal-button");
-        googleTab.onclick = async () => {
-          // Verify auth state when opening Google settings
-          if (GoogleDrive.googleAuthState.isSignedIn) {
-            await GoogleDrive.verifySignedIn();
-          }
-          showSection("google");
-        };
         const syncTab = document.createElement("button");
         syncTab.appendChild(createIcon("server", 16));
         const syncTabText = document.createElement("span");
@@ -4112,7 +4004,6 @@ if (!isLiveChatFrame()) {
         syncTab.classList.add("ytls-settings-modal-button");
         syncTab.onclick = () => showSection("sync");
         nav.appendChild(generalTab);
-        nav.appendChild(googleTab);
         nav.appendChild(syncTab);
 
         header.appendChild(nav);
@@ -4158,144 +4049,6 @@ if (!isLiveChatFrame()) {
             "file-spreadsheet",
           ),
         );
-
-        // Build Google Drive section
-        const signButton = createButton(
-          GoogleDrive.googleAuthState.isSignedIn ? "Sign Out" : "Sign In",
-          GoogleDrive.googleAuthState.isSignedIn
-            ? "Sign out from Google Drive"
-            : "Sign in to Google Drive",
-          async () => {
-            if (GoogleDrive.googleAuthState.isSignedIn) {
-              await GoogleDrive.signOutFromGoogle();
-            } else {
-              await GoogleDrive.signInToGoogle();
-            }
-            // Update label after action
-            setIconLabel(
-              signButton,
-              GoogleDrive.googleAuthState.isSignedIn ? "logout" : "login",
-              GoogleDrive.googleAuthState.isSignedIn ? "Sign Out" : "Sign In",
-            );
-            addTooltip(
-              signButton,
-              GoogleDrive.googleAuthState.isSignedIn
-                ? "Sign out from Google Drive"
-                : "Sign in to Google Drive",
-            );
-            // Ensure main backup status indicator updates immediately
-            GoogleDrive.updateBackupStatusDisplay();
-          },
-          GoogleDrive.googleAuthState.isSignedIn ? "logout" : "login",
-        );
-
-        const autoToggleButton = createButton(
-          GoogleDrive.getAutoBackupEnabled()
-            ? "Auto Backup: On"
-            : "Auto Backup: Off",
-          "Toggle Auto Backup",
-          async () => {
-            await GoogleDrive.toggleAutoBackup();
-            refreshBackupButtons();
-            GoogleDrive.updateBackupStatusDisplay();
-          },
-          "refresh",
-        );
-
-        const intervalButton = createButton(
-          `Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`,
-          "Set periodic backup interval (minutes)",
-          async () => {
-            await GoogleDrive.setAutoBackupIntervalPrompt();
-            refreshBackupButtons();
-            GoogleDrive.updateBackupStatusDisplay();
-          },
-          "clock-plus",
-        );
-
-        const refreshBackupButtons = () => {
-          setIconLabel(
-            signButton,
-            GoogleDrive.googleAuthState.isSignedIn ? "logout" : "login",
-            GoogleDrive.googleAuthState.isSignedIn ? "Sign Out" : "Sign In",
-          );
-          addTooltip(
-            signButton,
-            GoogleDrive.googleAuthState.isSignedIn
-              ? "Sign out from Google Drive"
-              : "Sign in to Google Drive",
-          );
-          setIconLabel(
-            autoToggleButton,
-            "refresh",
-            GoogleDrive.getAutoBackupEnabled()
-              ? "Auto Backup: On"
-              : "Auto Backup: Off",
-          );
-          setIconLabel(
-            intervalButton,
-            "clock-plus",
-            `Backup Interval: ${GoogleDrive.getAutoBackupIntervalMinutes()}min`,
-          );
-          if (
-            typeof (GoogleDrive as any).updateBackupStatusDisplay === "function"
-          ) {
-            (GoogleDrive as any).updateBackupStatusDisplay();
-          }
-        };
-
-        googleSection.appendChild(signButton);
-        googleSection.appendChild(autoToggleButton);
-        googleSection.appendChild(intervalButton);
-
-        googleSection.appendChild(
-          createButton(
-            "Backup Now",
-            "Run a backup immediately",
-            async () => {
-              await GoogleDrive.runAutoBackupOnce({
-                silent: false,
-                skipBackoff: true,
-              });
-              refreshBackupButtons();
-            },
-            "database",
-          ),
-        );
-
-        // Add status info displays at the bottom
-        const infoContainer = document.createElement("div");
-        infoContainer.style.marginTop = "15px";
-        infoContainer.style.paddingTop = "10px";
-        infoContainer.style.borderTop = "1px solid #555";
-        infoContainer.style.fontSize = "12px";
-        infoContainer.style.color = "#aaa";
-
-        // Sign-in status indicator
-        const statusDiv = document.createElement("div");
-        statusDiv.style.marginBottom = "8px";
-        statusDiv.style.fontWeight = "bold";
-        infoContainer.appendChild(statusDiv);
-        GoogleDrive.setAuthStatusDisplay(statusDiv);
-
-        // User info
-        const userInfoDiv = document.createElement("div");
-        userInfoDiv.style.marginBottom = "8px";
-        GoogleDrive.setGoogleUserDisplay(userInfoDiv);
-        infoContainer.appendChild(userInfoDiv);
-
-        // Backup status info
-        const backupInfoDiv = document.createElement("div");
-        GoogleDrive.setBackupStatusDisplay(backupInfoDiv);
-        infoContainer.appendChild(backupInfoDiv);
-
-        googleSection.appendChild(infoContainer);
-
-        // Update status display based on sign-in state
-        GoogleDrive.updateAuthStatusDisplay();
-        GoogleDrive.updateGoogleUserDisplay();
-        GoogleDrive.updateBackupStatusDisplay();
-        refreshBackupButtons();
 
         // Build Timekeeper Sync section
         const syncSignButton = createButton(
@@ -4360,10 +4113,8 @@ if (!isLiveChatFrame()) {
         // Append sections
         settingsContent.appendChild(sectionHeading);
         settingsContent.appendChild(generalSection);
-        settingsContent.appendChild(googleSection);
         settingsContent.appendChild(syncSection);
-        const normalizedInitialTab = initialTab === "drive" ? "google" : initialTab;
-        showSection(normalizedInitialTab);
+        showSection(initialTab);
 
         settingsModalInstance.appendChild(settingsContent);
         document.body.appendChild(settingsModalInstance);
@@ -5422,24 +5173,7 @@ if (!isLiveChatFrame()) {
     // Load the global UI visibility state BEFORE appending to DOM
     await loadUIVisibilityState();
 
-    // Initialize Google Drive module callbacks
-    GoogleDrive.setBuildExportPayload(buildExportPayload);
-    GoogleDrive.setMergeBackupData(mergeBackupData);
-    GoogleDrive.setSaveGlobalSettings(saveGlobalSettings);
-    GoogleDrive.setLoadGlobalSettings(loadGlobalSettings);
-    GoogleDrive.setReloadCurrentVideoTimestamps(loadTimestamps);
-    GoogleDrive.setBackupStatusIndicator(backupStatusIndicator);
-    SyncClient.setOnSyncStatusChange(() => GoogleDrive.updateBackupStatusIndicator());
-
-    // Load Google auth state
-    await GoogleDrive.loadGoogleAuthState();
-
-    // Load auto backup settings and schedule if applicable
-    await GoogleDrive.loadAutoBackupSettings();
-    await GoogleDrive.scheduleAutoBackup();
-
-    // Update backup status indicator after everything is loaded
-    GoogleDrive.updateBackupStatusIndicator();
+    SyncClient.setHeaderIndicator(syncIndicator);
 
     // Aggressively ensure no duplicate panes exist before appending
     const allExistingPanes = document.querySelectorAll("#ytls-pane");

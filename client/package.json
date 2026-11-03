@@ -32,7 +32,6 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@tabler/icons": "^3.49.0",
-    "fflate": "^0.8.3"
+    "@tabler/icons": "^3.49.0"
   }
 }
