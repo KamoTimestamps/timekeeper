@@ -255,7 +255,7 @@ export function addTooltip(element: HTMLElement, getText: string | (() => string
   element.addEventListener('mouseleave', handleMouseLeave);
 
   // Hide tooltip when the element is clicked, even if the mouse remains over it
-  const handleClick = (e: Event) => {
+  const handleClick = () => {
     // Prevent default hide-suppression by mouse hover
     elementHovered = false;
     if (activeTarget === element) {

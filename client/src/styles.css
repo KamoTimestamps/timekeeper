@@ -34,30 +34,6 @@
   opacity: 1;
 }
 
-/* Legacy corner handle: keep element for resize behavior but hide visual indicator */
-/* Legacy corner handle kept for compatibility but hidden visually */
-#ytls-resize-handle {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 20px;
-  height: 20px;
-  cursor: auto;
-  /* no visible corner cursor */
-  z-index: 10;
-  pointer-events: none;
-  /* legacy handle inactive, corners handle events */
-  background: transparent;
-  margin: 0;
-  padding: 0;
-}
-
-#ytls-resize-handle::before {
-  display: none;
-  /* remove the triangular corner indicator */
-  content: none;
-}
-
 /* Corner handles for diagonal resize */
 #ytls-resize-tl,
 #ytls-resize-tr,

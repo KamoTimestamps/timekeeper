@@ -315,7 +315,7 @@ export function setHeaderIndicator(el: HTMLElement | null) {
 function updateHeaderIndicator() {
   const el = headerIndicator;
   if (!el) return;
-  const { color, tooltip } = getSyncIndicator();
+  const { color } = getSyncIndicator();
 
   // Cancel any previously scheduled deferred color change
   if (pendingColorChange) {

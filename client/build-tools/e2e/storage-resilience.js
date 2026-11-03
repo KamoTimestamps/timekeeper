@@ -22,7 +22,7 @@ const GOOD_ROWS = () => [row('a1', 20, 'A'), row('b1', 60, 'B')];
 
 const openDb = `new Promise((res, rej) => { const r = indexedDB.open('ytls-timestamps-db'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })`;
 
-async function newSession(browser, { rows = GOOD_ROWS(), settings = [], prepare } = {}) {
+async function newSession(browser, { rows = GOOD_ROWS() } = {}) {
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await context.newPage();
   await page.addInitScript(() => {
@@ -38,15 +38,13 @@ async function newSession(browser, { rows = GOOD_ROWS(), settings = [], prepare 
     await page.waitForTimeout(3000);
   };
   await load(); // first load creates the database
-  await page.evaluate(async ({ rows, settings, openDb }) => {
+  await page.evaluate(async ({ rows, openDb }) => {
     const db = await eval(openDb);
-    const tx = db.transaction(['timestamps_v2', 'settings'], 'readwrite');
+    const tx = db.transaction(['timestamps_v2'], 'readwrite');
     rows.forEach((r) => tx.objectStore('timestamps_v2').put(r));
-    settings.forEach((s) => tx.objectStore('settings').put(s));
     await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
     db.close();
-  }, { rows, settings, openDb });
-  if (prepare) await prepare(context, page);
+  }, { rows, openDb });
   await load();
   return { context, page };
 }

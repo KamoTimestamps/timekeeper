@@ -107,15 +107,6 @@ export function array<T>(item: Schema<T>): Schema<T[]> {
   });
 }
 
-export function record<T>(item: Schema<T>): Schema<Record<string, T>> {
-  return define((v, p) => {
-    if (!isPlainObject(v)) return fail(p, 'object');
-    const out: Record<string, T> = {};
-    for (const key of Object.keys(v)) out[key] = item.run(v[key], p ? `${p}.${key}` : key);
-    return out;
-  });
-}
-
 export function object<T>(shape: Shape<T>): ObjectSchema<T> {
   const base = define<T>((v, p) => {
     if (!isPlainObject(v)) return fail(p, 'object');
@@ -200,7 +191,6 @@ export const VideoEntrySchema = object<{ video_id: string; timestamps: Timestamp
   video_id: string(),
   timestamps: TimestampRecordArraySchema,
 });
-export const ExportDataSchema = record(VideoEntrySchema);
 
 export interface SyncAuthStateParsed {
   isSignedIn: boolean;

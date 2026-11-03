@@ -2855,7 +2855,6 @@ if (!isLiveChatFrame()) {
     removeFromIndexedDB,
     saveGlobalSettings,
     loadGlobalSettings,
-    buildExportPayload,
     exportAllTimestamps,
     exportAllTimestampsCsv,
   } = TimestampModel;
