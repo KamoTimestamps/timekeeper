@@ -43,7 +43,7 @@
     "*://*/*"
   ],
   "icons": {
-    "48": "assets/Kamo_64px_Indexed.png",
+    "48": "assets/Kamo_48px.png",
     "64": "assets/Kamo_64px_Indexed.png"
   },
   "web_accessible_resources": [
@@ -56,5 +56,22 @@
         "https://www.youtube.com/*"
       ]
     }
-  ]
+  ],
+  "firefox:browser_specific_settings": {
+    "gecko": {
+      "id": "timekeeper@kamotimestamps.com",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "authenticationInfo",
+          "personallyIdentifyingInfo",
+          "browsingActivity",
+          "websiteContent"
+        ]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  }
 }

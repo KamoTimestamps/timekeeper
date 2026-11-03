@@ -82,7 +82,13 @@ export function displayPaneError(list: HTMLUListElement | null, message: string)
   `;
 
   // Create a friendly error message with a refresh hint
-  errorItem.innerHTML = `<div style="margin-bottom:8px">⚠️ ${escapeHtml(message)}</div><div style="font-size:12px;font-weight:normal;color:#aaa">Check the console for details or refresh the page.</div>`;
+  const messageLine = document.createElement('div');
+  messageLine.style.marginBottom = '8px';
+  messageLine.textContent = `⚠️ ${message}`;
+  const hintLine = document.createElement('div');
+  hintLine.style.cssText = 'font-size:12px;font-weight:normal;color:#aaa';
+  hintLine.textContent = 'Check the console for details or refresh the page.';
+  errorItem.append(messageLine, hintLine);
   list.appendChild(errorItem);
   list.style.overflowY = 'hidden';
 }
@@ -96,15 +102,6 @@ export function clearPaneError(list: HTMLUListElement | null): void {
   if (errorItem) {
     errorItem.remove();
   }
-}
-
-/**
- * Escape HTML to prevent XSS in error messages.
- */
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 /**
