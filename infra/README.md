@@ -88,5 +88,7 @@ Never apply oak from a commit that has not been applied to ash first.
 
 ## Not managed here yet
 
-- Cutover from `timekeeper-devel`: `client/build-tools/channels.js` still points the devel channel at
-  `devel.kamotimestamps.com`, and the Google OAuth client needs the new origins.
+- Google OAuth: each environment's client needs `https://<env>.kamotimestamps.com` as an authorized
+  JavaScript origin (Google Cloud console; OpenTofu cannot manage it).
+- The `main` userscript channel (`client/build-tools/channels.js`) has no sync backend; wire it to oak
+  when releasing.
