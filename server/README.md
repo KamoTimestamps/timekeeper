@@ -27,36 +27,55 @@ Put it behind TLS (the userscript runs on https, so it needs `https://` / `wss:/
 
 ## Deployed servers (ash.kamotimestamps.com, oak.kamotimestamps.com)
 
-`ash` is staging and `oak` is production; the droplets are defined in `../infra`. Deploy to ash
-first, check it, then promote to oak.
+`ash` is staging and `oak` is production. Both run as Deployments in the home Kubernetes cluster,
+defined in `apps/timekeeper-ash` and `apps/timekeeper-oak` of
+[nlopez/k8s_home](https://github.com/nlopez/k8s_home); Argo CD syncs that repo's `main` branch.
+A change reaches ash first, is checked there, and is then promoted to oak.
 
-`./deploy.sh ash|oak` (from `server/`) rsyncs this directory to `timekeeper-<env>` and runs
-`deploy/remote-update.sh` there with `TK_HOSTNAME=<env>.kamotimestamps.com`. That script is
-idempotent: it installs Node and Caddy if missing, runs `npm ci`, installs the systemd unit and
-Caddyfile (with the hostname filled in) when they changed, restarts the app and waits for
-`/healthz`. Re-run it for every update. SSH goes to `root@timekeeper-<env>`, the droplet's Tailscale name (port 22 is
-closed to the internet; see `../infra/README.md`). Set `DEPLOY_HOST` to use another address.
+### Image and promotion
 
-- App: `timekeeper-server.service`, listening on `127.0.0.1:8787` as user `timekeeper`; the
-  SQLite database is `/var/lib/timekeeper/timekeeper.db`.
-- Config: `/etc/timekeeper/server.env`. The first deploy creates it with a generated `JWT_SECRET`.
-  Every deploy then applies the non-secret settings committed in `deploy/<env>.env`
-  (`GOOGLE_CLIENT_ID`, `ALLOWED_ORIGINS`, feature switches such as `FEATURE_MINI_PLAYER=true`) and
-  sets `PUBLIC_ORIGIN` from the environment name. Keys not listed there (`JWT_SECRET`, `YOUTUBE_API_KEY`,
-  anything set by hand) are left alone, so change settings in `deploy/<env>.env`, not on the server.
-  Secrets never go in those files: `deploy.sh` reads `YOUTUBE_API_KEY` from the 1Password item
-  `timekeeper-server-youtube-api-key` (Automation vault) and sends it over SSH on stdin
-  (`remote-update.sh` applies any `KEY=value` lines it receives there). Feature switches go into `ash.env` first and into `oak.env`
-  after they have been checked on ash.
-- TLS: Caddy terminates HTTPS on TCP 443 only (no port 80, no HTTP/3) with a Cloudflare Origin CA
-  certificate and proxies to the app, WebSockets included. Only Cloudflare can connect: the droplet
-  firewall allows Cloudflare's IP ranges on 443 (`../infra`), and Caddy requires Cloudflare's
-  Authenticated Origin Pulls client certificate (mTLS), so a request that did not come from our
-  Cloudflare zone is refused during the TLS handshake. The origin certificate, its key and the client
-  certificate are OpenTofu outputs of `../infra/envs/<env>`; `deploy.sh` reads them and
-  `remote-update.sh` installs them in `/etc/caddy/origin/`. Apply the infra first, then deploy. The
-  zone's SSL/TLS mode must be **Full (strict)**.
-- Logs: `journalctl -u timekeeper-server -f` and `journalctl -u caddy -f`.
+`.github/workflows/server-image.yml` runs the typecheck and tests, and on pushes to `main` and
+`devel` that touch `server/**` publishes `ghcr.io/kamotimestamps/timekeeper-server:<yyyy.mm.dd>-<run>`
+(pull requests build the image without pushing it). A new GHCR package starts private and has to be
+made public once in the organization's package settings; the cluster pulls it anonymously.
+
+1. Renovate opens a PR in k8s_home that bumps the `image:` tag in `apps/timekeeper-ash/deployment.yaml`.
+   Merge it, then check ash.
+2. Put the same tag in `apps/timekeeper-oak/deployment.yaml` by hand. Renovate skips oak on purpose.
+
+### Cluster setup
+
+- **App:** one replica with the `Recreate` strategy, because the SQLite database lives on a
+  ReadWriteOnce volume. The database is `/data/timekeeper.db` on the `data` PVC, and the container
+  runs as uid 1000 (`DATABASE_PATH=/data/timekeeper.db` is baked into the image).
+- **Config:** environment variables on the Deployment. Non-secret settings (`GOOGLE_CLIENT_ID`,
+  `ALLOWED_ORIGINS`, `PUBLIC_ORIGIN`, `TRUST_PROXY_HEADERS`, feature switches such as
+  `FEATURE_MINI_PLAYER`) are inline in `apps/timekeeper-<env>/deployment.yaml`. `JWT_SECRET` and
+  `YOUTUBE_API_KEY` come from the Secret `onepassword-timekeeper-server`, which the 1Password
+  operator creates from the item `timekeeper-server-<env>` in the Automation vault. Secrets never go
+  in git. Feature switches go into ash first and into oak after they have been checked on ash.
+- **Edge:** Cloudflare proxies the hostname (SSL/TLS mode **Full (strict)**) to the cluster's
+  `internet` Gateway (Envoy Gateway), which terminates TLS on TCP 443 with a Let's Encrypt
+  certificate for `ash`/`oak.kamotimestamps.com`. WebSockets (`/sync/ws`) are proxied. DNS is a
+  proxied CNAME to the gateway's public name, created by external-dns from the HTTPRoute.
+- **Only Cloudflare can connect:** the gateway requires Authenticated Origin Pulls (mTLS). Cloudflare
+  presents the self-signed per-hostname client certificate that `../infra/modules/droplet` uploads
+  for each hostname, so the gateway trusts those certificates (ConfigMap `timekeeper-aop-ca` in
+  k8s_home, next to Cloudflare's own origin-pull CA). When a certificate is rotated with
+  `tofu apply -replace=module.droplet.tls_private_key.aop`, update that ConfigMap with the new
+  public certificate (the `aop_client_certificate_pem` output).
+- **Client info headers:** the app reads `X-Client-IP`, `X-Client-Country`, `X-Client-City` and
+  `X-Client-Region` (`TRUST_PROXY_HEADERS=true`). An `EnvoyExtensionPolicy` (Lua) on each route
+  deletes any client-supplied copies and fills them from Cloudflare's `CF-Connecting-IP`,
+  `CF-IPCountry`, `CF-IPCity` and `CF-Region-Code`. Envoy Gateway only accepts Lua policies when
+  `extensionApis.enableLua` is set in its Helm values; without it the route answers 500.
+- **Logs:** `kubectl logs -n timekeeper-<env> deploy/timekeeper-server -f`.
+
+### Droplets
+
+`deploy.sh`, `deploy/` and `../infra` provision and update the previous DigitalOcean droplets
+(Node, Caddy and a systemd unit behind the same Cloudflare zone). The cluster deployment does not use
+them; they remain until the droplets are retired.
 
 ## Google setup
 
@@ -137,15 +156,15 @@ page), review your sessions on the account page, and **log out all sessions**.
   letters), so the country name is also in the place. City is only as accurate as IP geolocation
   (the ISP's region, often not the street). IPs and places are kept only as long as the session exists.
 - **Where the location comes from:** with `TRUST_PROXY_HEADERS=true` the app reads `X-Client-IP`,
-  `X-Client-Country`, `X-Client-City` and `X-Client-Region`, which only the reverse proxy may set; the
-  app must listen on loopback and be reachable only through it. Without it the IP is the socket
-  address and there is no country or city. The dev setup's Caddy takes them from Cloudflare
-  (`CF-Connecting-IP`, `CF-IPCountry`, `CF-IPCity`, `CF-Region-Code`) and only believes those headers
-  when the connection comes from Cloudflare's published IP ranges, which `deploy/remote-update.sh`
-  refreshes into `/etc/caddy/cloudflare-*.caddy` on every deploy. The city and region headers exist
-  only with Cloudflare's **Add visitor location headers** managed transform turned on (Rules →
-  Managed Transforms); without it sessions show just the country. Other deployments need an
-  equivalent proxy rule.
+  `X-Client-Country`, `X-Client-City` and `X-Client-Region`, which only the reverse proxy may set, so
+  the app must be reachable only through it. Without it the IP is the socket address and there is no
+  country or city. In the cluster, a Lua `EnvoyExtensionPolicy` on the route copies them from
+  Cloudflare's `CF-Connecting-IP`, `CF-IPCountry`, `CF-IPCity` and `CF-Region-Code` after removing any
+  client-supplied values; the gateway only accepts connections that present the Authenticated Origin
+  Pulls client certificate, so those headers can only come from our Cloudflare zone (see "Deployed
+  servers"). The city and region headers exist only with Cloudflare's **Add visitor location
+  headers** managed transform turned on (Rules → Managed Transforms); without it sessions show just
+  the country. Other deployments need an equivalent proxy rule.
 - **Timestamps page** (`#/timestamps`): browse and search all your live timestamps, 50 per page,
   newest change first. Every search word must match the comment, the video ID, or a video's
   title/channel (title and channel need `YOUTUBE_API_KEY`; see "Video details"). Clicking a video shows just that video in playback order; clicking a time opens

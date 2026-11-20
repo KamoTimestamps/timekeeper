@@ -2,6 +2,14 @@
 
 OpenTofu config for the Timekeeper Sync droplets on DigitalOcean.
 
+> **The servers run in the Kubernetes cluster, not on these droplets** (see "Deployed servers" in
+> `../server/README.md`). The droplets are stopped and kept only as a rollback target. In Cloudflare,
+> `ash.kamotimestamps.com` and `oak.kamotimestamps.com` are proxied CNAMEs created by the cluster's
+> external-dns, not the A records this config declares. **Do not `tofu apply` an env** while the
+> cluster serves it: the plan recreates the A record and points the hostname at the droplet again. To
+> retire an env, remove its droplet and DNS record from this config (the certificates the cluster
+> still needs are described below).
+
 | Env | Droplet | Role |
 |---|---|---|
 | `ash` | `timekeeper-ash` | staging: every change lands here first |
@@ -70,6 +78,13 @@ deploying**. Cloudflare's IP ranges are read when you apply; if they change, `to
 firewall rule. Rotate the client certificate with
 `tofu apply -replace=module.droplet.tls_private_key.aop` (then redeploy), the origin certificate with
 `-replace=module.droplet.cloudflare_origin_ca_certificate.origin`.
+
+The cluster depends on the client certificate too. Cloudflare presents it for each hostname, and the
+cluster's `internet` Gateway only accepts it because its public certificate is listed in the
+ConfigMap `timekeeper-aop-ca` (`apps-helm/envoy-gateway/manifests/` in nlopez/k8s_home). After
+replacing `tls_private_key.aop`, put the new `aop_client_certificate_pem` output into that ConfigMap
+in the same change; until then Cloudflare answers 520 for that hostname. The origin certificate is
+not used by the cluster, which serves a Let's Encrypt certificate.
 
 ## SSH over Tailscale
 
