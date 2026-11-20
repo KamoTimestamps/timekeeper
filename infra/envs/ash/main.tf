@@ -2,10 +2,6 @@ terraform {
   required_version = "~> 1.13"
 
   required_providers {
-    digitalocean = {
-      source  = "digitalocean/digitalocean"
-      version = "~> 2.0"
-    }
     cloudflare = {
       source  = "cloudflare/cloudflare"
       version = "~> 5.0"
@@ -31,50 +27,15 @@ terraform {
   }
 }
 
-# Credentials: DIGITALOCEAN_TOKEN.
-provider "digitalocean" {}
-
 # Credentials: CLOUDFLARE_API_TOKEN.
 provider "cloudflare" {}
 
-variable "ssh_key_names" {
-  type = list(string)
-}
+module "origin_pull" {
+  source = "../../modules/origin-pull"
 
-variable "ssh_allowed_cidrs" {
-  type    = list(string)
-  default = []
-}
-
-variable "tailscale_auth_key" {
-  type      = string
-  sensitive = true
-  default   = ""
-}
-
-module "droplet" {
-  source = "../../modules/droplet"
-
-  name               = "ash"
-  backups            = false
-  ssh_key_names      = var.ssh_key_names
-  ssh_allowed_cidrs  = var.ssh_allowed_cidrs
-  tailscale_auth_key = var.tailscale_auth_key
-}
-
-output "ip" {
-  value = module.droplet.ip
-}
-
-output "origin_certificate_pem" {
-  value = module.droplet.origin_certificate_pem
-}
-
-output "origin_private_key_pem" {
-  value     = module.droplet.origin_private_key_pem
-  sensitive = true
+  name = "ash"
 }
 
 output "aop_client_certificate_pem" {
-  value = module.droplet.aop_client_certificate_pem
+  value = module.origin_pull.aop_client_certificate_pem
 }

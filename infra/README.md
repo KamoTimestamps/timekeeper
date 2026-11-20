@@ -1,25 +1,17 @@
 # Infrastructure
 
-OpenTofu config for the Timekeeper Sync droplets on DigitalOcean.
+OpenTofu config for the Cloudflare Authenticated Origin Pulls client certificates of the Timekeeper
+sync servers. The servers themselves run in the Kubernetes cluster (see "Deployed servers" in
+`../server/README.md`); DNS records for their hostnames are created by the cluster's external-dns, so
+this config does not manage any.
 
-> **The servers run in the Kubernetes cluster, not on these droplets** (see "Deployed servers" in
-> `../server/README.md`). The droplets are stopped and kept only as a rollback target. In Cloudflare,
-> `ash.kamotimestamps.com` and `oak.kamotimestamps.com` are proxied CNAMEs created by the cluster's
-> external-dns, not the A records this config declares. **Do not `tofu apply` an env** while the
-> cluster serves it: the plan recreates the A record and points the hostname at the droplet again. To
-> retire an env, remove its droplet and DNS record from this config (the certificates the cluster
-> still needs are described below).
-
-| Env | Droplet | Role |
+| Env | Hostname | Role |
 |---|---|---|
-| `ash` | `timekeeper-ash` | staging: every change lands here first |
-| `oak` | `timekeeper-oak` | production: gets a change only after it has run on `ash` |
-
-Each env also owns its proxied Cloudflare A record (`ash.kamotimestamps.com`, `oak.kamotimestamps.com`),
-which follows the droplet's IP if it is rebuilt.
+| `ash` | `ash.kamotimestamps.com` | staging: every change lands here first |
+| `oak` | `oak.kamotimestamps.com` | production: gets a change only after it has run on `ash` |
 
 Each env has its own state (`ash/terraform.tfstate`, `oak/terraform.tfstate` in the
-`timekeeper-tfstate` Spaces bucket) and both call the same `modules/droplet`.
+`timekeeper-tfstate` Spaces bucket) and both call the same `modules/origin-pull`.
 
 ## Tooling
 
@@ -34,89 +26,49 @@ tofu version     # 1.13.2
 ## Credentials (direnv + 1Password)
 
 `.envrc` loads these from the 1Password **Automation** vault when you `cd` into `infra/`
-(`op` must be unlocked and signed in). Run `direnv allow` once.
+(`op` must be unlocked and signed in). Run `direnv allow` once, and again whenever `.envrc` changes.
 
 | Variable | 1Password item | Used by |
 |---|---|---|
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | `timekeeper-infra-tfstate` | state backend (Spaces key scoped to `timekeeper-tfstate`) |
-| `DIGITALOCEAN_TOKEN` | `timekeeper-infra-digitalocean` | `digitalocean` provider |
-| `CLOUDFLARE_API_TOKEN` | `timekeeper-infra-cloudflare` | `cloudflare` provider (DNS records) |
+| `CLOUDFLARE_API_TOKEN` | `timekeeper-infra-cloudflare` | `cloudflare` provider (Authenticated Origin Pulls) |
 
-Create the DigitalOcean token item once (copy a dedicated API token to the clipboard first):
-
-```
-op item create --vault Automation --category "API Credential" \
-  --title timekeeper-infra-digitalocean "credential[concealed]=$(pbpaste)"
-```
-
-Create the Cloudflare token item the same way. In the Cloudflare dashboard (My Profile > API Tokens >
-Create Token > Custom token) grant **Zone: Zone: Read**, **Zone: DNS: Edit** and **Zone: SSL and
-Certificates: Edit** (Origin CA certificate and Authenticated Origin Pulls), limited to the
-`kamotimestamps.com` zone, copy it, then:
+Create the Cloudflare token item once. In the Cloudflare dashboard (My Profile > API Tokens > Create
+Token > Custom token) grant **Zone: Zone: Read** and **Zone: SSL and Certificates: Edit**, limited to
+the `kamotimestamps.com` zone, copy it, then:
 
 ```
 op item create --vault Automation --category "API Credential" \
   --title timekeeper-infra-cloudflare "credential[concealed]=$(pbpaste)"
 ```
 
-The Tailscale auth key is single-use, so it is not stored; see below.
+One-time: create the private `timekeeper-tfstate` Spaces bucket (sfo3) and its access key.
 
 ## Only Cloudflare can connect
 
-Each droplet accepts TCP 443 from Cloudflare's published IP ranges and nothing else; port 80 is closed.
-On top of the firewall, Caddy requires a client certificate (Authenticated Origin Pulls), so even another
-Cloudflare customer pointing their zone at the droplet's IP is refused. `modules/droplet` creates:
+The cluster's `internet` Gateway requires a client certificate on every connection (Authenticated Origin
+Pulls), so even another Cloudflare customer pointing their zone at the cluster's address is refused for
+these hostnames. `modules/origin-pull` creates, per hostname, our own self-signed client certificate and
+uploads it to Cloudflare for that hostname only (`cloudflare_authenticated_origin_pulls`). The zone's
+SSL/TLS mode must be **Full (strict)**.
 
-- an Origin CA certificate for `<env>.kamotimestamps.com` (15 years; Let's Encrypt can no longer reach the
-  origin), served by Caddy. The zone's SSL/TLS mode must be **Full (strict)**.
-- our own client certificate, uploaded to Cloudflare for that hostname only and enabled through
-  `cloudflare_authenticated_origin_pulls`. Caddy trusts exactly that certificate.
+The private key is in the state (the private bucket) and is never written to git. The Gateway accepts the
+certificate because its public half is listed in the ConfigMap `timekeeper-aop-ca`
+(`apps-helm/envoy-gateway/manifests/` in nlopez/k8s_home), next to Cloudflare's own origin-pull CA. Without
+that entry Cloudflare answers 520 for the hostname.
 
-The private keys are in the state (the private bucket) and are never written to git.
-`server/deploy.sh` reads the outputs and installs them on the droplet, so **apply infra before
-deploying**. Cloudflare's IP ranges are read when you apply; if they change, `tofu plan` shows the new
-firewall rule. Rotate the client certificate with
-`tofu apply -replace=module.droplet.tls_private_key.aop` (then redeploy), the origin certificate with
-`-replace=module.droplet.cloudflare_origin_ca_certificate.origin`.
-
-The cluster depends on the client certificate too. Cloudflare presents it for each hostname, and the
-cluster's `internet` Gateway only accepts it because its public certificate is listed in the
-ConfigMap `timekeeper-aop-ca` (`apps-helm/envoy-gateway/manifests/` in nlopez/k8s_home). After
-replacing `tls_private_key.aop`, put the new `aop_client_certificate_pem` output into that ConfigMap
-in the same change; until then Cloudflare answers 520 for that hostname. The origin certificate is
-not used by the cluster, which serves a Let's Encrypt certificate.
-
-## SSH over Tailscale
-
-Port 22 is closed to the internet. On first boot, cloud-init (`modules/droplet/cloud-init.yaml.tftpl`)
-installs Tailscale and joins the tailnet as `timekeeper-<env>` with `--ssh` (Tailscale SSH) and the
-tag `tag:timekeeper`, so `ssh root@timekeeper-ash` works from any device on the tailnet.
-
-One-time tailnet setup (admin console):
-
-1. Access controls: add `"tagOwners": {"tag:timekeeper": ["autogroup:admin"]}` and an `ssh` rule
-   allowing your user to reach `tag:timekeeper` as `root`.
-2. Settings > Keys > Generate auth key: **not** reusable, **not** ephemeral, pre-approved, tag
-   `tag:timekeeper`, expiry 1 day. Make one per droplet you create.
-
-Pass the key for the creating apply only: `export TF_VAR_tailscale_auth_key=tskey-auth-...`. It lives
-in the droplet's `user_data` (and the private state bucket), which is why it must be single-use and
-short-lived. The droplet ignores later `user_data` changes; to re-run cloud-init, rebuild with
-`tofu apply -replace=module.droplet.digitalocean_droplet.this`.
-
-If the droplet never shows up in the tailnet, there is no SSH. Recover with the DigitalOcean web
-console, or set `ssh_allowed_cidrs = ["<your IP>/32"]` and apply to open port 22 temporarily.
-
-One-time: create the private `timekeeper-tfstate` Spaces bucket (sfo3), upload your SSH public key to
-DigitalOcean, and copy `envs/terraform.tfvars.example` to `envs/ash/terraform.tfvars` and
-`envs/oak/terraform.tfvars` (gitignored).
+Rotate a client certificate with `tofu apply -replace=module.origin_pull.tls_private_key.aop`, and put the
+new `aop_client_certificate_pem` output (`tofu output -raw aop_client_certificate_pem`) into that ConfigMap
+in the same change. Apply infra and merge the ConfigMap change together; between the two, Cloudflare's
+handshake fails.
 
 ## Promoting a change
 
-1. Edit `modules/droplet/` (or an env's `main.tf`) on a branch.
+1. Edit `modules/origin-pull/` (or an env's `main.tf`) on a branch.
 2. `cd envs/ash && tofu init && tofu plan`, read it, then `tofu apply`.
-3. Deploy and check the app on ash (`cd server && ./deploy.sh ash`, over Tailscale).
-4. Merge, then `cd envs/oak && tofu plan`. It should show the same diff ash just had. Then `tofu apply`.
+3. Check ash through Cloudflare: `https://ash.kamotimestamps.com/healthz` returns 200.
+4. Merge, then `cd envs/oak && tofu plan`. It should show the same diff ash just had. Then `tofu apply`
+   and check `https://oak.kamotimestamps.com/healthz`.
 
 Never apply oak from a commit that has not been applied to ash first.
 

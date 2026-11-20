@@ -59,23 +59,17 @@ made public once in the organization's package settings; the cluster pulls it an
   certificate for `ash`/`oak.kamotimestamps.com`. WebSockets (`/sync/ws`) are proxied. DNS is a
   proxied CNAME to the gateway's public name, created by external-dns from the HTTPRoute.
 - **Only Cloudflare can connect:** the gateway requires Authenticated Origin Pulls (mTLS). Cloudflare
-  presents the self-signed per-hostname client certificate that `../infra/modules/droplet` uploads
-  for each hostname, so the gateway trusts those certificates (ConfigMap `timekeeper-aop-ca` in
-  k8s_home, next to Cloudflare's own origin-pull CA). When a certificate is rotated with
-  `tofu apply -replace=module.droplet.tls_private_key.aop`, update that ConfigMap with the new
-  public certificate (the `aop_client_certificate_pem` output).
+  presents the self-signed per-hostname client certificate that `../infra/modules/origin-pull`
+  uploads for each hostname, so the gateway trusts those certificates (ConfigMap `timekeeper-aop-ca`
+  in k8s_home, next to Cloudflare's own origin-pull CA). When a certificate is rotated with
+  `tofu apply -replace=module.origin_pull.tls_private_key.aop`, update that ConfigMap with the new
+  public certificate (the `aop_client_certificate_pem` output); see `../infra/README.md`.
 - **Client info headers:** the app reads `X-Client-IP`, `X-Client-Country`, `X-Client-City` and
   `X-Client-Region` (`TRUST_PROXY_HEADERS=true`). An `EnvoyExtensionPolicy` (Lua) on each route
   deletes any client-supplied copies and fills them from Cloudflare's `CF-Connecting-IP`,
   `CF-IPCountry`, `CF-IPCity` and `CF-Region-Code`. Envoy Gateway only accepts Lua policies when
   `extensionApis.enableLua` is set in its Helm values; without it the route answers 500.
 - **Logs:** `kubectl logs -n timekeeper-<env> deploy/timekeeper-server -f`.
-
-### Droplets
-
-`deploy.sh`, `deploy/` and `../infra` provision and update the previous DigitalOcean droplets
-(Node, Caddy and a systemd unit behind the same Cloudflare zone). The cluster deployment does not use
-them; they remain until the droplets are retired.
 
 ## Google setup
 
